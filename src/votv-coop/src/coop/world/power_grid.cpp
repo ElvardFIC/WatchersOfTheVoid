@@ -671,8 +671,8 @@ void Install(coop::net::Session* session) {
     if (g_registered) return;
     g_registered = true;
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchClassName(L"powerGenerator_C", w.name, w.tag, w.pre, w.post))
-            UE_LOGE("power_grid: the script-body gate refused the watch on powerGenerator_C::%ls -- that edge is each peer's own",
+        if (!sg::WatchClassName(L"generator_C", w.name, w.tag, w.pre, w.post))
+            UE_LOGE("power_grid: the script-body gate refused the watch on generator_C::%ls -- that edge is each peer's own",
                     w.name);
 }
 
@@ -698,8 +698,8 @@ void Tick() {
     sg::ResolvePendingNames();
     int live = 0, settled = 0;
     for (const WatchDef& w : kWatches) {
-        if (sg::ClassNameWatchLive(L"powerGenerator_C", w.name, w.tag)) ++live;
-        if (sg::ClassNameWatchSettled(L"powerGenerator_C", w.name, w.tag)) ++settled;
+        if (sg::ClassNameWatchLive(L"generator_C", w.name, w.tag)) ++live;
+        if (sg::ClassNameWatchSettled(L"generator_C", w.name, w.tag)) ++settled;
     }
     if (live == kWatchCount) {
         g_settled = true;

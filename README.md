@@ -11,15 +11,16 @@ remote player models, text and positional voice chat, and shared-world synchroni
 > Bugs, crashes and multiplayer desynchronization may occur. A successful build or
 > automated test run does not guarantee stable gameplay.
 
-## Development — 0.9.2162
+## Development — 0.9.2163
 
-The active public version is **0.9.2162**, targeting **VotV Alpha 0.9.0n**.
+The active public version is **0.9.2163**, targeting **VotV Alpha 0.9.0n**.
 Internal DLL/network identity remains **b2217 / protocol 2217**. Continuations
 add fixes to this version; a new public version requires the owner's request.
 
-Current work includes six selectable hosting game modes, reflected flashlight state and replacement replay, explicit ragdoll physics blending, guarded held-toy audio and watoy ownership, and capture of native held/thrown sponge window dabs,
+Current work includes Tutorial join placement and inventory-icon cache repair, killer-wisp lifetime guards, selected fork fixes and six selectable hosting game modes, reflected flashlight state and replacement replay, explicit ragdoll physics blending, guarded held-toy audio and watoy ownership, and capture of native held/thrown sponge window dabs,
 with the existing co-op, 2-32-player, inventory, event and native-action fixes.
-The current ZIP passed the complete offline regression and package checks.
+The current 0.9.2163 ZIP passed all 124 current offline validation groups,
+the Release build, production version label and manager package checks.
 Rendered host/client acceptance remains open. Current evidence and limits are in
 [TESTLOG](agent/TESTLOG.md) and the [development notes](package/RELEASE.md).
 Every peer used for testing must carry identical current DLL bytes.

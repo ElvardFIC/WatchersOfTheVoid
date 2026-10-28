@@ -1,4 +1,4 @@
-# Watchers of the Void 0.9.2162 — offline test build
+# Watchers of the Void 0.9.2163 — offline test build
 
 For Voices of the Void Alpha 0.9.0n, Windows x64. By ElvardFIC and AquaFishhh.
 Internal DLL/network identity: **b2217 / protocol 2217**.
@@ -6,9 +6,21 @@ Internal DLL/network identity: **b2217 / protocol 2217**.
 > **Every version is a test version. It requires extensive testing and may be unstable.**
 > Automated checks do not establish stable gameplay or replace multiplayer testing.
 
-The owner requested this 2162 build on 27 October 2026. Every player must use
+The owner requested this 2163 build on 28 October 2026. Every player must use
 this exact ZIP and game version. Matching version numbers alone do not establish
 matching DLL contents after several development snapshots of the same version.
+
+2163 preserves native Tutorial join/respawn placement and repairs empty item-icon
+caches outside Tutorial. It adds body/world/request-bound killer-wisp capture and
+host lifetime handling. Selected gxrxrt fork adaptations correct generator watch
+ownership, player-body prop pushes, exact ariral-slapper spawning and persistent
+laptop/shared-screen inheritance failures. Source attribution is retained in
+agent/WORK.md. Protocol stays 2217; all peers must still use identical DLL bytes.
+
+The eleven requested external mods were inspected as archives but are not
+included, installed or multiplayer-qualified. EmoteWheel's inspected version
+has no network bridge; VEmu explicitly excludes SmartTV AV output. Remaining
+creature/event/resource work in TODO is not completed by this package.
 
 This snapshot adds Tutorial, Story, Infinite, Ambience, Sandbox and Solar hosting
 choices. Flashlight reads use reflected fields/bit masks, equipped crank lights

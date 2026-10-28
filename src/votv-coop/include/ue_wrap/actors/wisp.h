@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <functional>
+
 namespace ue_wrap { struct FVector; }
 
 namespace ue_wrap::wisp {
@@ -91,6 +93,9 @@ bool GrabSocketWorldLocation(void* wisp, ue_wrap::FVector& out);
 // for one call per grab; the caller latches. False if the wisp mesh or the player members are
 // unresolvable (logged; the flat death still runs). Game thread.
 bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer);
+// Guarded forms stop between native callbacks when the caller's grab/release
+// lease has retired; a newer capture must not inherit old flag writes.
+bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::function<bool()>& current);
 
 // Undo the grab template on the local player: detach, walking movement mode, the held flag
 // cleared, the two rotation-follow flags restored. Called right before the scheduled ragdoll
@@ -98,6 +103,7 @@ bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer);
 // mid-grab disconnect does not strand the player without movement. A safe no-op if never
 // grabbed. Game thread.
 bool ReleaseGrabOnLocalPlayer(void* localPlayer);
+bool ReleaseGrabOnLocalPlayerWhile(void* localPlayer, const std::function<bool()>& current);
 
 // Dispatch the wisp's own releasePlayer verb, its canonical grab cancel: detaches the grabbed
 // player, clears the held flag, restores the controller, ragdolls the player (non-lethally if

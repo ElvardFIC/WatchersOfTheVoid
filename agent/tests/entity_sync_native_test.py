@@ -13,6 +13,8 @@ from dump_2135 import body
 def package(asset):
     path = research / 'assets' / ('VotV__Content__' + asset + '.uasset')
     if not path.exists():
+        path = research / 'current-assets' / ('VotV__Content__' + asset + '.uasset')
+    if not path.exists():
         raise SystemExit('UNAVAILABLE: extract native entity evidence: ' + str(path))
     return Package(str(path))
 
@@ -181,6 +183,19 @@ source = (checkout / 'src/votv-coop/src/coop/creatures/npc_world_enum.cpp').read
 assert 'kExSpawnSourceClasses' not in source, 'dead/log-only source table can diverge from the executed gate'
 table = source.split('kExSpawnSources[] = {', 1)[1].split('};', 1)[0]
 sources = set(re.findall(r'L"([^"]+)"', table))
+slapper = package('objects__arirSlapper')
+slapper_class = next(e for e in slapper.exports if e['name'] == 'arirSlapper_C')
+assert slapper.imports[-slapper_class['sup'] - 1][3] == 'npc_arirFollower_C'
+summoner = package('objects__slapperSummoner')
+summoner_graph = next(e for e in summoner.exports if e['name'] == 'ExecuteUbergraph_slapperSummoner')
+assert any('BeginDeferredActorSpawnFromClass' in row and '/objects/arirSlapper.arirSlapper_C' in row
+           for _, row in body(summoner, summoner_graph))
+assert 'slapperSummoner_C' in sources
+names = (checkout / 'src/votv-coop/include/ue_wrap/core/sdk_profile_names.h').read_text()
+assert 'L"arirSlapper_C"' in names.split('kNpcAllowlist[] = {', 1)[1].split('};', 1)[0]
+assert 'arirSlapper_C' not in names.split('kWorldActorAllowlist[] = {', 1)[1].split('};', 1)[0]
+assert 'kSlapperOutputs[]={L"arirSlapper_C",nullptr}' in source
+print('PASS native ariral slapper Character lineage and exact summoner output admission')
 for ticker, creature in [('ticker_fossilhoundSpawner', 'fossilhound'),
                          ('ticker_yellowWispSpawner', 'killerwisp')]:
     p = package('objects__tickers__' + ticker)

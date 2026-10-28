@@ -1,3 +1,28 @@
+# Refreshed fork review — 28 October 2026
+
+The inventory below is historical. A fresh default-head review now enumerates
+3 direct WatchersOfTheVoid forks and 44 publicly returned upstream forks
+(46 other repositories after deduplication; 45 reachable). Marlore remains
+unreachable. Exact heads and the current-upstream comparison are preserved in
+build/fork-review-20261028/{forks,heads,comparison-current-upstream}.json.
+
+The new direct fork gxrxrt/WatchersOfTheVoid, default fix/coop-stability at
+fee106791, contributes 31 commits outside our branch/current upstream.
+Five source adaptations are now implemented: generator_C watch ownership,
+player-body prop coasting, exact slapper Character/source admission, and
+readiness/lease-aware bounded inheritance for laptop and shared-screen state.
+Per-item provenance, excluded changes and verification are in the current
+[WORK](WORK.md) and [TESTLOG](TESTLOG.md). The fork's other wire kinds and
+protocol 2903 were not merged into protocol 2217.
+
+gv1nd's capacity fix remains superseded by our 8192-slot table; mega-maks2011
+still contributes README text only. LoKoGoRus's new five-seat patch is
+superseded by the existing 32-peer implementation. Several fresh fork heads
+are identical to upstream snapshots and add no independent fixes. The newly
+reachable rosonoka head retains pelmentor's older rewritten upstream history.
+This review covers publicly returned default heads, not unpublished changes
+or every nondefault branch of the upstream network.
+
 # Selected upstream fixes
 
 Compared fork `21941a2df` with VOTV-MP/Multivoid `93dd26cc2`: 39 graph commits

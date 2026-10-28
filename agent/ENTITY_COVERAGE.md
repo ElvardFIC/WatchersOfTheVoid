@@ -37,6 +37,7 @@ review does not close the class-specific behavior adapters below.
 | Antibreather | `antibreather_C`, spawner `antibreatherSPawner_C` | pose; per-viewer event count stays local | Cave/player-dependent birth and cross-peer attack results |
 | Fossilhound | `fossilhound_C`, ticker `ticker_fossilhoundSpawner_C` | pose; per-viewer event count stays local | Live attack acceptance. The executed EX-spawn source gate now contains the ticker |
 | Ariral follower/shooter/pig beater | `npc_arirFollower_C`, `npc_ariral_shooter_C`, `npc_ariral_pigBeater_C` | pose | held/thrown object ownership, shots/hits and phase state |
+| Ariral chest slapper | `arirSlapper_C` (native follower child), spawned by `slapperSummoner_C` | late NPC pose; exact summoner output admission | Attacks, stolen chest/item ownership, audio/effects and shared lifetime acceptance |
 | Ariral gun stealer | `npc_arirGunStealer_C` | late NPC pose; client mirror's real `punching` timer refused | Gun acquisition/attachment, montage and stolen-prop ownership. Native exports contain no `StealGun` or `TakeWeapon` |
 | Grey | `grayTest_C` | pose; client native brain/camera bodies refused | target/action/effect state |
 | Flamethrower Tank | `firetank_C` (`Pawn`), deployment actor `firetankDeploy_C` | pose | turret aim, fire, fuel, damage and destruction |
@@ -66,6 +67,7 @@ review does not close the class-specific behavior adapters below.
 | Flesh Slug | `npc_goreSlither_C` | pose | Attack, water conversion, damage/death and effects |
 | Zombie Deer | `npc_zombie_deer_C`, descendant of `npc_zombie_C`; corpse item is separate | pose by zombie ancestry | Night condition, attacks/fade and corpse dependency |
 | Ghost | `ghostcar_C`/`ghostcarSpawner_C` is one native ghost event family | prop/unrouted spawner | Confirm requested display name and camera/visibility phases |
+| Killer Wisp (grab/tear boundary) | `killerwisp_C` | dedicated NPC pose and victim grab/tear; queued effects/holds bind observed bodies/world, mesh readiness precedes playback, native capture/release callbacks retain request ownership | Limb/blood presentation and live socket/animation/attack acceptance; this does not identify Ghost or Ghost Log |
 | Ghost Log | no class-name match in the package; it is a save-load shapeshifter, so class must be captured live | unrouted | Exact runtime class, teleport/deafen and local/global ownership |
 | Fireflies | `ticker_fireflySpawner_C` plus emitter relay | dedicated cosmetic relay | Live local spawn and rejoin acceptance |
 | Walking Mannequin | `wMannequinSpawn_C` and mannequin prop family | dedicated `mannequin_sync` | Two-peer lifecycle/held-object acceptance |

@@ -135,5 +135,19 @@ int main() {
     widgetReady = true; Deliver(pipe, Message(true, 1, State(8), 1, 2), 0); Tick();
     assert(visible[0].tab == 8); // reused Session address accepts the new host's first revision
     S::OnDisconnect(); const auto before = applies; Tick(); assert(applies == before);
+    local=true;holder=1;widgetReady=true;applyReady=false;visible=State(9);session.sent.clear();
+    S::Install(&session);Deliver(pipe,Message(true,50,State(2),30,1),0);
+    Tick();Tick();assert(S::g_apply&&session.sent.empty());Tick();
+    assert(!S::g_apply&&visible[0].tab==9&&Sent(session.sent,0).rows[0].tab==9);
+    S::g_apply=true;widgetReady=false;session.sent.clear();
+    for(int n=0;n<8;++n)Tick();assert(S::g_apply&&!S::g_operatorFailures&&session.sent.empty());
+    widgetReady=true;Tick();Tick();assert(S::g_apply);
+    local=false;Tick();assert(S::g_apply&&!S::g_operatorFailures);
+    local=true;Tick();Tick();assert(S::g_apply);
+    Deliver(pipe,Message(true,51,State(3),31,1),0);Tick();
+    assert(S::g_apply&&S::g_operatorFailures==1);
+    session.sent.clear();onRead=[] { ++world; };Tick();assert(session.sent.empty());
+    Tick();assert(!S::g_apply&&S::g_target.empty());S::OnDisconnect();
+    puts("PASS shared-screen operator fallback: readable UI only, bounded retries, observer/loading retention, lease reset and readiness-read world retirement");
     puts("PASS shared screen lease/holder trust, stale snapshots, final-exit retry, new-operator seed, partial sends, join, teardown, native reentry and world travel");
 }

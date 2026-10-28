@@ -1,3 +1,163 @@
+# Release 0.9.2163 qualified offline (28 October 2026)
+
+Owner requests a 2163 release build. Cleanup preview and execution completed
+before the public-version bump: 735 targets / 1120 generated files / 817.8 MiB,
+preserving the 2162 archive, active DLL/build, dependencies and unique evidence.
+The existing cleanup-inventory.json contains retained hashes and exact targets.
+Protocol remains 2217; the public package/menu label moves to 0.9.2163.
+PASS package/build_current.ps1, without result reuse: 124/124 current validation
+groups, fresh Release/ABI checks, unchanged production/release inputs, production
+menu/browser formatter showing Watchers of the Void 0.9.2163, and a 32-member
+manager archive with matching manifest, loader marker, branding/models and DLL.
+Rejection controls refuse failed/incomplete/focused suites, stale UI labels and
+mismatched DLL bytes; the finished archive/report are restored and reverified.
+
+Archive: dist/ElvardFIC-WatchersOfTheVoid-0.9.2163.zip.
+DLL SHA-256: 5d1e5de9db22a3a3bcc3f82d3c3854a8bfdebe768ee96f827a5204f6c3078a8e.
+Checksums: dist/SHA256SUMS-current.txt.
+Qualification: build/qualification-current/verification.json (FullRegression=true).
+Archive evidence: build/package-current/verification.json.
+TwoPlayerGameplayVerified=false; archiveStartupVerified=false. This is the last
+qualified offline package; no installation, publication, commit or push occurred.
+
+# Fork adaptations (28 October 2026)
+
+Public inventory refreshed: 3 direct forks, 44 returned upstream forks, 46
+other repositories after deduplication and 45 reachable default heads. Evidence
+and pinned hashes are in build/fork-review-20261028. Native evidence confirms
+generator_C exports all eight watched verbs; arirSlapper_C inherits
+npc_arirFollower_C and slapperSummoner_C calls the deferred actor spawn with
+that exact output class. The latter has a source-specific output filter.
+
+PASS run_fork_review: actual power-grid registration/live/settled calls reject
+any wrong class owner; host local/remote-body contacts use bounded/deduplicated
+prop coasting and retain static/frozen/held/hand/dead/world/serial/role guards.
+Laptop and shared-screen production controllers release a persistently refused
+inheritance only after three readable-UI failures for the same lease. Loading
+widgets and observers retain the seed, lease changes reset the counter, and
+readiness-read callbacks retiring the world cannot publish old state. Existing
+chunks, holder/sender checks, failed sends, final-release, reentry, teardown and
+native wrapper checks also pass. Native entity routing evidence passes.
+
+PASS check_current with run_fork_review, run_entity_sync,
+entity_sync_native_test, run_balance, run_game_modes, run_profile_join,
+run_wisp_animation and reliablekind_gate: 8/8 groups, fresh Release and stable
+production inputs. Evidence:
+build/fork-review-20261028/qualification/verification.json. DLL SHA-256:
+fa11814754e34dd72615352f443bf97c36a778094622812103eb06b20a259e78.
+FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false.
+All six public direct-fork branches were resolved; their additional heads add
+no commits beyond the already reviewed default heads/local history.
+
+The historical full run_2126 runner also ran its normal power/native checks,
+but its generated mutation harness first missed the existing tests include
+directory; a temporary include-path retry exposed a separate obsolete
+ServicePanel ack-capacity fixture. Those unrelated mutation cases are not
+reported as passing. run_fork_review directly executes the current power
+fixture plus the affected current suites; no production guard or assertion
+was weakened to make it pass.
+
+- [ ] Two-peer transformer repair, switches and door remain host-authoritative.
+- [ ] Host/player puppet body collisions move one shared prop, including late
+  observers; no double stream when the item is held or handed off.
+- [ ] Opening the ariral chest produces one visible follower on every peer.
+  Its attacks, carried/stolen item and audio/effects remain separate backlog.
+- [ ] Hand over the laptop with different-length dynamic lists/carts, repeated
+  refused inherited applies and slow-loading widgets; verify input, exit and
+  world/disconnect recovery on both peers.
+
+# Requested third-party mod compatibility (28 October 2026)
+
+Static audit completed for eleven downloaded, SHA-256-recorded Thunderstore
+archives. Exact versions and findings are in WORK. Local read-only inspection
+found only the base game PAK at the installed Paks root; no r2modmanPlus-local
+profile was found at the checked standard AppData path. This does not exclude
+a portable manager/profile elsewhere. No two-player run or install was made.
+Owner then confirmed the requested mods are not installed. The archive findings
+are a pre-install audit; no active duplicate Multivoid installation is alleged.
+PASS audit_requested_mods.py --offline: all eleven archive manifests match
+their resolved/pinned package names and versions; reports retain
+runtime_verified=false and reproduce the three concrete dependency/AV/network
+findings. Empty findings on another package means no automated finding, not
+a compatibility verdict.
+
+Confirmed blockers: EmoteWheel 1.0.1 has empty net.broadcast/net.poll functions;
+VEmu 1.1.0 explicitly excludes SmartTV AV output. Female Skin's original
+Multivoid dependency needs profile resolution inspection. Fusion's older target
+description is a compatibility risk to check, not proof of a failure on 0.9.0n.
+Extracted Jeep_C parent is ATV_C; female mesh export/native skeleton and texture
+paths match the existing loader. Other cooked assets using unsupported
+compression were not silently treated as decoded/verified.
+
+The requested mod set remains UNQUALIFIED. Required acceptance on matching
+host/client profiles (including a late join and reconnect for each):
+
+- [ ] EmoteWheel 1.0.1: see/hear another player's selected variant/start/loop/stop;
+  interrupt on movement/death/ragdoll/body replacement and retain held items.
+- [ ] Fusion 0.8108.3: verify one current merged table output on both peers,
+  all six dependants' rows/classes, no stale patch, and launch paths with spaces.
+- [ ] VEmu 1.1.0: share physical props/attachments, cartridge changes and control
+  ownership, then establish intended emulator frame/audio/state behavior.
+- [ ] Female Skin 1.0.0: verify one active multiplayer DLL, lowpoly_girl on both
+  peers, reconnect, material/animation/ragdoll and stock fallback if asset absent.
+- [ ] JeepMod 0.11.1: drive/seat handoff, keys/trunk, same container contents,
+  upgrades/decals/fuel/damage and save/rejoin without duplicate vehicle/inventory.
+- [ ] FireTower 1.0.4: same tower/door placement and collision, remote open/close,
+  late join, save/load and no duplicate ModActor-spawned scenery.
+- [ ] PhotographyPlus 0.10.3: daily task/bestiary/photo submission, remote camera,
+  exactly one reward, personal progress, and save/rejoin without repeated rewards.
+- [ ] unreal_shimloader 1.1.7: managed VFS and manual loader lanes separately;
+  no duplicate multiplayer DLL, all expected PAKs and native modules loaded.
+- [ ] SmartTV 0.9.6: remote toggle/source/mode/play/pause/seek/late join; personal
+  devices/OBS remain local. VEmu AV requires an upstream or explicit adapter.
+- [ ] BuyableJetpacks 1.0.0: store row, single delivery, equip/fuel/flight/drop,
+  remote view and save/rejoin with the same remaining resource.
+- [ ] BuyableShovels 1.0.0: store row, single delivery, equip/dig/hit/drop,
+  shared outcomes and save/rejoin without duplicate effects.
+
+# Entity continuation: wisp lifetime (28 October 2026)
+
+PASS run_wisp_animation -FaultControls against actual controller/wrapper bodies:
+pending tears retain observed victim/wisp identities through metadata waits;
+replacement/recycling/death/world change and peer departure cancel old work.
+Mesh-tick refusal retries before montage playback. Queue reservation prevents
+native callback recursion and preserves newer requests after teardown.
+
+Native grab/release fixtures stop movement, attachment, visibility, detachment
+and flag writes when their lease retires; refused movement parameters cannot
+attach the pawn. In-progress capture cleanup, older-to-newer capture replacement,
+source-wisp disappearance/recycling, 100 ms backoff and full expiry retirement
+pass. Final release-time death/world changes and a newer grab inside the last
+vitals read cannot admit the consumed kill. Four deliberate guard removals
+fail at their intended assertions. All four production wisp units compile.
+
+PASS check_current: run_wisp_animation, run_entity_sync, entity_sync_native_test,
+player_reports_native_test, run_game_modes, run_profile_join and reliablekind_gate;
+fresh Release and source-stability checks pass. Evidence:
+build/entity-lifetime-20261028/verification.json. FullRegression=false;
+TwoPlayerGameplayVerified=false, Packaged=false. Existing Grayboar/Kavotia,
+spawn-source/orientation, mode/icon and profile contracts remain passing.
+Requalified after EN9-EN12 host/spatial/relay changes: the same seven groups
+and fresh Release pass with stable production sources; DLL SHA-256
+1e4cce4e2ad08aaf35a90a394a7622a12b7e6610e3fa0b8cedd11ed1d0d30d13.
+These checks do not load or qualify the eleven third-party mods.
+
+- [ ] Verify capture/tear/kill and early source destruction with two real peers.
+- [ ] Verify disconnect, dead/replaced body, respawn, world change and mesh/
+  AnimInstance readiness during the grab window; check movement/camera recovery.
+- [ ] Verify that the host's committed kill remains the existing fallback when
+  a client cannot materialize its wisp mirror.
+
+Host production drain/relay fixtures additionally cover original source/victim
+serials, world retirement, finite spatial queries, admitted send/ready-owner
+requirements, peer generation changes, reentrant successor work and committed
+send-time deadlines. Host callbacks cannot destroy a newly recycled source or
+extend the deadline while a local tear waits for playback.
+
+Only EN1-EN12 in WORK are implemented here. The remaining Entity categories and
+exact unknown mappings are still implementation backlog; these offline tests
+do not establish their behavior or rendered multiplayer parity.
+
 # Tutorial join correction (28 October 2026)
 
 Owner follow-up: white circles affect all inventory item icons; the joining

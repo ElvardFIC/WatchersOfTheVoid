@@ -1,4 +1,7 @@
-﻿#include "../../src/votv-coop/src/coop/creatures/wisp_grab_hold.cpp"
+#ifndef WISP_HOLD_SOURCE
+#define WISP_HOLD_SOURCE "../../src/votv-coop/src/coop/creatures/wisp_grab_hold.cpp"
+#endif
+#include WISP_HOLD_SOURCE
 #include <cassert>
 #include <cstdio>
 namespace test {int player=1,successor=2,wisp=3,releases=0,serial=1,attachAction=0,attaches=0;
@@ -46,6 +49,12 @@ bool ReleaseGrabOnLocalPlayer(void* p){
  }
  return true;
 }
+bool ApplyGrabToLocalPlayerWhile(void* wisp,void* player,const std::function<bool()>& current){
+ if(!current())return false;const bool ok=ApplyGrabToLocalPlayer(wisp,player);return ok&&current();
+}
+bool ReleaseGrabOnLocalPlayerWhile(void* player,const std::function<bool()>& current){
+ if(!current())return false;return ReleaseGrabOnLocalPlayer(player);
+}
 }
 namespace ue_wrap::engine {bool SetActorLocation(void* p,const FVector& location){
  assert(p==&test::player&&location.X==1&&location.Y==2&&location.Z==3);++test::moves;
@@ -69,23 +78,28 @@ int main(){namespace H=coop::wisp_grab_hold;using namespace test;
  H::ReleaseSelf();assert(releases==4); // Cleanup targets original pawn, never successor.
  players.local=&player;H::EngageSelf(100,3500);++serial;
  H::ReleaseSelf();assert(releases==4); // Recycled original slot is rejected.
- attachAction=1;H::EngageSelf(100,3500);assert(!H::g_selfAttached&&!H::g_selfWispEid);
+ int beforeRelease=releases;
+ attachAction=1;H::EngageSelf(100,3500);assert(!H::g_selfAttached&&!H::g_selfWispEid&&releases==beforeRelease+1);
+ beforeRelease=releases;
  attachAction=2;H::EngageSelf(100,3500);assert(H::g_selfAttached&&H::g_selfWispEid==100);
- H::ReleaseSelf();assert(releases==5);
+ assert(releases==beforeRelease+1);H::ReleaseSelf();assert(releases==beforeRelease+2);
+ beforeRelease=releases;
  attachAction=5;H::EngageSelf(100,3500);assert(!H::g_selfAttached&&H::g_selfWispEid==100);
- H::ReleaseSelf();assert(releases==5);registry.ready=true;
- attachAction=3;H::EngageSelf(100,3500);assert(!H::g_selfAttached);H::ReleaseSelf();assert(releases==5);
+ H::ReleaseSelf();assert(releases==beforeRelease+1);registry.ready=true;
+ beforeRelease=releases;
+ attachAction=3;H::EngageSelf(100,3500);assert(!H::g_selfAttached);H::ReleaseSelf();assert(releases==beforeRelease+1);
  players.local=&player;attachAction=4;H::EngageSelf(100,3500);assert(!H::g_selfAttached);H::ReleaseSelf();
  // The Tick retry path must observe the same attachment cancellation rules.
- registry.ready=false;H::EngageSelf(100,3500);registry.ready=true;attachAction=1;H::Tick();
- assert(!H::g_selfAttached&&!H::g_selfWispEid&&releases==5);
+ beforeRelease=releases;
+ registry.ready=false;H::EngageSelf(100,3500);registry.ready=true;attachAction=1;H::g_selfNextTry=0;H::Tick();
+ assert(!H::g_selfAttached&&!H::g_selfWispEid&&releases==beforeRelease+1);
  registry.ready=false;H::EngageSelf(100,3500);const int previous=attaches;
  players.local=&successor;registry.ready=true;H::Tick();assert(attaches==previous&&!H::g_selfAttached);
  H::ReleaseSelf();players.local=&player;
  registry.ready=false;H::EngageSelf(100,3500);++serial;registry.ready=true;
  H::Tick();assert(attaches==previous&&!H::g_selfAttached);H::ReleaseSelf();
- registry.ready=false;H::EngageSelf(100,3500);registry.ready=true;H::Tick();
- assert(attaches==previous+1&&H::g_selfAttached);H::ReleaseSelf();assert(releases==6);
+ registry.ready=false;H::EngageSelf(100,3500);registry.ready=true;H::g_selfNextTry=0;H::Tick();
+ assert(attaches==previous+1&&H::g_selfAttached);beforeRelease=releases;H::ReleaseSelf();assert(releases==beforeRelease+1);
  puts("PASS actual wisp hold: original victim cleanup, recycled-slot rejection, reentrant release/attach and retry cancellation");
  coop::RemotePlayer puppet;puppet.actor=&player;players.puppets[2]=&puppet;players.puppets[3]=&puppet;
  H::EngagePuppet(100,4);H::EngagePuppet(100,255);assert(H::g_holds.empty());
@@ -106,4 +120,24 @@ int main(){namespace H=coop::wisp_grab_hold;using namespace test;
  players.local=&player;H::EngageSelf(100,3500);dead=true;H::Tick();assert(!H::g_selfWispEid&&releases==beforeCancel+2);dead=false;
  H::EngageSelf(100,3500);++world;H::Tick();assert(!H::g_selfWispEid&&releases==beforeCancel+2);
  puts("PASS self hold cancels on pre-deadline pawn replacement/death/world change without touching a retired world's actor");
+ players.puppets[2]=&puppet;puppet.actor=&player;const auto beforeMoves=moves;
+ H::EngagePuppet(100,2);puppet.actor=&successor;H::EngagePuppet(100,2);H::Tick();
+ assert(moves==beforeMoves&&H::g_holds.empty());puppet.actor=&player;
+ H::EngagePuppet(100,2);puppet.health=0;H::Tick();
+ assert(moves==beforeMoves&&H::g_holds.empty());puppet.health=1;
+ H::EngagePuppet(100,2);++world;H::Tick();assert(moves==beforeMoves&&H::g_holds.empty());
+ H::EngagePuppet(100,2);++wispSerial;H::Tick();assert(moves==beforeMoves&&H::g_holds.empty());
+ H::EngagePuppet(100,2);++serial;H::Tick();assert(moves==beforeMoves&&H::g_holds.empty());
+ puts("PASS puppet hold binds original victim/wisp/world and retires on death, replacement or recycling without retargeting a repeated attack");
+ beforeRelease=releases;H::EngageSelf(100,3500);registry.ready=false;H::Tick();
+ assert(!H::g_selfWispEid&&releases==beforeRelease+1);registry.ready=true;
+ H::EngageSelf(100,3500);++wispSerial;registry.ready=false;H::Tick();registry.ready=true;
+ assert(!H::g_selfWispEid&&releases==beforeRelease+2);
+ puts("PASS self ride releases on source-wisp disappearance/recycling instead of freezing the victim until the independent kill deadline");
+ registry.ready=false;H::EngageSelf(100,3500);registry.ready=true;
+ const auto beforeRetry=attaches;H::Tick();H::Tick();assert(attaches==beforeRetry);
+ H::g_selfNextTry=0;H::Tick();assert(attaches==beforeRetry+1);H::ReleaseSelf();
+ registry.ready=false;H::EngageSelf(100,3500);H::g_selfRetryUntil=0;H::Tick();registry.ready=true;
+ assert(!H::g_selfWispEid&&!H::g_selfSource.Raw()&&!H::g_selfVictim.Raw()&&!H::g_selfNextTry);
+ puts("PASS self attachment retry is backoff-bound and expiry consumes the complete capture lease");
 }

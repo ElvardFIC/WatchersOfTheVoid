@@ -2281,23 +2281,23 @@
     "status":  "deleted",
     "owner_confirmed":  true,
     "latestRun":  {
-                      "dateUtc":  "2026-10-27T17:25:40.5527521Z",
-                      "retainedPackage":  "0.9.2161",
-                      "archive":  "src/dist/ElvardFIC-WatchersOfTheVoid-0.9.2161.zip",
-                      "archiveSHA256":  "DA7D8B13346765D0270936587D5D1A9FEF5EE92D9FCE4CCED9BB610B6BCA7DFA",
-                      "dllSHA256":  "67F3E3C4D5A22A23B628AEBCC277C7B9D005AD66FBBC35306A0F2B88773FB9A4",
-                      "files":  1548,
-                      "bytes":  986592565,
+                      "dateUtc":  "2026-10-28T19:39:31.1791301Z",
+                      "retainedPackage":  "0.9.2162",
+                      "archive":  "src/dist/ElvardFIC-WatchersOfTheVoid-0.9.2162.zip",
+                      "archiveSHA256":  "D9E9FC91448B71A6F1A40A6FFDB0F4536C0B33D594D68D508D52AA0949C569E4",
+                      "dllSHA256":  "FA11814754E34DD72615352F443BF97C36A778094622812103EB06B20A259E78",
+                      "files":  1120,
+                      "bytes":  857514683,
                       "targets":  [
                                       {
                                           "path":  "_research/__pycache__",
-                                          "files":  3,
-                                          "bytes":  37033
+                                          "files":  4,
+                                          "bytes":  43837
                                       },
                                       {
                                           "path":  "src/_research",
-                                          "files":  594,
-                                          "bytes":  291829041
+                                          "files":  351,
+                                          "bytes":  219366134
                                       },
                                       {
                                           "path":  "src/agent/tests/__pycache__",
@@ -2390,46 +2390,6 @@
                                           "bytes":  245482
                                       },
                                       {
-                                          "path":  "src/build/atv-spawn-lifetime-check/begin-type.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/begin-type.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425385
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/class-key.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/class-key.exe.obj",
-                                          "files":  1,
-                                          "bytes":  424175
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/cleanup.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/cleanup.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425586
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/finish.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/finish.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425532
-                                      },
-                                      {
                                           "path":  "src/build/atv-spawn-lifetime-check/placement.exe",
                                           "files":  1,
                                           "bytes":  202240
@@ -2440,36 +2400,6 @@
                                           "bytes":  419974
                                       },
                                       {
-                                          "path":  "src/build/atv-spawn-lifetime-check/placement-fail.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/placement-fail.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425584
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/pose.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/pose.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425650
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/services.exe",
-                                          "files":  1,
-                                          "bytes":  237568
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/services.exe.obj",
-                                          "files":  1,
-                                          "bytes":  427559
-                                      },
-                                      {
                                           "path":  "src/build/atv-spawn-lifetime-check/spawn.exe",
                                           "files":  1,
                                           "bytes":  236544
@@ -2478,26 +2408,6 @@
                                           "path":  "src/build/atv-spawn-lifetime-check/spawn.exe.obj",
                                           "files":  1,
                                           "bytes":  425682
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/teleport.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/teleport.exe.obj",
-                                          "files":  1,
-                                          "bytes":  425652
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/world.exe",
-                                          "files":  1,
-                                          "bytes":  236544
-                                      },
-                                      {
-                                          "path":  "src/build/atv-spawn-lifetime-check/world.exe.obj",
-                                          "files":  1,
-                                          "bytes":  424332
                                       },
                                       {
                                           "path":  "src/build/atv-steering-check/steering.exe",
@@ -2530,26 +2440,6 @@
                                           "bytes":  998271
                                       },
                                       {
-                                          "path":  "src/build/chair-sync-check/authority.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/authority.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521856
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/axes.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/axes.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521803
-                                      },
-                                      {
                                           "path":  "src/build/chair-sync-check/chair.exe",
                                           "files":  1,
                                           "bytes":  260096
@@ -2560,59 +2450,9 @@
                                           "bytes":  521880
                                       },
                                       {
-                                          "path":  "src/build/chair-sync-check/completion.exe",
-                                          "files":  1,
-                                          "bytes":  259584
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/completion.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521349
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/interpolation.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/interpolation.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521079
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/late.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/late.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521859
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/lifetime.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/lifetime.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521761
-                                      },
-                                      {
                                           "path":  "src/build/chair-sync-check/net_pump.obj",
                                           "files":  1,
                                           "bytes":  101243
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/off.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/off.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521850
                                       },
                                       {
                                           "path":  "src/build/chair-sync-check/remote_player.obj",
@@ -2620,39 +2460,9 @@
                                           "bytes":  144971
                                       },
                                       {
-                                          "path":  "src/build/chair-sync-check/sample.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/sample.exe.obj",
-                                          "files":  1,
-                                          "bytes":  520870
-                                      },
-                                      {
                                           "path":  "src/build/chair-sync-check/sit_pose.obj",
                                           "files":  1,
                                           "bytes":  148925
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/small.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/small.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521982
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/transitions.exe",
-                                          "files":  1,
-                                          "bytes":  260096
-                                      },
-                                      {
-                                          "path":  "src/build/chair-sync-check/transitions.exe.obj",
-                                          "files":  1,
-                                          "bytes":  521864
                                       },
                                       {
                                           "path":  "src/build/console-event-check/console.exe",
@@ -2663,26 +2473,6 @@
                                           "path":  "src/build/console-event-check/console.obj",
                                           "files":  1,
                                           "bytes":  2016969
-                                      },
-                                      {
-                                          "path":  "src/build/console-event-check/coop_dispatch_event_dispatch_world.obj",
-                                          "files":  1,
-                                          "bytes":  154648
-                                      },
-                                      {
-                                          "path":  "src/build/console-event-check/coop_interactables_sat_console_sync.obj",
-                                          "files":  1,
-                                          "bytes":  910980
-                                      },
-                                      {
-                                          "path":  "src/build/console-event-check/coop_session_subsystems.obj",
-                                          "files":  1,
-                                          "bytes":  166290
-                                      },
-                                      {
-                                          "path":  "src/build/console-event-check/coop_world_madness_sync.obj",
-                                          "files":  1,
-                                          "bytes":  60997
                                       },
                                       {
                                           "path":  "src/build/console-event-check/madness.exe",
@@ -2705,16 +2495,6 @@
                                           "bytes":  1051738
                                       },
                                       {
-                                          "path":  "src/build/console-event-check/ue_wrap_desk_sat_console.obj",
-                                          "files":  1,
-                                          "bytes":  167342
-                                      },
-                                      {
-                                          "path":  "src/build/console-event-check/ue_wrap_world_madness.obj",
-                                          "files":  1,
-                                          "bytes":  169020
-                                      },
-                                      {
                                           "path":  "src/build/container-apply-check/container_contents_sync.obj",
                                           "files":  1,
                                           "bytes":  1486467
@@ -2732,7 +2512,7 @@
                                       {
                                           "path":  "src/build/container-apply-check/test.obj",
                                           "files":  1,
-                                          "bytes":  4251714
+                                          "bytes":  4251837
                                       },
                                       {
                                           "path":  "src/build/container-birth-check/birth.exe",
@@ -2802,7 +2582,7 @@
                                       {
                                           "path":  "src/build/container-recovery-check/ue_wrap_actors_save_record.obj",
                                           "files":  1,
-                                          "bytes":  1600094
+                                          "bytes":  1600214
                                       },
                                       {
                                           "path":  "src/build/container-recovery-check/wrapper.exe",
@@ -2812,7 +2592,7 @@
                                       {
                                           "path":  "src/build/container-recovery-check/wrapper.obj",
                                           "files":  1,
-                                          "bytes":  3179553
+                                          "bytes":  3179676
                                       },
                                       {
                                           "path":  "src/build/cooking-check/cooking_food.exe",
@@ -2822,7 +2602,7 @@
                                       {
                                           "path":  "src/build/cooking-check/cooking_food.obj",
                                           "files":  1,
-                                          "bytes":  1913218
+                                          "bytes":  1913907
                                       },
                                       {
                                           "path":  "src/build/cooking-check/food_delivery.exe",
@@ -2972,7 +2752,7 @@
                                       {
                                           "path":  "src/build/entity-sync-check/coop_creatures_npc_pose_drive.obj",
                                           "files":  1,
-                                          "bytes":  21802
+                                          "bytes":  21803
                                       },
                                       {
                                           "path":  "src/build/entity-sync-check/coop_creatures_npc_pose_host.obj",
@@ -2982,7 +2762,7 @@
                                       {
                                           "path":  "src/build/entity-sync-check/coop_creatures_npc_world_enum.obj",
                                           "files":  1,
-                                          "bytes":  447774
+                                          "bytes":  448365
                                       },
                                       {
                                           "path":  "src/build/entity-sync-check/coop_dispatch_event_dispatch_world.obj",
@@ -3007,7 +2787,7 @@
                                       {
                                           "path":  "src/build/entity-sync-check/coop_session_subsystems.obj",
                                           "files":  1,
-                                          "bytes":  166637
+                                          "bytes":  166723
                                       },
                                       {
                                           "path":  "src/build/entity-sync-check/coop_world_spawn_authority.obj",
@@ -3062,7 +2842,7 @@
                                       {
                                           "path":  "src/build/entity-sync-check/npc_orientation.obj",
                                           "files":  1,
-                                          "bytes":  41510
+                                          "bytes":  41511
                                       },
                                       {
                                           "path":  "src/build/entity-sync-check/prop_drive.exe",
@@ -3073,6 +2853,111 @@
                                           "path":  "src/build/entity-sync-check/prop_drive.obj",
                                           "files":  1,
                                           "bytes":  1401850
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/claim.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/claim.obj",
+                                          "files":  1,
+                                          "bytes":  1681332
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/floppy_slot_sync.obj",
+                                          "files":  1,
+                                          "bytes":  1381360
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/presentation.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/presentation.obj",
+                                          "files":  1,
+                                          "bytes":  1681373
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/reentry.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/reentry.obj",
+                                          "files":  1,
+                                          "bytes":  1681321
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/retry.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/retry.obj",
+                                          "files":  1,
+                                          "bytes":  1681327
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/revision.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/revision.obj",
+                                          "files":  1,
+                                          "bytes":  1681334
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/sequence.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/sequence.obj",
+                                          "files":  1,
+                                          "bytes":  1681357
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/test.exe",
+                                          "files":  1,
+                                          "bytes":  283648
+                                      },
+                                      {
+                                          "path":  "src/build/event-slot-check/test.obj",
+                                          "files":  1,
+                                          "bytes":  1681427
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_active_sync.obj",
+                                          "files":  1,
+                                          "bytes":  375230
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_cue_sync.obj",
+                                          "files":  1,
+                                          "bytes":  222302
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_fire_delivery.obj",
+                                          "files":  1,
+                                          "bytes":  103406
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_fire_policy.obj",
+                                          "files":  1,
+                                          "bytes":  20151
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_fire_sync.obj",
+                                          "files":  1,
+                                          "bytes":  740357
+                                      },
+                                      {
+                                          "path":  "src/build/event-sync-check/coop_world_event_rate.obj",
+                                          "files":  1,
+                                          "bytes":  296158
                                       },
                                       {
                                           "path":  "src/build/event-sync-check/event_active_lifetime.exe",
@@ -3097,12 +2982,12 @@
                                       {
                                           "path":  "src/build/event-sync-check/event_rate.exe",
                                           "files":  1,
-                                          "bytes":  256512
+                                          "bytes":  261632
                                       },
                                       {
                                           "path":  "src/build/event-sync-check/event_rate.obj",
                                           "files":  1,
-                                          "bytes":  1030094
+                                          "bytes":  1051046
                                       },
                                       {
                                           "path":  "src/build/event-sync-check/event_sync.exe",
@@ -3135,116 +3020,6 @@
                                           "bytes":  863452
                                       },
                                       {
-                                          "path":  "src/build/flashlight-click-check/coop_player_flashlight_click_sound.obj",
-                                          "files":  1,
-                                          "bytes":  21026
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/coop_player_item_activate.obj",
-                                          "files":  1,
-                                          "bytes":  135731
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_attenuation.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_attenuation.obj",
-                                          "files":  1,
-                                          "bytes":  320364
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_lifetime.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_lifetime.obj",
-                                          "files":  1,
-                                          "bytes":  320140
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_no-fallback.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_no-fallback.obj",
-                                          "files":  1,
-                                          "bytes":  320143
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_position.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_position.obj",
-                                          "files":  1,
-                                          "bytes":  320186
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_puppet.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_puppet.obj",
-                                          "files":  1,
-                                          "bytes":  319375
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_readiness.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_readiness.obj",
-                                          "files":  1,
-                                          "bytes":  320223
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_reentry.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_reentry.obj",
-                                          "files":  1,
-                                          "bytes":  320056
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_scope.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_scope.obj",
-                                          "files":  1,
-                                          "bytes":  319471
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_slot.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_slot.obj",
-                                          "files":  1,
-                                          "bytes":  320191
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_sound.exe",
-                                          "files":  1,
-                                          "bytes":  198656
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-click-check/fault_sound.obj",
-                                          "files":  1,
-                                          "bytes":  320360
-                                      },
-                                      {
                                           "path":  "src/build/flashlight-click-check/flashlight_click.exe",
                                           "files":  1,
                                           "bytes":  198656
@@ -3255,119 +3030,19 @@
                                           "bytes":  320212
                                       },
                                       {
-                                          "path":  "src/build/flashlight-join-check/admission.exe",
-                                          "files":  1,
-                                          "bytes":  230912
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/admission.exe.obj",
-                                          "files":  1,
-                                          "bytes":  798806
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/author.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/author.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800114
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/budget.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/budget.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800151
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/completion.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/completion.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800088
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/fresh.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/fresh.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800175
-                                      },
-                                      {
                                           "path":  "src/build/flashlight-join-check/item_activate.obj",
                                           "files":  1,
-                                          "bytes":  146577
+                                          "bytes":  149342
                                       },
                                       {
                                           "path":  "src/build/flashlight-join-check/join.exe",
                                           "files":  1,
-                                          "bytes":  233984
+                                          "bytes":  236032
                                       },
                                       {
                                           "path":  "src/build/flashlight-join-check/join.exe.obj",
                                           "files":  1,
-                                          "bytes":  805022
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/local-retry.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/local-retry.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800162
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/off.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/off.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800188
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/packet.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/packet.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800216
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/recipient.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/recipient.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800128
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/relay-retry.exe",
-                                          "files":  1,
-                                          "bytes":  231424
-                                      },
-                                      {
-                                          "path":  "src/build/flashlight-join-check/relay-retry.exe.obj",
-                                          "files":  1,
-                                          "bytes":  800162
+                                          "bytes":  842567
                                       },
                                       {
                                           "path":  "src/build/flashlight-native-check/flashlight_dispatch.exe",
@@ -3402,62 +3077,62 @@
                                       {
                                           "path":  "src/build/flashlight-state-check/actor.exe",
                                           "files":  1,
-                                          "bytes":  225280
+                                          "bytes":  233984
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/actor.obj",
                                           "files":  1,
-                                          "bytes":  588988
+                                          "bytes":  630150
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/first-setter.exe",
                                           "files":  1,
-                                          "bytes":  225792
+                                          "bytes":  234496
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/first-setter.obj",
                                           "files":  1,
-                                          "bytes":  591732
+                                          "bytes":  632870
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/payload.exe",
                                           "files":  1,
-                                          "bytes":  225792
+                                          "bytes":  234496
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/payload.obj",
                                           "files":  1,
-                                          "bytes":  591608
+                                          "bytes":  632777
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/peer.exe",
                                           "files":  1,
-                                          "bytes":  225792
+                                          "bytes":  233984
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/peer.obj",
                                           "files":  1,
-                                          "bytes":  591710
+                                          "bytes":  632872
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/send-completion.exe",
                                           "files":  1,
-                                          "bytes":  225792
+                                          "bytes":  234496
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/send-completion.obj",
                                           "files":  1,
-                                          "bytes":  591724
+                                          "bytes":  632886
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/session.exe",
                                           "files":  1,
-                                          "bytes":  225792
+                                          "bytes":  234496
                                       },
                                       {
                                           "path":  "src/build/flashlight-state-check/session.obj",
                                           "files":  1,
-                                          "bytes":  591737
+                                          "bytes":  632899
                                       },
                                       {
                                           "path":  "src/build/food-callbacks-check/callbacks.exe",
@@ -3478,6 +3153,16 @@
                                           "path":  "src/build/food-callbacks-check/coop_props_prop_spawn_authoring.obj",
                                           "files":  1,
                                           "bytes":  67131
+                                      },
+                                      {
+                                          "path":  "src/build/fork-review-check/power.exe",
+                                          "files":  1,
+                                          "bytes":  245760
+                                      },
+                                      {
+                                          "path":  "src/build/fork-review-check/power.obj",
+                                          "files":  1,
+                                          "bytes":  644062
                                       },
                                       {
                                           "path":  "src/build/game-modes-check/modes.exe",
@@ -3672,7 +3357,7 @@
                                       {
                                           "path":  "src/build/grill-hand-check/persistence.obj",
                                           "files":  1,
-                                          "bytes":  2081734
+                                          "bytes":  2082423
                                       },
                                       {
                                           "path":  "src/build/grill-hand-check/session_serial.obj",
@@ -3757,7 +3442,7 @@
                                       {
                                           "path":  "src/build/hand-toy-check/coop_player_hand_toy_audio.obj",
                                           "files":  1,
-                                          "bytes":  383745
+                                          "bytes":  404680
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/coop_props_dingus_music_sync.obj",
@@ -3787,137 +3472,147 @@
                                       {
                                           "path":  "src/build/hand-toy-check/dingus_2155.obj",
                                           "files":  1,
-                                          "bytes":  1753808
+                                          "bytes":  1753816
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_admission.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_admission.obj",
                                           "files":  1,
-                                          "bytes":  937549
+                                          "bytes":  1018407
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_budget.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_budget.obj",
                                           "files":  1,
-                                          "bytes":  937498
+                                          "bytes":  1018356
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_clock.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_clock.obj",
                                           "files":  1,
-                                          "bytes":  937463
+                                          "bytes":  1018321
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_completion.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_completion.obj",
                                           "files":  1,
-                                          "bytes":  937351
+                                          "bytes":  1018209
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_frames.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_frames.obj",
                                           "files":  1,
-                                          "bytes":  937498
+                                          "bytes":  1018356
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_frozen-hand.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_frozen-hand.obj",
                                           "files":  1,
-                                          "bytes":  937471
+                                          "bytes":  1018329
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_payload.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_payload.obj",
                                           "files":  1,
-                                          "bytes":  937507
+                                          "bytes":  1018365
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_recipient.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_recipient.obj",
                                           "files":  1,
-                                          "bytes":  937491
+                                          "bytes":  1018349
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_scope.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_scope.obj",
                                           "files":  1,
-                                          "bytes":  937445
+                                          "bytes":  1018303
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_source.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/fault_source.obj",
                                           "files":  1,
-                                          "bytes":  937487
+                                          "bytes":  1018345
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/hand_toy_2157.exe",
                                           "files":  1,
-                                          "bytes":  265216
+                                          "bytes":  275968
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/hand_toy_2157.obj",
                                           "files":  1,
-                                          "bytes":  892051
+                                          "bytes":  971268
+                                      },
+                                      {
+                                          "path":  "src/build/hand-toy-check/hand_toy_budget.exe",
+                                          "files":  1,
+                                          "bytes":  267264
+                                      },
+                                      {
+                                          "path":  "src/build/hand-toy-check/hand_toy_budget.obj",
+                                          "files":  1,
+                                          "bytes":  838905
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/hand_toy_lifetime.exe",
                                           "files":  1,
-                                          "bytes":  286720
+                                          "bytes":  296960
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/hand_toy_lifetime.obj",
                                           "files":  1,
-                                          "bytes":  937502
+                                          "bytes":  1018368
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/prop_knock_2157.exe",
                                           "files":  1,
-                                          "bytes":  197632
+                                          "bytes":  199680
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/prop_knock_2157.obj",
                                           "files":  1,
-                                          "bytes":  271146
+                                          "bytes":  276380
                                       },
                                       {
                                           "path":  "src/build/hand-toy-check/ue_wrap_actors_dingus_music.obj",
@@ -3970,19 +3665,39 @@
                                           "bytes":  343040
                                       },
                                       {
-                                          "path":  "src/build/insomnia-check/npc_world_enum.obj",
-                                          "files":  1,
-                                          "bytes":  447754
-                                      },
-                                      {
-                                          "path":  "src/build/insomnia-check/spawn_authority.obj",
-                                          "files":  1,
-                                          "bytes":  43951
-                                      },
-                                      {
                                           "path":  "src/build/inventory-apply-check/container_inventory.obj",
                                           "files":  1,
                                           "bytes":  706941
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/corrupt-personal/test.exe",
+                                          "files":  1,
+                                          "bytes":  436736
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/corrupt-personal/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055075
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/corrupt-target/test.exe",
+                                          "files":  1,
+                                          "bytes":  436736
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/corrupt-target/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055037
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/foreign-slot/test.exe",
+                                          "files":  1,
+                                          "bytes":  436736
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/foreign-slot/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055019
                                       },
                                       {
                                           "path":  "src/build/inventory-apply-check/inventory.obj",
@@ -3990,19 +3705,79 @@
                                           "bytes":  915996
                                       },
                                       {
+                                          "path":  "src/build/inventory-apply-check/partial-profile/test.exe",
+                                          "files":  1,
+                                          "bytes":  436736
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/partial-profile/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055065
+                                      },
+                                      {
                                           "path":  "src/build/inventory-apply-check/save_record.obj",
                                           "files":  1,
-                                          "bytes":  1600074
+                                          "bytes":  1600194
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-derived-state/test.exe",
+                                          "files":  1,
+                                          "bytes":  436224
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-derived-state/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055007
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-layout/test.exe",
+                                          "files":  1,
+                                          "bytes":  436224
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-layout/test.obj",
+                                          "files":  1,
+                                          "bytes":  3054941
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-target/test.exe",
+                                          "files":  1,
+                                          "bytes":  436224
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/stale-target/test.obj",
+                                          "files":  1,
+                                          "bytes":  3054779
                                       },
                                       {
                                           "path":  "src/build/inventory-apply-check/test.exe",
                                           "files":  1,
-                                          "bytes":  434688
+                                          "bytes":  436736
                                       },
                                       {
                                           "path":  "src/build/inventory-apply-check/test.obj",
                                           "files":  1,
-                                          "bytes":  3039922
+                                          "bytes":  3055017
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/unchecked-hand/test.exe",
+                                          "files":  1,
+                                          "bytes":  436224
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/unchecked-hand/test.obj",
+                                          "files":  1,
+                                          "bytes":  3054901
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/unchecked-record/test.exe",
+                                          "files":  1,
+                                          "bytes":  436736
+                                      },
+                                      {
+                                          "path":  "src/build/inventory-apply-check/unchecked-record/test.obj",
+                                          "files":  1,
+                                          "bytes":  3055035
                                       },
                                       {
                                           "path":  "src/build/item-batch-check/held_record_capture.exe",
@@ -4043,6 +3818,16 @@
                                           "path":  "src/build/item-batch-check/prop_scale_sync.obj",
                                           "files":  1,
                                           "bytes":  534203
+                                      },
+                                      {
+                                          "path":  "src/build/item-icons-check/test.exe",
+                                          "files":  1,
+                                          "bytes":  332800
+                                      },
+                                      {
+                                          "path":  "src/build/item-icons-check/test.obj",
+                                          "files":  1,
+                                          "bytes":  695866
                                       },
                                       {
                                           "path":  "src/build/item-record-check/controller.exe",
@@ -4087,12 +3872,12 @@
                                       {
                                           "path":  "src/build/laptop-ui-check/laptop_ui_sync.exe",
                                           "files":  1,
-                                          "bytes":  234496
+                                          "bytes":  238592
                                       },
                                       {
                                           "path":  "src/build/laptop-ui-check/laptop_ui_sync.obj",
                                           "files":  1,
-                                          "bytes":  1380189
+                                          "bytes":  1402997
                                       },
                                       {
                                           "path":  "src/build/laptop-ui-check/laptop_ui_wrapper.exe",
@@ -4105,79 +3890,9 @@
                                           "bytes":  879185
                                       },
                                       {
-                                          "path":  "src/build/light-presentation-check/ambient.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/ambient.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136648
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/attenuation.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/attenuation.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136831
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/binding.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/binding.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136454
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/bounds.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/bounds.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136644
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/finite.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/finite.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136605
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/lamp.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/lamp.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136644
-                                      },
-                                      {
                                           "path":  "src/build/light-presentation-check/lightswitch.obj",
                                           "files":  1,
                                           "bytes":  111469
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/metadata.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/metadata.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136598
                                       },
                                       {
                                           "path":  "src/build/light-presentation-check/native_result.exe",
@@ -4190,16 +3905,6 @@
                                           "bytes":  354856
                                       },
                                       {
-                                          "path":  "src/build/light-presentation-check/packet.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/packet.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136727
-                                      },
-                                      {
                                           "path":  "src/build/light-presentation-check/presentation.exe",
                                           "files":  1,
                                           "bytes":  262144
@@ -4210,64 +3915,14 @@
                                           "bytes":  1136679
                                       },
                                       {
-                                          "path":  "src/build/light-presentation-check/reentry.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/reentry.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136650
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/source.exe",
-                                          "files":  1,
-                                          "bytes":  262144
-                                      },
-                                      {
-                                          "path":  "src/build/light-presentation-check/source.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1136638
-                                      },
-                                      {
                                           "path":  "src/build/light-presentation-check/ufunction_hook.obj",
                                           "files":  1,
                                           "bytes":  332935
                                       },
                                       {
-                                          "path":  "src/build/lightswitch-native-check/breaker-mask.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/breaker-mask.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952942
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/group-calls.exe",
-                                          "files":  1,
-                                          "bytes":  255488
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/group-calls.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952251
-                                      },
-                                      {
                                           "path":  "src/build/lightswitch-native-check/lightswitch.obj",
                                           "files":  1,
                                           "bytes":  111469
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/links.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/links.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952948
                                       },
                                       {
                                           "path":  "src/build/lightswitch-native-check/native.exe",
@@ -4278,76 +3933,6 @@
                                           "path":  "src/build/lightswitch-native-check/native.exe.obj",
                                           "files":  1,
                                           "bytes":  952952
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-fields.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-fields.exe.obj",
-                                          "files":  1,
-                                          "bytes":  953538
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-mask.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-mask.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952942
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-reload.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/root-reload.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952978
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-fields.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-fields.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952953
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-mask.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-mask.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952942
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-reload.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/switch-reload.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952982
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/use-lifetime.exe",
-                                          "files":  1,
-                                          "bytes":  256000
-                                      },
-                                      {
-                                          "path":  "src/build/lightswitch-native-check/use-lifetime.exe.obj",
-                                          "files":  1,
-                                          "bytes":  952929
                                       },
                                       {
                                           "path":  "src/build/llama-begin-restore-check/coop_props_llama_begin_restore.obj",
@@ -4375,19 +3960,9 @@
                                           "bytes":  154879
                                       },
                                       {
-                                          "path":  "src/build/llama-check/coop_props_llama_begin_restore.obj",
-                                          "files":  1,
-                                          "bytes":  548781
-                                      },
-                                      {
                                           "path":  "src/build/llama-check/coop_props_llama_sync.obj",
                                           "files":  1,
                                           "bytes":  1036498
-                                      },
-                                      {
-                                          "path":  "src/build/llama-check/coop_props_llama_trigger.obj",
-                                          "files":  1,
-                                          "bytes":  374423
                                       },
                                       {
                                           "path":  "src/build/llama-check/coop_session_subsystems.obj",
@@ -4418,16 +3993,6 @@
                                           "path":  "src/build/llama-check/ue_wrap_actors_llama.obj",
                                           "files":  1,
                                           "bytes":  52875
-                                      },
-                                      {
-                                          "path":  "src/build/llama-check/ue_wrap_actors_llama_begin_restore.obj",
-                                          "files":  1,
-                                          "bytes":  163279
-                                      },
-                                      {
-                                          "path":  "src/build/llama-check/ue_wrap_actors_llama_trigger.obj",
-                                          "files":  1,
-                                          "bytes":  258115
                                       },
                                       {
                                           "path":  "src/build/llama-events-check/coop_props_llama_events.obj",
@@ -4662,7 +4227,7 @@
                                       {
                                           "path":  "src/build/nonentity-check/wall_drying.obj",
                                           "files":  1,
-                                          "bytes":  1949250
+                                          "bytes":  1949939
                                       },
                                       {
                                           "path":  "src/build/nonentity-check/wall_drying_wire.exe",
@@ -4687,7 +4252,7 @@
                                       {
                                           "path":  "src/build/package-current/stage",
                                           "files":  32,
-                                          "bytes":  32080450
+                                          "bytes":  32115281
                                       },
                                       {
                                           "path":  "src/build/placement-check/local_birth_2182.exe",
@@ -4802,12 +4367,12 @@
                                       {
                                           "path":  "src/build/player-reports-check/wisp_spawn_race.exe",
                                           "files":  1,
-                                          "bytes":  192512
+                                          "bytes":  213504
                                       },
                                       {
                                           "path":  "src/build/player-reports-check/wisp_spawn_race.obj",
                                           "files":  1,
-                                          "bytes":  154473
+                                          "bytes":  302554
                                       },
                                       {
                                           "path":  "src/build/profile-check/blob_chunks.obj",
@@ -4855,19 +4420,89 @@
                                           "bytes":  2662549
                                       },
                                       {
+                                          "path":  "src/build/profile-join-check/borrowed-guid/test.exe",
+                                          "files":  1,
+                                          "bytes":  386560
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/borrowed-guid/test.obj",
+                                          "files":  1,
+                                          "bytes":  2909731
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/left-slot-send/test.exe",
+                                          "files":  1,
+                                          "bytes":  386560
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/left-slot-send/test.obj",
+                                          "files":  1,
+                                          "bytes":  2910579
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-profile/test.exe",
+                                          "files":  1,
+                                          "bytes":  386048
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-profile/test.obj",
+                                          "files":  1,
+                                          "bytes":  2910435
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-request/test.exe",
+                                          "files":  1,
+                                          "bytes":  385536
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-request/test.obj",
+                                          "files":  1,
+                                          "bytes":  2910548
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-world/test.exe",
+                                          "files":  1,
+                                          "bytes":  386048
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/old-world/test.obj",
+                                          "files":  1,
+                                          "bytes":  2910444
+                                      },
+                                      {
                                           "path":  "src/build/profile-join-check/player_inventory_sync.obj",
                                           "files":  1,
-                                          "bytes":  1247985
+                                          "bytes":  1248750
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/stale-sent-latch/test.exe",
+                                          "files":  1,
+                                          "bytes":  386560
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/stale-sent-latch/test.obj",
+                                          "files":  1,
+                                          "bytes":  2910528
                                       },
                                       {
                                           "path":  "src/build/profile-join-check/test.exe",
                                           "files":  1,
-                                          "bytes":  382976
+                                          "bytes":  386048
                                       },
                                       {
                                           "path":  "src/build/profile-join-check/test.obj",
                                           "files":  1,
-                                          "bytes":  2893040
+                                          "bytes":  2910608
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/unguarded-chunks/test.exe",
+                                          "files":  1,
+                                          "bytes":  386560
+                                      },
+                                      {
+                                          "path":  "src/build/profile-join-check/unguarded-chunks/test.obj",
+                                          "files":  1,
+                                          "bytes":  2905515
                                       },
                                       {
                                           "path":  "src/build/prop-action-delivery-check/coop_props_prop_action_sync.obj",
@@ -4935,11 +4570,6 @@
                                           "bytes":  919643
                                       },
                                       {
-                                          "path":  "src/build/qualification-current/item_activate-recovery.obj",
-                                          "files":  1,
-                                          "bytes":  127005
-                                      },
-                                      {
                                           "path":  "src/build/qualification-current/package_label.exe",
                                           "files":  1,
                                           "bytes":  128512
@@ -4962,7 +4592,7 @@
                                       {
                                           "path":  "src/build/ragdoll-retry-check/engine_playerragdoll.obj",
                                           "files":  1,
-                                          "bytes":  364523
+                                          "bytes":  365550
                                       },
                                       {
                                           "path":  "src/build/ragdoll-retry-check/remote_player_ragdoll.obj",
@@ -4995,24 +4625,9 @@
                                           "bytes":  408010
                                       },
                                       {
-                                          "path":  "src/build/ragdoll-stream-check/test.exe",
+                                          "path":  "src/build/requested-events-audit/serverbox_sync.obj",
                                           "files":  1,
-                                          "bytes":  203776
-                                      },
-                                      {
-                                          "path":  "src/build/ragdoll-stream-check/test.obj",
-                                          "files":  1,
-                                          "bytes":  193636
-                                      },
-                                      {
-                                          "path":  "src/build/release-2162/package_label.exe",
-                                          "files":  1,
-                                          "bytes":  128512
-                                      },
-                                      {
-                                          "path":  "src/build/release-2162/package_label.obj",
-                                          "files":  1,
-                                          "bytes":  57287
+                                          "bytes":  180097
                                       },
                                       {
                                           "path":  "src/build/requested-events-audit/serverbox_sync_test.exe",
@@ -5085,236 +4700,6 @@
                                           "bytes":  910972
                                       },
                                       {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_clear-revision.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_clear-revision.obj",
-                                          "files":  1,
-                                          "bytes":  2959098
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_consume-refusal.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_consume-refusal.obj",
-                                          "files":  1,
-                                          "bytes":  2959112
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_display-widget.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_display-widget.obj",
-                                          "files":  1,
-                                          "bytes":  2959086
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_input-ownership.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_input-ownership.obj",
-                                          "files":  1,
-                                          "bytes":  2959048
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_post-source.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_post-source.obj",
-                                          "files":  1,
-                                          "bytes":  2959061
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_replay-invocation.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_replay-invocation.obj",
-                                          "files":  1,
-                                          "bytes":  2959088
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_replay-preclaim.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_replay-preclaim.obj",
-                                          "files":  1,
-                                          "bytes":  2959055
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_unwind.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_unwind.obj",
-                                          "files":  1,
-                                          "bytes":  2958541
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_watch-identity.exe",
-                                          "files":  1,
-                                          "bytes":  412672
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/fault_watch-identity.obj",
-                                          "files":  1,
-                                          "bytes":  2959099
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/metadata-currency.exe",
-                                          "files":  1,
-                                          "bytes":  264192
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/metadata-currency.obj",
-                                          "files":  1,
-                                          "bytes":  1001226
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/metadata-retry.exe",
-                                          "files":  1,
-                                          "bytes":  265728
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/metadata-retry.obj",
-                                          "files":  1,
-                                          "bytes":  1008542
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_arguments.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_arguments.obj",
-                                          "files":  1,
-                                          "bytes":  1188615
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_atlas.exe",
-                                          "files":  1,
-                                          "bytes":  289280
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_atlas.obj",
-                                          "files":  1,
-                                          "bytes":  1188538
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_binding.exe",
-                                          "files":  1,
-                                          "bytes":  287744
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_binding.obj",
-                                          "files":  1,
-                                          "bytes":  1184010
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_box-class.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_box-class.obj",
-                                          "files":  1,
-                                          "bytes":  1188501
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_clear.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_clear.obj",
-                                          "files":  1,
-                                          "bytes":  1188621
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_command.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_command.obj",
-                                          "files":  1,
-                                          "bytes":  1188605
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_factory.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_factory.obj",
-                                          "files":  1,
-                                          "bytes":  1188543
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_init.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_init.obj",
-                                          "files":  1,
-                                          "bytes":  1188475
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_log.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_log.obj",
-                                          "files":  1,
-                                          "bytes":  1188168
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_panels.exe",
-                                          "files":  1,
-                                          "bytes":  288768
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/native_panels.obj",
-                                          "files":  1,
-                                          "bytes":  1188618
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/partial-layout.exe",
-                                          "files":  1,
-                                          "bytes":  265728
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/partial-layout.obj",
-                                          "files":  1,
-                                          "bytes":  1008508
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/string-capacity.exe",
-                                          "files":  1,
-                                          "bytes":  265728
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/mutants/string-capacity.obj",
-                                          "files":  1,
-                                          "bytes":  1008513
-                                      },
-                                      {
                                           "path":  "src/build/sat-console-callbacks-check/native_lifetime.exe",
                                           "files":  1,
                                           "bytes":  288768
@@ -5323,16 +4708,6 @@
                                           "path":  "src/build/sat-console-callbacks-check/native_lifetime.obj",
                                           "files":  1,
                                           "bytes":  1188632
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/native_production.obj",
-                                          "files":  1,
-                                          "bytes":  165292
-                                      },
-                                      {
-                                          "path":  "src/build/sat-console-callbacks-check/native_wrapper_production.obj",
-                                          "files":  1,
-                                          "bytes":  149228
                                       },
                                       {
                                           "path":  "src/build/sat-console-callbacks-check/wrapper.exe",
@@ -5362,12 +4737,117 @@
                                       {
                                           "path":  "src/build/save-record-check/codec.exe",
                                           "files":  1,
-                                          "bytes":  311296
+                                          "bytes":  311808
                                       },
                                       {
                                           "path":  "src/build/save-record-check/codec.obj",
                                           "files":  1,
-                                          "bytes":  1769485
+                                          "bytes":  1770766
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/ignores-caller.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/ignores-caller.obj",
+                                          "files":  1,
+                                          "bytes":  1770644
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/premature-convention.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/premature-convention.obj",
+                                          "files":  1,
+                                          "bytes":  1770806
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-ignores-caller.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-ignores-caller.obj",
+                                          "files":  1,
+                                          "bytes":  1770719
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-stale-capture.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-stale-capture.obj",
+                                          "files":  1,
+                                          "bytes":  1770749
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-stale-dispatch.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/raw-stale-dispatch.obj",
+                                          "files":  1,
+                                          "bytes":  1770751
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/retired-cache.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/retired-cache.obj",
+                                          "files":  1,
+                                          "bytes":  1770737
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/save_record.obj",
+                                          "files":  1,
+                                          "bytes":  1600190
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-base-capture.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-base-capture.obj",
+                                          "files":  1,
+                                          "bytes":  1770754
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-capture-result.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-capture-result.obj",
+                                          "files":  1,
+                                          "bytes":  1770725
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-convention-read.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-convention-read.obj",
+                                          "files":  1,
+                                          "bytes":  1770649
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-final-dispatch.exe",
+                                          "files":  1,
+                                          "bytes":  311808
+                                      },
+                                      {
+                                          "path":  "src/build/save-record-check/stale-final-dispatch.obj",
+                                          "files":  1,
+                                          "bytes":  1770664
                                       },
                                       {
                                           "path":  "src/build/scorch-check/explosion_blast_2140.exe",
@@ -5418,256 +4898,6 @@
                                           "path":  "src/build/seat-presentation-check/coop_player_sit_pose.obj",
                                           "files":  1,
                                           "bytes":  148945
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-1.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-1.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632560
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-10.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-10.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126058
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-11.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-11.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126172
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-12.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-12.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126256
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-13.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-13.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126177
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-14.exe",
-                                          "files":  1,
-                                          "bytes":  520704
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-14.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1122649
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-15.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-15.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126218
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-16.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-16.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1125467
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-17.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-17.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126296
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-18.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-18.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1125449
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-19.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-19.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632482
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-2.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-2.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632360
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-20.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-20.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632448
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-21.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-21.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632522
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-22.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-22.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632541
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-23.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-23.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632214
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-24.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-24.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632569
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-25.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-25.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632490
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-3.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-3.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632525
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-4.exe",
-                                          "files":  1,
-                                          "bytes":  261120
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-4.exe.obj",
-                                          "files":  1,
-                                          "bytes":  632454
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-5.exe",
-                                          "files":  1,
-                                          "bytes":  260608
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-5.exe.obj",
-                                          "files":  1,
-                                          "bytes":  631647
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-6.exe",
-                                          "files":  1,
-                                          "bytes":  524800
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-6.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1128028
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-7.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-7.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126223
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-8.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-8.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1126228
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-9.exe",
-                                          "files":  1,
-                                          "bytes":  524288
-                                      },
-                                      {
-                                          "path":  "src/build/seat-presentation-check/fault-9.exe.obj",
-                                          "files":  1,
-                                          "bytes":  1125465
                                       },
                                       {
                                           "path":  "src/build/seat-presentation-check/native.exe",
@@ -5722,12 +4952,12 @@
                                       {
                                           "path":  "src/build/shared-screen-check/sync.exe",
                                           "files":  1,
-                                          "bytes":  294400
+                                          "bytes":  300544
                                       },
                                       {
                                           "path":  "src/build/shared-screen-check/sync.obj",
                                           "files":  1,
-                                          "bytes":  929884
+                                          "bytes":  949580
                                       },
                                       {
                                           "path":  "src/build/shared-screen-check/test.exe",
@@ -5763,141 +4993,6 @@
                                           "path":  "src/build/sleep-personal-check/test.obj",
                                           "files":  1,
                                           "bytes":  273731
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/controller.exe",
-                                          "files":  1,
-                                          "bytes":  275456
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/controller.obj",
-                                          "files":  1,
-                                          "bytes":  1005348
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/coop_dispatch_event_dispatch_world.obj",
-                                          "files":  1,
-                                          "bytes":  154648
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/coop_props_sponge_effects_sync.obj",
-                                          "files":  1,
-                                          "bytes":  561049
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/coop_session_subsystems.obj",
-                                          "files":  1,
-                                          "bytes":  166290
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_actor-class.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_actor-class.obj",
-                                          "files":  1,
-                                          "bytes":  1365193
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_capacity-seen.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_capacity-seen.obj",
-                                          "files":  1,
-                                          "bytes":  1365304
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_exact-post.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_exact-post.obj",
-                                          "files":  1,
-                                          "bytes":  1365211
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_frozen-key.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_frozen-key.obj",
-                                          "files":  1,
-                                          "bytes":  1365200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_pre-reservation.exe",
-                                          "files":  1,
-                                          "bytes":  304128
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_pre-reservation.obj",
-                                          "files":  1,
-                                          "bytes":  1334890
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_recipient-connection.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_recipient-connection.obj",
-                                          "files":  1,
-                                          "bytes":  1365003
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_session-serial.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_session-serial.obj",
-                                          "files":  1,
-                                          "bytes":  1365189
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_source-connection.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_source-connection.obj",
-                                          "files":  1,
-                                          "bytes":  1365214
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_source-departure.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_source-departure.obj",
-                                          "files":  1,
-                                          "bytes":  1365207
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_trace_player_link.exe",
-                                          "files":  1,
-                                          "bytes":  177152
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_trace_player_link.obj",
-                                          "files":  1,
-                                          "bytes":  876555
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_work-budgets.exe",
-                                          "files":  1,
-                                          "bytes":  307200
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/fault_work-budgets.obj",
-                                          "files":  1,
-                                          "bytes":  1365347
                                       },
                                       {
                                           "path":  "src/build/sponge-effects-check/sponge_effects_lifetime_test.exe",
@@ -5938,21 +5033,6 @@
                                           "path":  "src/build/sponge-effects-check/sponge_effects_wrapper_test.obj",
                                           "files":  1,
                                           "bytes":  823414
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/ue_wrap_actors_sponge_effects.obj",
-                                          "files":  1,
-                                          "bytes":  44036
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/wrapper.exe",
-                                          "files":  1,
-                                          "bytes":  227328
-                                      },
-                                      {
-                                          "path":  "src/build/sponge-effects-check/wrapper.obj",
-                                          "files":  1,
-                                          "bytes":  823311
                                       },
                                       {
                                           "path":  "src/build/sync-2157-check/container-seed.exe",
@@ -6015,116 +5095,6 @@
                                           "bytes":  668259
                                       },
                                       {
-                                          "path":  "src/build/toy-music-check/coop_player_hand_toy_audio.obj",
-                                          "files":  1,
-                                          "bytes":  380943
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/coop_props_dingus_music_sync.obj",
-                                          "files":  1,
-                                          "bytes":  1101296
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_callback-expiry.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_callback-expiry.obj",
-                                          "files":  1,
-                                          "bytes":  1621812
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_exact-post.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_exact-post.obj",
-                                          "files":  1,
-                                          "bytes":  1621861
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_key-domain.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_key-domain.obj",
-                                          "files":  1,
-                                          "bytes":  1621271
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_overflow-dedup.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_overflow-dedup.obj",
-                                          "files":  1,
-                                          "bytes":  1621962
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_packet-copy.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_packet-copy.obj",
-                                          "files":  1,
-                                          "bytes":  1621952
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_recipient-connection.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_recipient-connection.obj",
-                                          "files":  1,
-                                          "bytes":  1621642
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_reserved-pre.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_reserved-pre.obj",
-                                          "files":  1,
-                                          "bytes":  1621887
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_send-budget.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_send-budget.obj",
-                                          "files":  1,
-                                          "bytes":  1621884
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_session-serial.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_session-serial.obj",
-                                          "files":  1,
-                                          "bytes":  1621835
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_source-connection.exe",
-                                          "files":  1,
-                                          "bytes":  313856
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/fault_source-connection.obj",
-                                          "files":  1,
-                                          "bytes":  1621731
-                                      },
-                                      {
                                           "path":  "src/build/toy-music-check/toy_music_clock_wrapper.exe",
                                           "files":  1,
                                           "bytes":  279552
@@ -6153,16 +5123,6 @@
                                           "path":  "src/build/toy-music-check/toy_music_phase.obj",
                                           "files":  1,
                                           "bytes":  1629049
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/ue_wrap_actors_dingus_music.obj",
-                                          "files":  1,
-                                          "bytes":  145660
-                                      },
-                                      {
-                                          "path":  "src/build/toy-music-check/ue_wrap_core_component_calls.obj",
-                                          "files":  1,
-                                          "bytes":  28808
                                       },
                                       {
                                           "path":  "src/build/toy-music-check/wrapper.exe",
@@ -6367,7 +5327,7 @@
                                       {
                                           "path":  "src/build/watoy-check/coop_props_watoy_sync.obj",
                                           "files":  1,
-                                          "bytes":  1297209
+                                          "bytes":  1309017
                                       },
                                       {
                                           "path":  "src/build/watoy-check/coop_session_subsystems.obj",
@@ -6377,247 +5337,307 @@
                                       {
                                           "path":  "src/build/watoy-check/fault_admission.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_admission.obj",
                                           "files":  1,
-                                          "bytes":  1995867
+                                          "bytes":  2050668
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_drain.exe",
                                           "files":  1,
-                                          "bytes":  376832
+                                          "bytes":  383488
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_drain.obj",
                                           "files":  1,
-                                          "bytes":  1994458
+                                          "bytes":  2049151
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_flush.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_flush.obj",
                                           "files":  1,
-                                          "bytes":  1995770
+                                          "bytes":  2050571
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/fault_function.exe",
+                                          "files":  1,
+                                          "bytes":  381440
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/fault_function.obj",
+                                          "files":  1,
+                                          "bytes":  2048065
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_payload.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_payload.obj",
                                           "files":  1,
-                                          "bytes":  1995823
+                                          "bytes":  2050624
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_post.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_post.obj",
                                           "files":  1,
-                                          "bytes":  1995770
+                                          "bytes":  2050571
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_prune.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384000
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_prune.obj",
                                           "files":  1,
-                                          "bytes":  1995688
+                                          "bytes":  2050489
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_recipient.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_recipient.obj",
                                           "files":  1,
-                                          "bytes":  1995708
+                                          "bytes":  2050509
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_reservation.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_reservation.obj",
                                           "files":  1,
-                                          "bytes":  1995798
+                                          "bytes":  2050599
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_scope.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_scope.obj",
                                           "files":  1,
-                                          "bytes":  1995741
+                                          "bytes":  2050542
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_source.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/fault_source.obj",
                                           "files":  1,
-                                          "bytes":  1995754
+                                          "bytes":  2050555
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/fault_uncertain.exe",
+                                          "files":  1,
+                                          "bytes":  384512
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/fault_uncertain.obj",
+                                          "files":  1,
+                                          "bytes":  2050589
                                       },
                                       {
                                           "path":  "src/build/watoy-check/ue_wrap_actors_watoy.obj",
                                           "files":  1,
-                                          "bytes":  189206
+                                          "bytes":  515707
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/watoy_budget.exe",
+                                          "files":  1,
+                                          "bytes":  349696
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/watoy_budget.obj",
+                                          "files":  1,
+                                          "bytes":  1744187
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_lifetime.exe",
                                           "files":  1,
-                                          "bytes":  377856
+                                          "bytes":  384512
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_lifetime.obj",
                                           "files":  1,
-                                          "bytes":  1995797
+                                          "bytes":  2050598
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_sync.exe",
                                           "files":  1,
-                                          "bytes":  347136
+                                          "bytes":  351232
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_sync.obj",
                                           "files":  1,
-                                          "bytes":  1788795
+                                          "bytes":  1836922
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_wrapper.exe",
                                           "files":  1,
-                                          "bytes":  259584
+                                          "bytes":  288256
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_wrapper.obj",
                                           "files":  1,
-                                          "bytes":  1163398
+                                          "bytes":  1470430
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_wrapper_lifetime.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/watoy_wrapper_lifetime.obj",
                                           "files":  1,
-                                          "bytes":  1430394
+                                          "bytes":  1970988
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_activate-current.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331776
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_activate-current.obj",
                                           "files":  1,
-                                          "bytes":  1430228
+                                          "bytes":  1970745
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_audio-current.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331776
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_audio-current.obj",
                                           "files":  1,
-                                          "bytes":  1430170
+                                          "bytes":  1970639
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_field-class.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_field-class.obj",
                                           "files":  1,
-                                          "bytes":  1430289
+                                          "bytes":  1970883
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_native-function.exe",
+                                          "files":  1,
+                                          "bytes":  331264
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_native-function.obj",
+                                          "files":  1,
+                                          "bytes":  1970878
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_native-schema.exe",
+                                          "files":  1,
+                                          "bytes":  331264
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_native-schema.obj",
+                                          "files":  1,
+                                          "bytes":  1970076
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_read-bindings.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_read-bindings.obj",
                                           "files":  1,
-                                          "bytes":  1430323
+                                          "bytes":  1970917
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-binding.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-binding.obj",
                                           "files":  1,
-                                          "bytes":  1430267
+                                          "bytes":  1970870
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-candidate.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-candidate.obj",
                                           "files":  1,
-                                          "bytes":  1430271
+                                          "bytes":  1970865
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-output.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-output.obj",
                                           "files":  1,
-                                          "bytes":  1430373
+                                          "bytes":  1970967
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-services.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  330752
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_spawn-services.obj",
                                           "files":  1,
-                                          "bytes":  1430165
+                                          "bytes":  1965287
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_unknown-zero.exe",
                                           "files":  1,
-                                          "bytes":  282624
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_unknown-zero.obj",
                                           "files":  1,
-                                          "bytes":  1430103
+                                          "bytes":  1970697
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_view-copies.exe",
+                                          "files":  1,
+                                          "bytes":  331776
+                                      },
+                                      {
+                                          "path":  "src/build/watoy-check/wrapper_fault_view-copies.obj",
+                                          "files":  1,
+                                          "bytes":  1970942
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_view-reentry.exe",
                                           "files":  1,
-                                          "bytes":  283136
+                                          "bytes":  331264
                                       },
                                       {
                                           "path":  "src/build/watoy-check/wrapper_fault_view-reentry.obj",
                                           "files":  1,
-                                          "bytes":  1430331
+                                          "bytes":  1970661
                                       },
                                       {
                                           "path":  "src/build/window-check/window_delivery.exe",
@@ -6667,172 +5687,172 @@
                                       {
                                           "path":  "src/build/window-stroke-check/fault_argument-size.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_argument-size.obj",
                                           "files":  1,
-                                          "bytes":  1626226
+                                          "bytes":  1957751
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_canvas-binding.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_canvas-binding.obj",
                                           "files":  1,
-                                          "bytes":  1626125
+                                          "bytes":  1957634
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_draw-admission.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_draw-admission.obj",
                                           "files":  1,
-                                          "bytes":  1626270
+                                          "bytes":  1957795
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_factory-pin.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_factory-pin.obj",
                                           "files":  1,
-                                          "bytes":  1626181
+                                          "bytes":  1957706
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_held-source.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_held-source.obj",
                                           "files":  1,
-                                          "bytes":  1626152
+                                          "bytes":  1957677
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_preparation-loss.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_preparation-loss.obj",
                                           "files":  1,
-                                          "bytes":  736997
+                                          "bytes":  688490
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_refusal.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_refusal.obj",
                                           "files":  1,
-                                          "bytes":  736949
+                                          "bytes":  688442
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_replay-window.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  232960
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_replay-window.obj",
                                           "files":  1,
-                                          "bytes":  736715
+                                          "bytes":  688208
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_scalar-result.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_scalar-result.obj",
                                           "files":  1,
-                                          "bytes":  1626231
+                                          "bytes":  1957756
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_scan-serial.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_scan-serial.obj",
                                           "files":  1,
-                                          "bytes":  736956
+                                          "bytes":  688449
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_send-budget.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_send-budget.obj",
                                           "files":  1,
-                                          "bytes":  736959
+                                          "bytes":  688452
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_serial.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_serial.obj",
                                           "files":  1,
-                                          "bytes":  736925
+                                          "bytes":  688418
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_source-current.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  233472
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_source-current.obj",
                                           "files":  1,
-                                          "bytes":  736934
+                                          "bytes":  688427
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_unknown-signal.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_unknown-signal.obj",
                                           "files":  1,
-                                          "bytes":  1626270
+                                          "bytes":  1957795
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_validation.exe",
                                           "files":  1,
-                                          "bytes":  238080
+                                          "bytes":  232448
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_validation.obj",
                                           "files":  1,
-                                          "bytes":  736929
+                                          "bytes":  685625
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_vector-type.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_vector-type.obj",
                                           "files":  1,
-                                          "bytes":  1626176
+                                          "bytes":  1957687
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_wrapper-epoch.exe",
                                           "files":  1,
-                                          "bytes":  344576
+                                          "bytes":  375808
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/fault_wrapper-epoch.obj",
                                           "files":  1,
-                                          "bytes":  1626249
+                                          "bytes":  1957774
                                       },
                                       {
                                           "path":  "src/build/window-stroke-check/production.obj",
@@ -6840,44 +5860,94 @@
                                           "bytes":  224786
                                       },
                                       {
+                                          "path":  "src/build/wisp-animation-check/control-cleanup-death/test.exe",
+                                          "files":  1,
+                                          "bytes":  213504
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-cleanup-death/test.obj",
+                                          "files":  1,
+                                          "bytes":  302429
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-hold-body/test.exe",
+                                          "files":  1,
+                                          "bytes":  202240
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-hold-body/test.obj",
+                                          "files":  1,
+                                          "bytes":  211016
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-mesh-ready/test.exe",
+                                          "files":  1,
+                                          "bytes":  213504
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-mesh-ready/test.obj",
+                                          "files":  1,
+                                          "bytes":  302549
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-release-lease/test.exe",
+                                          "files":  1,
+                                          "bytes":  212992
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/control-release-lease/test.obj",
+                                          "files":  1,
+                                          "bytes":  319887
+                                      },
+                                      {
                                           "path":  "src/build/wisp-animation-check/coop_creatures_wisp_attack_sync.obj",
                                           "files":  1,
-                                          "bytes":  1131249
+                                          "bytes":  1429187
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/coop_creatures_wisp_grab_hold.obj",
                                           "files":  1,
-                                          "bytes":  119470
+                                          "bytes":  159348
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/coop_creatures_wisp_tear_mirror.obj",
                                           "files":  1,
-                                          "bytes":  115513
+                                          "bytes":  172802
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/ue_wrap_actors_wisp.obj",
                                           "files":  1,
-                                          "bytes":  89637
+                                          "bytes":  138398
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/wisp_host.exe",
+                                          "files":  1,
+                                          "bytes":  264192
+                                      },
+                                      {
+                                          "path":  "src/build/wisp-animation-check/wisp_host.obj",
+                                          "files":  1,
+                                          "bytes":  1258389
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/wisp_montage_test.exe",
                                           "files":  1,
-                                          "bytes":  186368
+                                          "bytes":  212992
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/wisp_montage_test.obj",
                                           "files":  1,
-                                          "bytes":  138406
+                                          "bytes":  319986
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/wisp_release_test.exe",
                                           "files":  1,
-                                          "bytes":  191488
+                                          "bytes":  202240
                                       },
                                       {
                                           "path":  "src/build/wisp-animation-check/wisp_release_test.obj",
                                           "files":  1,
-                                          "bytes":  158258
+                                          "bytes":  211046
                                       },
                                       {
                                           "path":  "src/build/world-sound-check/world_sound.exe",
@@ -6890,9 +5960,9 @@
                                           "bytes":  905988
                                       },
                                       {
-                                          "path":  "src/dist/ElvardFIC-WatchersOfTheVoid-0.9.2162.zip",
+                                          "path":  "src/dist/ElvardFIC-WatchersOfTheVoid-0.9.2161.zip",
                                           "files":  1,
-                                          "bytes":  15207501
+                                          "bytes":  15376858
                                       }
                                   ]
                   }

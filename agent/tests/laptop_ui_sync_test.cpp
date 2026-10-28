@@ -14,7 +14,7 @@ uint8_t holder = 0xff;
 bool held = false, ready = true, applyOK = true;
 int applies = 0;
 ue_wrap::laptop_ui::State visible;
-std::function<void()> onApply, onValid;
+std::function<void()> onApply, onValid, onRead;
 }
 namespace ue_wrap::world_identity { uint32_t Generation() { return test::world; } }
 namespace ue_wrap::game_thread { bool IsGameThread() { return true; } }
@@ -26,7 +26,7 @@ bool Valid(const State& s) {
     for(const auto& row:s.cart) if(row!=L"apple"&&row!=L"cheese"&&row.size()!=128) return false;
     return true;
 }
-bool Read(State& out) { if(!test::ready) return false;out=test::visible;return true; }
+bool Read(State& out) { auto cb=std::move(test::onRead);test::onRead={};if(cb)cb();if(!test::ready) return false;out=test::visible;return true; }
 bool Apply(const State& s) {
     ++test::applies; auto cb=std::move(test::onApply);test::onApply={};if(cb)cb();
     if(!test::ready||!test::applyOK||!Valid(s))return false;test::visible=s;return true;
@@ -90,5 +90,24 @@ int main() {
     auto truncated=seed;truncated.resize(12);Deliver(pipe,truncated,0);CHECK(S::g_revision==revision);
     S::g_apply=true;++world;ready=false;Tick();CHECK(!S::g_have&&!S::g_apply&&S::g_revision==0);
     S::OnDisconnect();CHECK(!S::g_session&&S::g_assembler.Idle());
+    S::Install(&s);held=true;holder=1;ready=true;applyOK=false;
+    S::g_lease=30;S::g_owner=1;S::g_revision=50;S::g_have=S::g_apply=true;S::g_state=state;
+    visible.tabs={9,0,0};visible.cart={L"apple"};s.sent.clear();
+    Tick();Tick();CHECK(S::g_apply&&s.sent.empty());Tick();
+    CHECK(!S::g_apply&&S::g_sent==visible&&visible.tabs[0]==9&&!s.sent.empty());
+    // A missing widget/catalog never spends the fallback budget or loses the seed.
+    S::g_apply=true;ready=false;s.sent.clear();
+    for(int n=0;n<8;++n)Tick();CHECK(S::g_apply&&!S::g_operatorFailures&&s.sent.empty());
+    ready=true;Tick();Tick();CHECK(S::g_apply);
+    // Releasing or replacing a lease resets the old operator's failures.
+    held=false;Tick();CHECK(S::g_apply&&!S::g_operatorFailures);
+    held=true;Tick();Tick();CHECK(S::g_apply);
+    S::g_lease=31;auto nextSeed=S::Encode(true,51,state);S::g_lease=30;
+    Deliver(pipe,nextSeed,0);Tick();CHECK(S::g_apply&&S::g_operatorFailures==1);
+    // Readiness probing can reenter world teardown; no old local state publishes.
+    s.sent.clear();onRead=[] { ++world; };Tick();CHECK(s.sent.empty());
+    Tick();CHECK(!S::g_have&&!S::g_apply);
+    S::OnDisconnect();
+    puts("PASS laptop operator fallback: readable UI only, bounded retries, observer/loading retention, lease reset and readiness-read world retirement");
     puts("PASS laptop UI: production chunks, holder/lease, stale/replayed/malformed edits, new operator seed, local echo, final-exit retry, per-peer backpressure, join, reentrancy and travel");
 }

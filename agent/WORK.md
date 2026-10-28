@@ -1,5 +1,172 @@
 # WORK — current state and open work
 
+## Requested release 0.9.2163 (28 October 2026)
+
+Owner explicitly requested building 2163. Public package metadata, menu version
+input and active documentation now target 0.9.2163; protocol/DLL identity stays
+2217/b2217. The last qualified archive is now 0.9.2163 (offline).
+No publication, installation, commit or push is
+part of this release request.
+
+Before the metadata bump, cleanup_current -WhatIf was reviewed, then the same
+cleanup ran: 735 targets, 1120 generated files, 817.8 MiB. The prior archive,
+active build/DLL, shared dependencies and unique research/qualification/crash
+evidence were preserved. Preview and run logs are build/cleanup-preview-2163.log
+and build/cleanup-2163.log; package/cleanup-inventory.json records retained hashes.
+PASS package/build_current.ps1: all 124 current validation groups, fresh Release,
+unchanged production/release inputs, exact production display label and manager
+ZIP/rejection checks. No focused results were reused as a full qualification.
+Delivery: dist/ElvardFIC-WatchersOfTheVoid-0.9.2163.zip (32 members) and
+dist/SHA256SUMS-current.txt. The included DLL SHA-256 is
+5d1e5de9db22a3a3bcc3f82d3c3854a8bfdebe768ee96f827a5204f6c3078a8e.
+Evidence: build/qualification-current/verification.json and
+build/package-current/verification.json. FullRegression=true;
+TwoPlayerGameplayVerified=false; archiveStartupVerified=false. No rendered
+gameplay or full manager-startup acceptance is claimed for this package.
+
+## Fork improvements (28 October 2026)
+
+Refreshed the public fork inventory: 3 direct WatchersOfTheVoid forks and 44
+upstream forks, 46 other repositories after deduplication. Default heads were
+resolved for 45; Marlore/temp-mail-generator still returns repository-not-found.
+Evidence: build/fork-review-20261028/forks.json and heads.json. Current upstream
+is also present as audit/gust138 (dc4cd7307); commits inherited from that history
+are not counted as original fork contributions.
+All six public branches of the three direct forks were also resolved; their
+additional heads introduce no commits beyond the reviewed default heads/local
+history. Exact evidence: direct-branches.json in the same directory.
+
+The useful new direct fork is gxrxrt/WatchersOfTheVoid at fee106791,
+default branch fix/coop-stability (31 commits outside our branch/latest
+upstream). Five selected adaptations are implemented:
+
+- FK1: register and check power-grid watches against the native generator_C,
+  replacing the nonexistent powerGenerator_C owner.
+- FK2: host player/puppet-body contacts enqueue the touched movable prop into
+  the existing bounded coasting stream; retain world/liveness, held/hand,
+  static/frozen/trash, deduplication and host-only admission.
+- FK3: admit arirSlapper_C as a late NPC Character root and catch only that
+  output from slapperSummoner_C. Native assets confirm follower ancestry and
+  the component's deferred spawn. This does not complete slapper attacks,
+  stolen-item ownership, audio or event behavior.
+- FK4: a readable laptop operator regains control after three refused inherited
+  page/cart applies. Missing/loading UI keeps its seed; observers keep retrying.
+- FK5: apply the same bounded inheritance policy to the shared screen. Both
+  policies reset at new state/leases and recheck world/revision/lease after
+  native apply/read callbacks before publishing any local state.
+
+Provenance: **garar** (garartinc@gmail.com), with the original Claude Opus 5.5
+co-author trailers, in gxrxrt commits
+[b1a2d4694](https://github.com/gxrxrt/WatchersOfTheVoid/commit/b1a2d4694efd65b47059883313f931d43b672536),
+[df2262f2e](https://github.com/gxrxrt/WatchersOfTheVoid/commit/df2262f2ee23889dad7e2fdd0ec42aeb90631105),
+[9ca897f96](https://github.com/gxrxrt/WatchersOfTheVoid/commit/9ca897f96e78f190e2d7a110718c2c624297ecf8),
+and [1d6c35177](https://github.com/gxrxrt/WatchersOfTheVoid/commit/1d6c3517716a072483834ffbd01913f1d50ddfed).
+These are source adaptations, not a history merge/cherry-pick or a claim that
+the original commits were authored here. The existing MIT notice is preserved.
+
+The fork's unrestricted interaction-forwarding lane and client-led cremator
+door use extra wire kinds/protocol 2903; this protocol-2217 adaptation does not
+import them. Drone sack actions, resync-held destroy/visibility policies and
+keyless birth changes need separate authority/lifetime integration. Their
+existence is not evidence that our overlapping guarded routes are absent.
+Fun figurines, release metadata, branding and wholesale localization changes
+are outside this bug-fix transfer. LoKoGoRus adds only a historical five-seat
+patch, superseded by this fork's 32-peer capacity. gv1nd's watch-table correction
+was already covered by the prior 8192-slot adaptation; its gate weakening is
+still rejected. mega-maks2011 adds README text only. rosonoka's 1037 graph-unique
+commits are all pelmentor's older rewritten upstream history, not new fork fixes.
+
+PASS current focused qualification: eight groups, fresh Release and production
+source stability. Evidence: build/fork-review-20261028/qualification/verification.json;
+FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false.
+Verification details and rendered follow-ups are in TESTLOG. No version/protocol change,
+package, installation, commit, push or service deployment accompanies this work.
+
+## Requested third-party mods (28 October 2026)
+
+Inspected the actual Thunderstore archives, not only their descriptions. Fusion
+is pinned to the owner's requested 0.8108.3; other versions below were resolved
+from the package API during this audit. SHA-256, manifests, ZIP entries and
+scripts are retained in build/requested-mods-audit/<package>/inspection.json;
+summary.json records all eleven versions. No downloaded executable or mod script
+was run, and no game/profile file was installed or changed.
+Owner subsequently confirmed these mods are not installed. There is therefore
+no installed eleven-mod profile to inspect or qualify in this session.
+
+| Package | Inspected version | Finding / integration boundary |
+| --- | --- | --- |
+| forder-EmoteWheel | 1.0.1 | main.lua explicitly implements net.broadcast/net.poll as empty functions. Emotes/music are local; this is a confirmed missing multiplayer route. |
+| NynrahGhost-Fusion | 0.8108.3 | Shared dependency of six requested content mods. Its launcher parses shimloader-log.txt and starts Fusion.exe; old game-target wording alone does not establish incompatibility. Current merged table output/loading order still needs verification. |
+| Moddy-VEmu | 1.1.0 | Native emulator/corehost plus custom console/cartridge/AV actors. Ordinary prop transform transport does not establish emulator state, input, frame/audio or attachment synchronization. README explicitly excludes SmartTV AV output. |
+| forder-Multivoid_Female_Skin | 1.0.0 | lowpoly_girl.pak uses /Game/Mods/VOTVCoop/lowpoly_girl with SkeletalMesh export kerfurOmega_KelSkin and the native player skeleton. This matches our existing legacy mesh fallback and tex_lowpoly_girl path. All peers need the asset. Manifest also requests Pelmentor-Multivoid-0.9.208; inspect profile resolution to prevent loading the original DLL alongside this fork. |
+| TheiRog-JeepMod | 0.11.1 | Jeep_C demonstrably derives from ATV_C, so the existing ATV lineage checks admit it without a guessed mapping. It also defines openTrunk and overrides createContainer/updUpgrades/playerUsedOn; inherited pose/seat coverage is not proof of trunk, keys, upgrades or container parity. |
+| ManAboutTown-FireTower | 1.0.4 | FirePower.pak adds ModActor, firetowerdoor and scenery. Tower collision/placement and door interaction need matching-peer verification; no runtime acceptance is claimed. |
+| sometimesifeeellikeamotherlesschild-PhotographyPlus | 0.10.3 | Custom save/config handlers, camera/task/reward content and seven merged tables. Host-owned rewards/tasks, personal photos and rejoin/save consequences need explicit adapters and verification. |
+| Thunderstore-unreal_shimloader | 1.1.7 | Matches the fork's existing loader dependency. Managed VFS launch and coexistence with the native mod DLL still require profile verification. It is a loader, not a multiplayer content adapter. |
+| Moddy-SmartTV | 0.9.6 | Custom media props and native media support. Existing vanilla media synchronization does not establish URL/mode/seek/late-join parity for these custom players. VEmu-to-SmartTV AV is explicitly unsupported upstream. |
+| Hirokhai-BuyableJetpacks | 1.0.0 | Archive contains only added prop/store tables; no new actor asset. Fusion row merge and native jetpack purchase/equip/fuel/flight/drop/rejoin require verification. |
+| Hirokhai-BuyableShovels | 1.0.0 | Archive contains only added prop/store tables; no new actor asset. Fusion row merge and native shovel purchase/dig/hit/drop/rejoin require verification. |
+
+The eleven-mod set is **not qualified as multiplayer-compatible**. In particular,
+EmoteWheel has no network implementation and VEmu explicitly cannot use SmartTV
+as its AV display. Neither successful loading nor our existing offline tests
+would remove those limits. Implementation follow-ups are in TODO; exact
+two-player scenarios are in TESTLOG. Do not mark them complete from this audit.
+
+## Entity continuation: wisp lifetime and native capture (28 October 2026)
+
+Owner selects the Entity implementation checklist. The mapping/route audit in
+ENTITY_COVERAGE still distinguishes native identity, pose transport and actual
+behavior. The implemented corrections in this pass are the wisp subsection:
+
+- EN1: bind pending tears to the observed victim and wisp object lifetimes;
+  capture victim identity even while vitals/animation metadata is unavailable.
+- EN2: reserve queued tears across native callbacks, reject reentrant duplicate
+  playback and cancel departing slots before an old retry can adopt a successor.
+- EN3: require mesh-tick readiness before montage playback and limit attachment
+  retries to 100 ms cadence inside the original grab deadline.
+- EN4: track in-progress captures so disconnect/replacement also cleans up a
+  partially attached pawn; deadline expiry consumes the entire lease.
+- EN5: guard native movement/attachment/visibility/detachment boundaries; validate
+  movement parameters and stop old flag writes once their capture lease retires.
+- EN6: retire an older capture before installing a new one; a new request or
+  teardown inside that cleanup wins over the outer caller.
+- EN7: recheck death, body, world and request after release and the final vitals
+  read before admitting the delayed ragdoll kill.
+- EN8: bind puppet holds to their original bodies/world and release a local ride
+  when its source wisp disappears or is recycled. The independently committed
+  host kill deadline remains the existing fallback when a mirror is unavailable.
+- EN9: bind host pending destruction and NPC death watches to source bodies,
+  world and unique tokens; snapshot drains survive reentry and consume work
+  before callbacks so new work is preserved.
+- EN10: retire host state at session/world changes, snapshot the actor census
+  before native callbacks and release ragdoll ownership before reentrant cleanup.
+- EN11: validate both bodies/world and finite positions across native distance/
+  line-of-sight calls; bind target/aggro/closing records to live victim bodies
+  and retire a closing attempt once its victim leaves native grab range.
+- EN12: require ready victim ownership and admitted reliable grab delivery before
+  arming host destruction; recheck source/victim/peer generation after sends and
+  local cues. Commit the original send-time deadline before slow local playback.
+
+EN1-EN12 are implemented and covered by production controller/wrapper fixtures.
+The host fixture extracts unchanged production drains, scope, target admission
+and relay functions; engine/registry/session boundaries are doubled. Broadcast
+tear delivery and remaining limb/blood effects are not thereby completed.
+Four removal controls reach their intended assertions (hold body binding, mesh
+readiness, native release lease, final cleanup/death guard). Real PhysX/socket,
+animation and two-peer acceptance remain in TESTLOG.
+
+Focused qualification passes seven current check groups and a fresh Release
+build against unchanged production sources. Evidence:
+build/entity-lifetime-20261028/verification.json (FullRegression=false).
+
+This does not complete the fifteen entity groups. Grayboar charged/corpse/loot,
+Rozital effects and timing, other attacks/item handoffs, UFO phases and exact
+unidentified name mappings remain open. No guessed mapping or debug actor was
+added to normal play. Ghost/Ghost Log are not relabelled as the killer wisp;
+the existing personal Insomniac/run-end policy remains unchanged. There is no
+wire-format, version/protocol, package, installation or publication change.
+
 ## Tutorial join and white-circle report (28 October 2026)
 
 Selected fixes: TI1 preserve Tutorial placement before native save restoration;

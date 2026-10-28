@@ -3,13 +3,15 @@
 **By ElvardFIC, co-maintained by AquaFishhh** — community co-op for Voices of the Void.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2162** targets **Voices of the Void Alpha 0.9.0n** on Windows.
-The in-game mod label also shows **Watchers of the Void 0.9.2162**.
+Version **0.9.2163** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+The in-game mod label also shows **Watchers of the Void 0.9.2163**.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
 ## What's included
 
+- Tutorial join/respawn placement and non-Tutorial empty item-icon cache repair.
+- Body/world-bound killer-wisp capture and selected generator, prop-push, slapper and laptop fork fixes.
 - Selected-character ragdolls with synchronized limbs, preserved entry momentum/view, corrected physics and remote body attachment.
 - Host event delivery/recovery, active-event join retries, location-event lifetime guards and adjustable frequency for five supported generators.
 - Placement replies/recovery, prop-destroy identity guards, coin pickup protection and food/cooking state through inventory and placement.
@@ -32,11 +34,11 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2162.zip** using
+For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2163.zip** using
 the manager's **Import local mod** action. The package identity remains
 **ElvardFIC-WatchersOfTheVoid**. Remove the mistakenly imported **ragdoll** entry
 if it was created from the earlier DLL-only archive.
-Every player must use this exact **0.9.2162** package and the same game version.
+Every player must use this exact **0.9.2163** package and the same game version.
 
 ## Current status
 
@@ -48,7 +50,7 @@ This test package contains **DLL b2217 / network protocol 2217** and includes th
 changes since 0.9.2158, plus the current upstream integration.
 Automatic joins above four players also require the updated master service.
 
-The active version is **2162** across development continuations. This archive
+The active version is **2163** across development continuations. This archive
 is an offline test build of the current development snapshot. Its package checks
 cover the manager layout, included models, version label and matching Release DLL.
 Current qualification and limits are recorded in RELEASE.md and agent/TESTLOG.md.

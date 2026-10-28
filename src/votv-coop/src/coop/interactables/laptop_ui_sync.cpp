@@ -5,6 +5,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/log.h"
 #include "ue_wrap/devices/laptop_ui.h"
 #include "ue_wrap/engine/world_identity.h"
 #include <array>
@@ -18,6 +19,8 @@ net::Session* g_session = nullptr;
 blob_chunks::Assembler g_assembler;
 UI::State g_state, g_sent;
 bool g_have = false, g_apply = false, g_haveSent = false, g_busy = false;
+int g_operatorFailures = 0;
+constexpr int kOperatorRepaints = 3;
 uint8_t g_owner = 0xff;
 uint32_t g_lease = 0, g_revision = 0, g_command = 0, g_blob = 0, g_world = 0;
 uint64_t g_epoch = 0, g_poll = 0;
@@ -35,7 +38,7 @@ bool Active() { return g_session && g_session->running() && g_session->connected
 bool Host() { return Active() && g_session->role() == net::Role::Host; }
 void Clear() {
     g_assembler.Clear(); g_state = {}; g_sent = {};
-    g_have = g_apply = g_haveSent = false; g_owner = 0xff;
+    g_have = g_apply = g_haveSent = false; g_operatorFailures = 0; g_owner = 0xff;
     g_lease = g_revision = g_command = g_blob = 0; g_seen.fill(0); g_dirty.fill(false);
     g_poll = 0; g_claimRevision = 0; ++g_epoch; g_world = ue_wrap::world_identity::Generation();
 }
@@ -53,7 +56,7 @@ void Lease() {
     g_claimRevision = revision;
     g_owner = owner; Next(g_lease); g_seen.fill(0); g_haveSent = false;
     // A new operator starts with the preceding operator's cart and page.
-    g_apply = g_have; Dirty();
+    g_apply = g_have; g_operatorFailures = 0; Dirty();
 }
 std::vector<uint8_t> Encode(bool canonical, uint32_t serial, const UI::State& state) {
     std::vector<uint8_t> b;
@@ -92,16 +95,16 @@ void Receive(const std::vector<uint8_t>& b, int slot) {
         Lease();
         if (lease != g_lease || g_owner != slot || !Newer(serial, g_seen[slot])) return;
         g_seen[slot] = serial;
-        g_state = std::move(state); g_have = g_apply = true; Dirty();
+        g_state = std::move(state); g_have = g_apply = true; g_operatorFailures = 0; Dirty();
     } else {
         if (!canonical || slot != 0 || !Newer(serial, g_revision)) return;
         // Catalog may still be loading on a joining client. Keep the bounded
         // snapshot and retry Apply rather than consuming and losing the seed.
         const bool newLease = lease != g_lease;
         g_lease = lease; g_revision = serial; g_owner = owner;
-        g_state = std::move(state); g_have = true;
+        g_state = std::move(state); g_have = true; g_operatorFailures = 0;
         const bool local = owner == players::Registry::Get().LocalPeerId() && device_occupancy::LocalHolds(L"laptop");
-        if (newLease || !local) g_apply = true;
+        if (newLease || !local) { g_apply = true; g_operatorFailures = 0; }
         if (newLease) g_haveSent = false;
     }
 }
@@ -120,11 +123,33 @@ void Tick() {
     if (g_apply) {
         const auto state = g_state;
         const auto revision = g_revision;
+        const auto lease = g_lease;
         const bool applied = UI::Apply(state);
         if (epoch != g_epoch || !Active()) return;
-        if (revision != g_revision) return;
+        Lease();
+        if (revision != g_revision || lease != g_lease) return;
         if (applied) g_apply = false;
+        else if (g_lease && g_owner == players::Registry::Get().LocalPeerId() &&
+                 device_occupancy::LocalHolds(L"laptop")) {
+            // A readable operator must regain control after a persistently
+            // refused inherited repaint. Loading/missing widgets keep the seed.
+            UI::State readable;
+            const bool ready = UI::Read(readable);
+            if (epoch != g_epoch || !Active()) return;
+            Lease();
+            if (revision != g_revision || lease != g_lease) return;
+            if (g_owner != players::Registry::Get().LocalPeerId() || !device_occupancy::LocalHolds(L"laptop")) {
+                g_operatorFailures = 0; return;
+            }
+            if (!ready) g_operatorFailures = 0;
+            else if (++g_operatorFailures >= kOperatorRepaints) {
+                UE_LOGW("laptop_ui_sync: inherited repaint refused %d times on a readable UI; operator resumes",
+                        g_operatorFailures);
+                g_apply = false;
+            }
+        } else g_operatorFailures = 0;
     }
+    if (!g_apply) g_operatorFailures = 0;
     const auto local = players::Registry::Get().LocalPeerId();
     const auto readingLease = g_lease;
     const bool author = !g_apply && g_lease && g_owner == local && device_occupancy::LocalHolds(L"laptop");

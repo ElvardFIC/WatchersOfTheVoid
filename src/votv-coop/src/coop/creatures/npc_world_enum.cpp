@@ -146,7 +146,9 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // coin mint and jellyfish route need this native seam. Output is still filtered
 // by the NPC/world-actor allowlists; unrelated births remain host-local.
 constexpr const wchar_t* kConsoleNpcOutputs[]={L"rufus_C",L"thiccfus_C",nullptr};
+constexpr const wchar_t* kSlapperOutputs[]={L"arirSlapper_C",nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
+    {L"slapperSummoner_C",kSlapperOutputs},        // chest component's native deferred spawn
     {L"ui_console_C",kConsoleNpcOutputs},          // funny console's exact Character outputs
     {L"trigger_wispSwarm_C",     nullptr},          // the wisps event swarm
     {L"piramidSpawner_C",        nullptr},          // the piramid event chain

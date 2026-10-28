@@ -7,8 +7,9 @@ int frameSize=sizeof(void*);int paramOff=0;
 std::vector<void*> driven,coasted;
 Obj component{4};void* componentOwner=&actor;
 Obj nested[8];
+Obj player{11},puppetBody{12};
 bool Nested(void* a){for(auto& o:nested)if(a==&o)return true;return false;}
-bool prop(void* a){return a && a!=&component && !Nested(a) && static_cast<Obj*>(a)->live;}
+bool prop(void* a){return a && a!=&component && a!=&player && a!=&puppetBody && !Nested(a) && static_cast<Obj*>(a)->live;}
 }
 namespace coop::gravity_motion {void* Target(){return nullptr;}}
 namespace ue_wrap::engine {bool ReadMainPlayerGrabState(void*,MainPlayerGrabState& state){state={};state.grabbingActor=test::held;return true;}}
@@ -62,6 +63,21 @@ int main(){using namespace test;namespace S=coop::prop_knock;
  S::Tick(session);driven.clear();S::OnKnock(call);callback=[&]{other=&third;call.object=&ui;S::OnKnock(call);};S::Tick(session);
  CHECK(S::g_count==1); // reentrant contact waits for next drain, never edits the iterated drive vector
  auto before=coasted.size();S::Tick(session);CHECK(coasted.size()==before+1&&coasted.back()==&third);
+ S::OnDisconnect();S::Tick(session);driven.clear();coasted.clear();remote=nullptr;
+ auto& players=coop::players::Registry::Get();players.local=&player;players.puppet.actor=&puppetBody;
+ call.object=&component;other=&player;S::OnKnock(call);S::OnKnock(call);CHECK(S::g_count==1);
+ S::Tick(session);CHECK(coasted.size()==1&&coasted.back()==&actor); // host body -> touched prop
+ driven.clear();coasted.clear();other=&puppetBody;S::OnKnock(call);S::Tick(session);
+ CHECK(coasted.size()==1&&coasted.back()==&actor); // remote body -> touched prop
+ driven.clear();coasted.clear();fixed=&actor;S::OnKnock(call);CHECK(!S::g_count);fixed=nullptr;
+ frozen=&actor;S::OnKnock(call);CHECK(!S::g_count);frozen=nullptr;
+ hand=&actor;S::OnKnock(call);CHECK(!S::g_count);hand=nullptr;
+ held=&actor;S::OnKnock(call);CHECK(!S::g_count);held=nullptr;
+ puppetBody.live=false;S::OnKnock(call);CHECK(!S::g_count);puppetBody.live=true;
+ other=&player;S::OnKnock(call);++actor.serial;S::Tick(session);CHECK(coasted.empty());
+ S::OnKnock(call);held=&actor;S::Tick(session);CHECK(coasted.empty());held=nullptr;
+ session.mode=coop::net::Role::Client;S::OnKnock(call);CHECK(!S::g_count);
  S::OnDisconnect();
+ puts("PASS player-body contact coasting: local/remote, dedupe, dead body, static/frozen/hand/held exclusions, serial retirement and host-only admission");
  puts("PASS host contact feeder: physical local/remote holds, chained push, deferred/dedup, static/frozen/hand exclusions, frame/role, recycled/world/reentrant safety");
 }

@@ -1,3 +1,23 @@
+## 0.9.2163
+- Preserve native Tutorial placement on client joins and respawns instead of
+  importing a Story-map/profile position that can reach the native fatal exit.
+- Repair empty inventory item-icon cache files before non-Tutorial loads,
+  reject null texture tables and retry incomplete quick-slot refreshes.
+- Bind killer-wisp capture, tears, host destruction and NPC death watches to
+  exact source/victim bodies, world and request lifetimes; bound native retries
+  and require admitted victim delivery before committing the host kill deadline.
+- Register transformer watches against the native generator_C class.
+- Synchronize movable props pushed by host/player puppet bodies through the
+  existing host coasting stream, preserving held/static/frozen/hand exclusions.
+- Admit the chest's arirSlapper_C through the NPC lane with exact summoner output
+  filtering; attacks, item ownership and effects remain unfinished.
+- Let a laptop/shared-screen operator regain control after three persistently
+  refused inherited repaints on a readable UI; preserve loading seeds and leases.
+- Retain protocol 2217. The eleven requested third-party mods are not qualified
+  as multiplayer-compatible; this package does not install or bundle them.
+- Includes selected adaptations from gxrxrt/WatchersOfTheVoid by garar; source
+  commit attribution is recorded in agent/WORK.md and agent/FORK_AUDIT_20261022.md.
+
 ## 0.9.2162
 - Add Tutorial, Story, Infinite, Ambience, Sandbox and Solar choices to both host
   menus; preserve existing-save modes and use the native Tutorial entry map.

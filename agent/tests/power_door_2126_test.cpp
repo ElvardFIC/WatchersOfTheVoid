@@ -16,9 +16,9 @@ int32_t FindParamOffset(void*,const wchar_t*) { return 0; }
 }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 namespace ue_wrap::script_gate {
-bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn) { return true; }
-bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int) { return true; }
-bool ClassNameWatchSettled(const wchar_t*,const wchar_t*,int) { return true; }
+bool WatchClassName(const wchar_t* cls,const wchar_t*,int,PreFn,PostFn) { CHECK(std::wstring(cls)==L"generator_C");return true; }
+bool ClassNameWatchLive(const wchar_t* cls,const wchar_t*,int) { CHECK(std::wstring(cls)==L"generator_C");return true; }
+bool ClassNameWatchSettled(const wchar_t* cls,const wchar_t*,int) { CHECK(std::wstring(cls)==L"generator_C");return true; }
 void ResolvePendingNames() {}
 bool IsBodyActive(void*,void*) { return false; }
 }
@@ -69,7 +69,7 @@ const char* OutcomeName(IntentOutcome) { return "test"; }
 }
 using namespace coop;using namespace coop::power_grid;
 int main() {
-    net::Session s;g_session.store(&s);
+    net::Session s;Install(&s);Tick();
     net::PowerGridPayload p{};p.op=net::kPowerGridOpDoor;p.seq=1;p.value=1;
     OnReliable(p,1);CHECK(test::state.door==2 && g_ack[1]==1 && !s.grids.empty());
     const auto count=test::sets;OnReliable(p,1);CHECK(test::sets==count);

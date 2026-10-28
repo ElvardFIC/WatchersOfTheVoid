@@ -6,6 +6,7 @@
 #include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/log.h"
 #include "ue_wrap/engine/world_identity.h"
 #include <array>
 #include <chrono>
@@ -27,6 +28,8 @@ uint64_t g_epoch = 0, g_claimRevision = 0;
 uint8_t g_holder = 0xff;
 std::chrono::steady_clock::time_point g_next{};
 bool g_apply = false, g_busy = false;
+int g_operatorFailures = 0;
+constexpr int kOperatorRepaints = 3;
 bool Active() { return g_session && g_session->running() && g_session->connected(); }
 bool Host() { return Active() && g_session->role() == net::Role::Host; }
 uint32_t Next(uint32_t& value) { if (!++value) ++value; return value; }
@@ -39,7 +42,7 @@ void Clear() {
     }
     g_assembler.Clear(); g_canonical.clear(); g_sent.clear(); g_target.clear();
     g_owed.fill(false); g_seen.fill(0); g_peerEpoch.fill(0);
-    g_holder = 0xff; g_apply = false; g_next = {}; g_claimRevision = 0;
+    g_holder = 0xff; g_apply = false; g_operatorFailures = 0; g_next = {}; g_claimRevision = 0;
     // Keep lease/revision/blob counters monotonic through travel so old-world
     // packets cannot acquire the next world's lease by reusing its number.
     ++g_epoch; g_world = ue_wrap::world_identity::Generation();
@@ -64,7 +67,7 @@ void Lease() {
     if (g_lease && holder == g_holder && claim == g_claimRevision) return;
     g_holder = holder; g_claimRevision = claim; Next(g_lease);
     g_sent.clear(); g_seen.fill(0); g_assembler.Clear();
-    g_apply = !g_canonical.empty(); Dirty();
+    g_apply = !g_canonical.empty(); g_operatorFailures = 0; Dirty();
 }
 bool Author() {
     return g_lease && g_holder == players::Registry::Get().LocalPeerId() &&
@@ -116,10 +119,28 @@ void Tick() {
         // inherit the preceding screen, including scroll/text/visibility.
         const auto target = g_target;
         const auto revision = g_revision;
+        const auto lease = g_lease;
         const bool applied = UI::Apply(target);
         if (!Current(epoch) || revision != g_revision) return;
+        Lease();
+        if (revision != g_revision || lease != g_lease) return;
         if (applied) g_apply = false;
+        else if (g_apply && Author()) {
+            std::vector<UI::Row> readable;
+            const bool ready = UI::Read(readable);
+            if (!Current(epoch)) return;
+            Lease();
+            if (revision != g_revision || lease != g_lease) return;
+            if (!Author()) { g_operatorFailures = 0; return; }
+            if (!ready) g_operatorFailures = 0;
+            else if (++g_operatorFailures >= kOperatorRepaints) {
+                UE_LOGW("shared_screen_sync: inherited repaint refused %d times on a readable UI; operator resumes",
+                        g_operatorFailures);
+                g_apply = false;
+            }
+        } else g_operatorFailures = 0;
     }
+    if (!g_apply) g_operatorFailures = 0;
     if ((!g_apply && Author()) || (Host() && g_canonical.empty())) {
         Capture();
         if (!Current(epoch)) return;
@@ -157,13 +178,13 @@ void OnChunk(const net::BlobChunkPayload& chunk, uint8_t sender) {
             !Newer(snapshot.revision, g_seen[sender])) return;
         g_seen[sender] = snapshot.revision;
         const auto rows = W::Encode(snapshot.rows);
-        Publish(rows, std::move(snapshot.rows)); g_apply = true;
+        Publish(rows, std::move(snapshot.rows)); g_apply = true; g_operatorFailures = 0;
     } else {
         if (!snapshot.canonical || !Newer(snapshot.revision, g_revision)) return;
         const bool newLease = snapshot.lease != g_lease;
         g_lease = snapshot.lease; g_revision = snapshot.revision; g_holder = snapshot.owner;
         // Same-lease acknowledgements must not roll back newer local edits.
-        if (newLease || !Author()) { g_target = std::move(snapshot.rows); g_apply = true; }
+        if (newLease || !Author()) { g_target = std::move(snapshot.rows); g_apply = true; g_operatorFailures = 0; }
         if (newLease) g_sent.clear();
     }
 }

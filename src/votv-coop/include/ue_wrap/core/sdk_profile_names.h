@@ -137,9 +137,10 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_ArirGunStealer,
     NpcClass_Kavotia,
     L"rufus_C",  // console Rufus and thiccfus_C (inherits rufus_C); no prop_thiccfus
+    L"arirSlapper_C", // native npc_arirFollower_C child spawned by slapperSummoner_C
 };
 inline constexpr size_t kNpcAllowlistSize = sizeof(kNpcAllowlist) / sizeof(kNpcAllowlist[0]);
-inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 6;
+inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 7;
 static_assert(kNpcAllowlist[kNpcAllowlistEagerSize - 1] == NpcClass_WispBlu &&
                   kNpcAllowlist[kNpcAllowlistEagerSize] == NpcClass_GrayTest,
               "kNpcAllowlistEagerSize must end the eager entries at the late ones");

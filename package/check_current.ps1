@@ -41,7 +41,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $evidence 'source-start.sha256'), $sourceAtStart)
     foreach($name in @(
         'run_player_reports','run_host_players','run_game_modes','run_session_reports','run_sat_console_delivery','run_sat_console_callbacks','run_container_recovery','run_container_birth','run_container_apply','run_ariral_ship','run_inventory_apply','run_profile_join','run_2174','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
-        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_flashlight_native','run_flashlight_join','run_flashlight_click','run_events',
+        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_flashlight_native','run_flashlight_join','run_flashlight_click','run_events','run_fork_review',
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
         'run_stow_2157','run_2160','run_2161','run_2162','run_2163','run_2165','run_2168','run_2169','run_blood','run_atv_steering',

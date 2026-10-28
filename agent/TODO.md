@@ -1,6 +1,6 @@
 # TODO - implementation backlog
 
-Development target: **0.9.2162**. Last qualified package: **0.9.2162 / b2217** (offline).
+Development target: **0.9.2163**. Last qualified package: **0.9.2163 / b2217** (offline).
 Only defects and unfinished implementation belong here. Validation, rendered
 acceptance, qualification and results belong in WORK.md and TESTLOG.md.
 
@@ -70,6 +70,8 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   spawning, cross-peer attacks and Fossilhound ticker/attack routes.
 - [ ] Arirals: complete follower/shooter/pigBeater and gun-stealer behavior,
   stolen/held/thrown-item ownership, attachments, shots/hits and event phases.
+  Slapper Character classification and exact summoner spawn admission are
+  implemented; its attacks, item handoffs and effects still need adapters.
 - [ ] Greys / Flamethrower Tank: complete grayTest targets/actions/effects and
   firetank turret, fire, fuel, damage and destruction.
 - [ ] Geoms: complete Ramiel (geomOcta_C) movement/charge/beam/audio/damage and
@@ -85,8 +87,8 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   complete attacks/effects/lifetime, missing name mappings, shared mimic
   rendering/disguise/damage and centipede visibility.
 - [ ] Ghost, Ghost Log, Fireflies, Walking Mannequin, Black Spot: complete missing
-  names/effects/phases. Finish wisp animation readiness and delayed grab/release
-  cancellation on body replacement, death, world change and reentrant cleanup.
+  names/effects/phases. Finish remaining wisp limb/blood presentation beyond the
+  implemented animation-readiness and body/world-bound grab/release cancellation.
 - [ ] Demons: complete individual targets, rituals/run-end behavior for SKerfur-O,
   Eyeless Insomniac, Insomnia Demon, Abandoned Kerfur, Flesh Erie, Goat Statue,
   Stolas Statue and Furfur. Keep live/zombie/angry Flesh Erie classes distinct.
@@ -98,3 +100,19 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   interaction, animation, damage, ownership and lifetime behavior.
 - [ ] Gnomes / Krampus: complete group spawning, presents, revenge, interaction,
   damage/death/shared lifetime and Krampus attack/fireball/jump/target/despawn.
+
+## Requested mod integrations
+
+- [ ] EmoteWheel 1.0.1: replace the upstream empty network bridge with owned
+  emote/variant/phase/music state, interruption, late join and body/world cleanup.
+- [ ] VEmu 1.1.0: define shared console/cartridge/AV/input ownership and emulator
+  state/audio/video transport. Upstream AV output excludes SmartTV; an explicit
+  adapter is required to support that combination.
+- [ ] JeepMod 0.11.1: finish custom trunk/key/container/upgrade routes beyond
+  inherited ATV pose/seat admission; preserve one shared inventory and lifetime.
+- [ ] PhotographyPlus 0.10.3: implement task/reward/save ownership and photo
+  submission routing without duplicating host rewards or another player's photos.
+- [ ] SmartTV 0.9.6: implement custom player mode/source/playback/join ownership
+  beyond vanilla media routes; keep local device/OBS access local.
+- [ ] Audit FireTower 1.0.4 door/ModActor ownership and add any missing shared
+  interaction/lifetime routes; retain matching local scenery and collision.

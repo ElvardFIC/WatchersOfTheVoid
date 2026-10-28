@@ -1,5 +1,36 @@
 # Regression tests
 
+`run_fork_review.ps1` executes the actual power-grid registration/readiness
+fixture, player-body prop contact/coasting, laptop/shared-screen lease and
+readable-UI fallback fixtures, plus cooked slapper lineage/spawn checks. It
+is included by check_current. Loading widgets and observers cannot spend the
+operator fallback budget; native readiness-read world changes cannot publish
+an old screen. These offline fixtures do not establish rendered peer parity.
+
+`audit_requested_mods.py` downloads and statically inspects the eleven owner-selected
+Thunderstore packages, pins Fusion 0.8108.3, and records archive SHA-256, matching
+manifests, entry lists, readable scripts and confirmed integration blockers under
+build/requested-mods-audit. `--offline` re-inspects cached metadata/ZIPs without
+network access. It never installs or runs downloaded code. Successful inspection
+is not multiplayer qualification; every report retains runtime_verified=false.
+
+`run_wisp_animation.ps1 -FaultControls` executes production pending-tear and
+grab-hold controllers plus native montage/capture/release wrappers. It covers
+body/world/slot retirement, mesh readiness, bounded retry, native callback
+reentry, final kill ownership and partial-capture cleanup. Four removal controls
+must fail at the targeted assertions. Engine/registry/transport boundaries are
+doubled; socket/PhysX/rendered behavior still requires real-peer acceptance.
+The host fixture also extracts production pending-destroy/NPC-watch drains,
+world retirement, source/victim identity admission and reliable relay admission.
+It covers reused ids/bodies, callbacks installing successor work, send refusal,
+peer generation changes and send-time deadlines despite slow local cues.
+
+`run_item_icons.ps1` is included by `run_game_modes.ps1`. It exercises empty
+`.vimg` cache rejection with real Windows file handles, concurrent-writer
+preservation, null texture-array invalidation, Tutorial bypass and actual
+quick-slot refresh retry/settlement. Native importer contracts use the cooked
+research corpus. The installed game cache is not changed by these fixtures.
+
 The 2162 priority regressions extend `run_flashlight_native.ps1` with extracted
 production readers against relocated fields/packed flags. `run_2145.ps1` covers
 equipped crank lights and retained on/off state after puppet replacement.
