@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2217;  // 2161 development: guarded canvas preparation; unchanged wire format
+inline constexpr uint16_t kProtocolVersion = 2218;  // 16-bit reliable kinds; retained fork IDs
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -115,7 +115,9 @@ enum class MsgType : uint8_t {
     // Host to all: props in motion under something other than a hand -- a hook's constraint, a
     // body still sliding after the hook let go -- keyed by key and eid, ctx carrying the claim
     // generation; an entry only for a prop that moved since its last one. EntityPoseBatchHeader
-    // plus N PropPoseSnapshot; PropDriveEnd closes each eid's stream.
+    // plus N PropPoseSnapshot; PropDriveEnd closes each eid's stream. A client that syncs a prop its
+    // interaction moves (PropSyncClaim) sends the same batch to the host alone, which judges every
+    // row by the sender, the eid's row and its generation before it relays one.
     PropDrivePose = 41,
 
     // One 20 ms Opus frame: a stream, not a state. The receiver queues every arrival per sender
@@ -126,7 +128,7 @@ enum class MsgType : uint8_t {
 
 // Payload kinds carried inside a Reliable message. A retired value is never reused: 16, 17, 21,
 // 22, 24, 26, 29, 71 and 138 stay unassigned; 32 and 128 are reserved.
-enum class ReliableKind : uint8_t {
+enum class ReliableKind : uint16_t {
     // Each peer to the other, once after admission: the sender's Player element id, then the nick,
     // the skin, the display flags, the nick colour, the game target, the build claim (the build's
     // SHA-256, 32 bytes, then a flags byte whose bit 0 is "this build verified its own release
@@ -1093,7 +1095,18 @@ enum class ReliableKind : uint8_t {
     AtvAnswer = 251,
     AtvSetComplete = 252,
     LlamaState = 253, // host llama light/state + expiring sound edge; no client physics/AI replay
+    // Fresh upstream additions; all published fork IDs remain fixed.
+    FuseTowerState = 254,
+    SwingerRestPose = 255,
+    PropSyncClaim = 257,
+    PropSyncAnswer = 258,
+    DevLoadFiller = 259,
+    DevParityReport = 260,
+    DevContainerParity = 261,
+    GeomOctaEvent = 262,
+    CoffeeActionIntent = 263,
 };
+inline constexpr size_t kReliableKindCount = 264;
 
 #pragma pack(push, 1)
 
@@ -1282,8 +1295,8 @@ static_assert(sizeof(PosePacket) == 52, "PosePacket must be 52 bytes");
 
 // A reliable message: the standard header (type Reliable) + ReliableHeader + the payload.
 struct ReliableHeader {
-    uint8_t  kind;     // ReliableKind
-    uint8_t  _pad[3];
+    uint16_t kind;     // ReliableKind
+    uint8_t  _pad[2];
     uint16_t payloadLen;
     uint16_t _pad2;
 };
@@ -1469,6 +1482,20 @@ struct CargoLiftPayload {
     uint8_t op,moving,direction,button; // op0 request, op1 idle alignment, op2 native start; button0..2
 };
 static_assert(sizeof(CargoLiftPayload)==80,"CargoLiftPayload wire size");
+// op 0 claim, 1 canonical, 2 seed end (the other fields zero). `cord` is the corded prop's key. sockForm 0 =
+// unplugged (`sock` and `child` empty), 1 = a socket by its own key (`sock`), 2 = a child socket by its owner prop's
+// key (`sock`) and the owner's child component name (`child`). `seq` is a client's claim number from 1; an answer
+// carries the claim's, a broadcast 0.
+struct CordLinkPayload {
+    uint8_t  op;
+    uint8_t  sockForm;
+    uint16_t pad;
+    uint32_t seq;
+    WireKey  cord;
+    WireKey  sock;
+    WireKey  child;
+};
+static_assert(sizeof(CordLinkPayload) == 104, "CordLinkPayload must be 104 bytes");
 
 // A Blueprint class leaf name ("Aprop_equipment_flashlight_C"). Bytes beyond len are zero.
 struct WireClassName {
@@ -1885,7 +1912,8 @@ inline constexpr float kThrownLinVelThreshold = 200.f;
 // carried in PropPoseSnapshot.ctx, the host's physics flags at that instant (propspawn_flags, the
 // receiver restores the same parity the join's converge does), the final pose, and the body's
 // linear and angular velocity -- zero when it ended at rest, the coasting velocity when a hand
-// took it. Once per claim.
+// took it. Once per claim. A client that syncs the prop sends it to the host too, with its own copy's
+// values.
 struct PropDriveEndPayload {
     uint32_t eid;                        // 4
     uint8_t  gen;                        // 1 -- the claim generation
@@ -1899,6 +1927,86 @@ struct PropDriveEndPayload {
 static_assert(sizeof(PropDriveEndPayload) == 56, "PropDriveEndPayload must be 56 bytes");
 static_assert(sizeof(PropDriveEndPayload) <= 256 - 20 - 8,
               "PropDriveEndPayload must fit in one reliable datagram");
+
+// Why a client asks to sync a prop (PropSyncClaim): one value per feeder, logged on the host. Wire-visible: the
+// values are stable.
+enum class PropSyncReason : uint8_t {
+    DevDrill = 1,
+    SwingerParent = 2,   // unused until the swinger-parent feeder
+};
+
+// A client's request to be a prop's syncer (PropSyncClaim): the prop by its key when it has one and by its host eid,
+// and the claim's seq, which the answer echoes. One per claim episode; the seq is the client's own u16 counter.
+struct PropSyncClaimPayload {
+    WireKey  key;         // 32 -- the prop's Key; len 0 = keyless, the eid names it
+    uint32_t eid;         // 4  -- the prop's host element id; 0 is malformed
+    uint16_t seq;         // 2
+    uint8_t  reason;      // 1  -- a PropSyncReason
+    uint8_t  _pad;        // 1  -- zero
+};
+static_assert(sizeof(PropSyncClaimPayload) == 40, "PropSyncClaimPayload must be 40 bytes");
+static_assert(sizeof(PropSyncClaimPayload) <= 256 - 20 - 8,
+              "PropSyncClaimPayload must fit in one reliable datagram");
+
+// What the host's PropSyncAnswer says. Wire-visible: the values are stable; 0 is never sent.
+enum class PropSyncResult : uint8_t {
+    Granted = 1,   // the claim opened a row; gen is the row's generation
+    Revoked = 2,   // the host ended the sender's row; gen is the ended generation
+    Refused = 3,   // the claim was refused; `refusal` says why
+};
+
+// Why the host refused a PropSyncClaim. Wire-visible: the values are stable; 0 = none (not a refusal).
+enum class PropSyncRefusal : uint8_t {
+    None = 0,
+    NotReady = 1,       // the sender is not world-ready
+    Unknown = 2,        // the eid is no live prop the channel can carry
+    InHand = 3,         // a hand holds the prop
+    HostAuthored = 4,   // a host verb or push has a row on it
+    OtherSyncer = 5,    // another client's row (or the sender's own) is open on it
+    OutOfReach = 6,     // the sender's puppet is beyond the intent reach
+    Paced = 7,          // the sender's claim bucket is empty
+};
+
+// The host's verdict on one PropSyncClaim, or the end of a row it granted (PropSyncAnswer), to the claim's sender
+// alone. `seq` echoes the claim that opened the row; `gen` is the granted or the ended generation (0 on a refusal).
+struct PropSyncAnswerPayload {
+    uint32_t eid;         // 4 -- the claim's eid
+    uint16_t seq;         // 2
+    uint8_t  gen;         // 1 -- the granted or the ended generation
+    uint8_t  result;      // 1 -- a PropSyncResult
+    uint8_t  refusal;     // 1 -- a PropSyncRefusal; None unless result is Refused
+    uint8_t  _pad[3];     // 3 -- zero
+};
+static_assert(sizeof(PropSyncAnswerPayload) == 12, "PropSyncAnswerPayload must be 12 bytes");
+static_assert(sizeof(PropSyncAnswerPayload) <= 256 - 20 - 8,
+              "PropSyncAnswerPayload must fit in one reliable datagram");
+
+// One message of the drill filler (DevLoadFiller): its place in the run and the run's length; the rest is fill.
+struct DevLoadFillerPayload {
+    uint32_t seq;         // 4 -- 0..total-1
+    uint32_t total;       // 4 -- the messages the host queued
+    uint8_t  fill[220];   // 220 -- any bytes
+};
+static_assert(sizeof(DevLoadFillerPayload) == 228, "DevLoadFillerPayload must be 228 bytes");
+static_assert(sizeof(DevLoadFillerPayload) <= 256 - 20 - 8,
+              "DevLoadFillerPayload must fit in one reliable datagram");
+
+// One row of the DevParityReport blob: a trash element the joiner has bound, its form (0 pile, 1 clump) and its pose.
+struct DevParityEntry {
+    uint32_t eid;                // 4
+    uint8_t  form;               // 1 -- 0 pile, 1 clump
+    float    x, y, z;            // 12 -- the actor's place
+    float    pitch, yaw, roll;   // 12 -- the actor's rotation, degrees
+};
+static_assert(sizeof(DevParityEntry) == 29, "DevParityEntry must be 29 bytes");
+
+// One row of the DevContainerParity blob: a world container, how many records it holds and the hash of them.
+struct DevContainerParityEntry {
+    uint32_t eid;           // 4
+    uint32_t records;       // 4
+    uint64_t contentHash;   // 8 -- container_slice_wire::ContentHash of the contents
+};
+static_assert(sizeof(DevContainerParityEntry) == 16, "DevContainerParityEntry must be 16 bytes");
 
 // A prop birth (PropSpawn): the class, the persistent key, the list_props row name that init()
 // resolves the mesh, mass and collision from, the transform and scale, the physics flags, an
@@ -2012,7 +2120,7 @@ static_assert(sizeof(PropPlacementResultPayload) == 101, "PropPlacementResultPay
 // Data bytes per SaveTransferChunk message (plus a 4-byte index prefix). Far above
 // kMaxReliablePayload by design: the session diverts the kind to the bulk sink and the transport
 // fragments the message; the 16-bit payload length caps the whole payload at 65535, so 56K plus
-// the index fits with headroom. A 17 MB save is about 308 messages on the Bulk lane.
+// the index fits with headroom. A 17 MB save is about 308 messages on the Transfer lane.
 inline constexpr uint32_t kSaveChunkBytes = 56u * 1024u;
 
 // SaveTransferBegin: the blob header. totalBytes==0 == "host has no save file"
@@ -2103,6 +2211,17 @@ static_assert(sizeof(ServicePanelPayload)<=256-20-8,"Service panel fits a reliab
 static_assert(sizeof(KeyedTogglePayload) == 40, "KeyedTogglePayload must be 40 bytes");
 static_assert(sizeof(KeyedTogglePayload) <= 256 - 20 - 8,
               "KeyedTogglePayload must fit in one reliable datagram");
+
+// Where an open swinger lid rests (SwingerRestPose): the container lane's key for the lid, as
+// KeyedTogglePayload carries it, and the lid actor's world location (cm) and rotation (deg).
+struct SwingerRestPosePayload {
+    WireKey key;                          // 32 -- the container lane's portable key ("mv_" + 16 hex)
+    float   locX, locY, locZ;             // 12
+    float   rotPitch, rotYaw, rotRoll;    // 12
+};
+static_assert(sizeof(SwingerRestPosePayload) == 56, "SwingerRestPosePayload must be 56 bytes");
+static_assert(sizeof(SwingerRestPosePayload) <= 256 - 20 - 8,
+              "SwingerRestPosePayload must fit in one reliable datagram");
 
 // A door verb intent (DoorVerbIntent): the door by the door lane's key, which entry verb, and the
 // one argument of it a door's body reads. The press carries its action back as the client's own
@@ -2509,6 +2628,14 @@ struct PointSackRedeemPayload {
     uint32_t _pad;       // 4  -- zeroed
 };
 static_assert(sizeof(PointSackRedeemPayload) == 40, "PointSackRedeemPayload must be 40 bytes");
+
+// A client's press of a coffee device (CoffeeActionIntent): the device by its prop key, the same on every peer.
+// The host pins the action to the brew itself, so no action byte travels.
+struct CoffeeActionIntentPayload {
+    WireKey key;  // 32 -- the vending machine's or the coffee maker's prop key
+};
+static_assert(sizeof(CoffeeActionIntentPayload) == 32, "CoffeeActionIntentPayload must be 32 bytes");
+static_assert(sizeof(CoffeeActionIntentPayload) <= 256 - 20 - 8, "CoffeeActionIntentPayload must fit one datagram");
 
 // A client's press of the tool gun's remover (RemoverRequest): the element it hit, the camera point it looked
 // from and the point its shot struck, in world centimetres. The host judges all three; none is trusted.
@@ -2971,11 +3098,14 @@ static_assert(sizeof(PowerGridRow) == 39, "PowerGridRow must be 39 bytes");
 static_assert(sizeof(PowerGridPayload) == 228, "PowerGridPayload must be 228 bytes");
 static_assert(sizeof(PowerGridPayload) <= 256 - 20 - 8, "PowerGridPayload must fit one reliable datagram");
 
-// The coordinate towers (CoordTowerState) by their id; a row past `count` is unused. Op 0, the host's rows, with
-// `ack` per slot the last op it took and `refused` the last claim it refused. A client's ops name tower `tower`
-// and are counted by `seq` per session: 1 a press of puzzle button `index`, 2 the lever, 3 the panel's retract,
-// which the host runs through the tower's own use; 4 a pull of fuse `index` and 5 an insert into fuse slot
-// `index`, which its own game made, the host takes or refuses, and its rows answer.
+// The fuse towers (FuseTowerState) by (kind, id); a row past `count` is unused. Op 0, the host's rows, with `ack`
+// per slot the last op it took and `refused` the last claim it refused; the host writes the radio tower's row
+// first, so the cap never drops it. A client's ops name the tower by `kind` and `tower` and are counted by `seq`
+// per session: 1 a press of puzzle button `index`, 2 the confirm lever (the coordinate tower's one lever), 3 the
+// coordinate tower's panel retract, 6 the radio tower's reset lever, which the host runs through the tower's own
+// use; 4 a pull of fuse `index` and 5 an insert into fuse slot `index`, which its own game made, the host takes
+// or refuses, and its rows answer (on the two easiest difficulties the game spends no fuse, so a client's insert
+// is cancelled there, sent with no claim, and the host runs it).
 inline constexpr int kCoordTowers = 4;
 inline constexpr uint8_t kCoordTowerOpRows = 0;
 inline constexpr uint8_t kCoordTowerOpButton = 1;
@@ -3013,6 +3143,52 @@ struct CoordTowerPayload {
 static_assert(sizeof(CoordTowerRow) == 18, "CoordTowerRow must be 18 bytes");
 static_assert(sizeof(CoordTowerPayload) == 212, "CoordTowerPayload must be 212 bytes");
 static_assert(sizeof(CoordTowerPayload) <= 256 - 20 - 8, "CoordTowerPayload must fit one reliable datagram");
+
+inline constexpr int kFuseTowers = 4;
+inline constexpr uint8_t kFuseTowerKindCoordinate = 0;
+inline constexpr uint8_t kFuseTowerKindRadio = 1;
+inline constexpr uint8_t kFuseTowerKinds = 2;
+inline constexpr uint8_t kFuseTowerMaxFuses = 8;
+inline constexpr uint8_t kFuseTowerMaxLights = 25;  // the radio tower's puzzle is up to 5x5
+inline constexpr uint8_t kFuseTowerOpRows = 0;
+inline constexpr uint8_t kFuseTowerOpButton = 1;
+inline constexpr uint8_t kFuseTowerOpLever = 2;
+inline constexpr uint8_t kFuseTowerOpRetract = 3;
+inline constexpr uint8_t kFuseTowerOpPull = 4;
+inline constexpr uint8_t kFuseTowerOpInsert = 5;
+inline constexpr uint8_t kFuseTowerOpReset = 6;
+// A row's flags. The panel's two are the coordinate towers'; a radio row carries neither.
+inline constexpr uint8_t kFuseTowerBroken = 0x01;
+inline constexpr uint8_t kFuseTowerOpened = 0x02;       // the panel stands open
+inline constexpr uint8_t kFuseTowerAnim = 0x04;         // the panel moves; its end flips kFuseTowerOpened
+inline constexpr uint8_t kFuseTowerLeverMoving = 0x08;  // the confirm lever's timeline runs
+inline constexpr uint8_t kFuseTowerLeverUp = 0x10;      // the lever stands up or heads up (the radio's: plays forward)
+inline constexpr uint8_t kFuseTowerResetMoving = 0x20;  // the radio tower's reset lever runs; it plays one way
+inline constexpr uint8_t kFuseTowerAnimating = 0x80;    // the radio tower's own `animation`: every use is ignored
+struct FuseTowerRow {
+    int32_t  id;          // 4
+    uint8_t  flags;       // 1
+    uint8_t  fuseCount;   // 1  -- 0..8
+    uint8_t  lightCount;  // 1  -- 0..25
+    uint8_t  kind;        // 1  -- 0 coordinate, 1 radio
+    uint32_t lights;      // 4  -- bit i: puzzle light (a radio cell) i lit
+    uint8_t  fuses[8];    // 8  -- 0 empty, 1 good, 2 blown
+};
+struct FuseTowerPayload {
+    uint8_t       op;          // 1
+    uint8_t       count;       // 1  -- op 0: rows
+    uint8_t       index;       // 1  -- ops 1, 4, 5: the button or the fuse slot
+    uint8_t       kind;        // 1  -- ops 1..6: the tower's kind
+    int32_t       tower;       // 4  -- ops 1..6: the tower's id
+    uint16_t      seq;         // 2  -- ops 1..6
+    uint16_t      ack[kPeerCapacity];      // 8  -- op 0, by slot (kMaxPeers)
+    uint16_t      refused[kPeerCapacity];  // 8  -- op 0, by slot
+    uint16_t      _pad2;       // 2
+    FuseTowerRow rows[kFuseTowers];  // 80
+};
+static_assert(sizeof(FuseTowerRow) == 20, "FuseTowerRow must be 20 bytes");
+static_assert(sizeof(FuseTowerPayload) == 220, "FuseTowerPayload must be 108 bytes");
+static_assert(sizeof(FuseTowerPayload) <= 256 - 20 - 8, "FuseTowerPayload must fit one reliable datagram");
 
 // The ATV's rig pose, velocity and condition (AtvState), keyed by its Key. A receiver keeps its own
 // physics running and is corrected: the velocity is written from the wire every packet, the
@@ -3709,12 +3885,9 @@ struct PropConvertPayload {
     uint8_t kind;                         // propconvert_kind: kToClump (grab) or kToPile (land)
     uint8_t ctx;                          // the host's per-eid generation, bumped on every trash transition; a later pose or
                                           // convert with an older ctx is dropped
-    uint8_t hasMatchPos;                  // 1 => matchX/Y/Z carry the pile's pre-grab save-time position (a landing after an
-                                          // in-window grab), so the client retires its stale native at the quiescence sweep
-    float   matchX, matchY, matchZ;       // the pre-grab position (world cm); valid iff hasMatchPos and kind is kToPile
     WirePileLook look;                    // kToPile: the landed pile's visible mesh; absent (sclX 0) on kToClump
 };
-static_assert(sizeof(PropConvertPayload) == 136, "PropConvertPayload must be 136 bytes");
+static_assert(sizeof(PropConvertPayload) == 123, "PropConvertPayload must be 123 bytes");
 
 // A grab intent (GrabIntent): the eid of the mirrored pile the client wants; intent only, no state.
 struct GrabIntentPayload {
@@ -4217,6 +4390,29 @@ static_assert(sizeof(CreatureEventActivePayload) == 5, "CreatureEventActivePaylo
 static_assert(sizeof(CreatureEventActivePayload) <= 256 - 20 - 8,
               "CreatureEventActivePayload must fit in one reliable datagram");
 
+// A Geom Octa's decision (GeomOctaEvent). `op`: 0 Aggro, 1 FireVerdict. `verdictNo`: an Aggro's base (the host's count
+// of verdicts sent for this Octa, for its life) or a FireVerdict's own number; any uint32, the receiver pairs by
+// modular difference. `targetKind`: 0 none, 1 a player slot, 2 an element; `target` is the slot (below kMaxPeers) or
+// the element id (host-allocated), and both are zero on an op 1 and for kind 0. `refire` is the FireVerdict's answer
+// (1: the Octa fires again) and zero on an Aggro.
+inline constexpr uint8_t kGeomOctaOpAggro   = 0;
+inline constexpr uint8_t kGeomOctaOpVerdict = 1;
+inline constexpr uint8_t kGeomOctaTargetNone    = 0;
+inline constexpr uint8_t kGeomOctaTargetSlot    = 1;
+inline constexpr uint8_t kGeomOctaTargetElement = 2;
+
+struct GeomOctaEventPayload {
+    uint8_t  op;
+    uint32_t octaEid;      // the Octa's NPC element id (host-allocated)
+    uint32_t verdictNo;
+    uint8_t  targetKind;
+    uint32_t target;
+    uint8_t  refire;
+};
+static_assert(sizeof(GeomOctaEventPayload) == 15, "GeomOctaEventPayload must be 15 bytes");
+static_assert(sizeof(GeomOctaEventPayload) <= 256 - 20 - 8,
+              "GeomOctaEventPayload must fit in one reliable datagram");
+
 // A client's hit on a creature (CreatureHitIntent): the creature's host-allocated element id, the verb, the damage the
 // client's swing claimed, the point the hit struck and the hit's impulse, in world centimetres. The host judges all of
 // it; none is trusted.
@@ -4330,7 +4526,9 @@ static_assert(sizeof(LinkProbePayload) == 4, "LinkProbePayload must be 4 bytes")
 // from what it can see. A value this receiver does not know is a phase change like any other: it
 // renews the wait once, and only its label is dropped.
 enum class HostJoinPhase : uint8_t {
-    CapturingWorld = 1,    // reading the host's save to a stable blob (no numerator: it retries until stable)
+    // Waiting for the host's world to finish starting (ms since it began / the settle ceiling once it has
+    // a gamemode, 0/0 before), then reading its save to a stable blob (no numerator: it retries until stable).
+    CapturingWorld = 1,
     StreamingWorld = 2,    // handing the blob to the transport: bytes accepted / blob bytes
     SnapshotDeferred = 3,  // the bracket is held because the host's registry does not express its world
     StreamingSnapshot = 4, // enqueueing the connect bracket: props sent / candidates
@@ -4489,6 +4687,35 @@ inline bool ValidatePose(const PoseSnapshot& p) {
     if (p.pitch        < -180.f || p.pitch        > 180.f) return false;
     if (p.headYawDelta < -180.f || p.headYawDelta > 180.f) return false;
     return true;
+}
+
+// The world bounds of a held or driven prop's pose, for a pose already known finite: |xyz| within kMaxCoord and
+// every angle a canonical axis in [-180, 180] (senders normalise at the wire boundary). One rule for a client's
+// PropPose and for the rows of a client's PropDrivePose batch. true == in bounds.
+inline bool PropPoseInBounds(const PropPoseSnapshot& p) {
+    if (std::fabs(p.x) > kMaxCoord || std::fabs(p.y) > kMaxCoord || std::fabs(p.z) > kMaxCoord) return false;
+    return std::fabs(p.pitch) <= 180.f && std::fabs(p.yaw) <= 180.f && std::fabs(p.roll) <= 180.f;
+}
+
+// The bounds of a client's prop velocity, for values already known finite: real throws peak at a few thousand cm/s
+// and a fast tumble at a few thousand deg/s; 1e6 is generous headroom, below anything that would teleport a body in
+// one tick. One rule for a client's PropRelease and for the End a syncing client sends the host. true == in bounds.
+inline constexpr float kMaxPropLinVel = 1.0e6f;
+inline constexpr float kMaxPropAngVel = 1.0e6f;
+inline bool PropVelocityInBounds(float linX, float linY, float linZ, float angX, float angY, float angZ) {
+    return std::fabs(linX) <= kMaxPropLinVel && std::fabs(linY) <= kMaxPropLinVel &&
+           std::fabs(linZ) <= kMaxPropLinVel && std::fabs(angX) <= kMaxPropAngVel &&
+           std::fabs(angY) <= kMaxPropAngVel && std::fabs(angZ) <= kMaxPropAngVel;
+}
+
+// A syncing client's PropDriveEnd for the host's body: the pose within the world bounds of a held pose, the
+// velocities within the release's. Floats already known finite. true == in bounds.
+inline bool PropDriveEndInBounds(const PropDriveEndPayload& p) {
+    PropPoseSnapshot pose{};
+    pose.x = p.x; pose.y = p.y; pose.z = p.z;
+    pose.pitch = p.pitch; pose.yaw = p.yaw; pose.roll = p.roll;
+    return PropPoseInBounds(pose) &&
+           PropVelocityInBounds(p.linVelX, p.linVelY, p.linVelZ, p.angVelX, p.angVelY, p.angVelZ);
 }
 
 // Reject a clock sample no clock can hold, BEFORE it is stored: a NaN or absurd value written into the

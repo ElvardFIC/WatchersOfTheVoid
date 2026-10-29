@@ -6,7 +6,7 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  foreach($name in @('held_record_capture','local_hold_yield','prop_scale_sync','prop_drive_2123')) {
-  $includes=if($name -ne 'prop_drive_2123'){@('/Iagent/tests/state_2145_stubs','/Iagent/tests/text_drone_stubs')}else{@()}
+  $includes=@(if($name -ne 'prop_drive_2123'){'/Iagent/tests/state_2145_stubs';'/Iagent/tests/text_drone_stubs'}else{'/Iagent/tests/upstream_refresh_stubs'})
   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /Iagent/tests/stubs /Isrc/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF *> (Join-Path $output "$name.log")
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name (see $output)"}
   & "$output/$name.exe" >> (Join-Path $output "$name.log")

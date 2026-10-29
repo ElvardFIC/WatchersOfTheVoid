@@ -8,6 +8,7 @@ namespace test {
 bool statiq=true,frozen=false,sleeping=false,owned=false,pose=true;
 int setters=0,moves=0,parks=0; bool setterOk=true,destroyOnSet=false;
 int localHold=0;bool handAxis=false;
+int syncerOverrides=0;
 }
 namespace ue_wrap::reflection {
 void* FindFunction(void*,const wchar_t*){return nullptr;}
@@ -69,6 +70,9 @@ void CloseHold(int,uint16_t){}void ClearAnyDriveFor(void*){}
 std::wstring KeyToWString(const coop::net::WireKey&){return L"pried";}
 }
 namespace coop::prop_drive_stream {bool IsParked(void*){return false;}}
+namespace coop::prop_drive_host {
+void OverrideClientSyncer(void* actor,const char*) { CHECK(actor==&test::actor);++test::syncerOverrides; }
+}
 namespace coop::gravity_motion {void* Target(){return test::localHold==2?&test::actor:nullptr;}}
 namespace coop::hand_item {bool IsHandAxisActor(void*){return test::handAxis;}}
 int main(){using namespace test;
@@ -83,7 +87,7 @@ int main(){using namespace test;
  std::memcpy(&p,session.sent.back().data.data(),sizeof(p));
  CHECK(p.flags==0&&p.key.len==5&&p.locX==12);
  statiq=true;S::OnStickState(p,1);
- CHECK(!statiq&&setters==1&&moves==1);
+ CHECK(!statiq&&setters==1&&moves==1&&syncerOverrides==1);
  owned=true;statiq=true;S::ApplyUnstick(&actor,p,L"pried",1);
  CHECK(!statiq&&moves==1&&parks==1); // keep a network-owned body parked, without teleporting
  for(int mode:{1,2,3}){

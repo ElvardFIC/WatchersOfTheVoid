@@ -84,3 +84,5 @@ int main(){
  puts("PASS actual cord controller: linear identity reads, heartbeat coalescing, no-op convergence, drag/occupancy, duplicate/key/serial, retries, callback invalidation and world teardown");
 #endif
 }
+
+namespace ue_wrap::prop { std::wstring GetActorSaveKeyString(void* p){return GetInteractableKeyString(p);} }

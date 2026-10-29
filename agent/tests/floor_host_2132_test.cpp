@@ -231,3 +231,5 @@ int main(){using namespace test;
     Drain();CHECK(coasted.size()==1); // final velocity/record is read on the next pump
     puts("PASS: keyed install, seven-part gameplay births and coasting, final state and lifetime/exclusion guards");
 }
+
+namespace coop::host_world_settle { bool Settled(){return true;} }

@@ -5,13 +5,13 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
 protocol = (root / 'src/votv-coop/include/coop/net/protocol.h').read_text()
-body = re.search(r'enum class ReliableKind : uint8_t \{(.*?)\n\};', protocol, re.S)[1]
+body = re.search(r'enum class ReliableKind : uint16_t \{(.*?)\n\};', protocol, re.S)[1]
 pairs = re.findall(r'^\s*(\w+)\s*=\s*(\d+)', body, re.M)
 actual = {name: int(value) for name, value in pairs}
 published = json.loads(Path(__file__).with_name('protocol_2214_ids.json').read_text())
 assert len(actual) == len(pairs) == len(set(actual.values()))
 assert all(actual[name] == value for name, value in published.items())
-assert all(0 <= value < 256 for value in actual.values())
+assert all(0 <= value < 65536 for value in actual.values())
 expected_additions = {
     'PlayerHit': 238,
     'PropActRequest': 239,
@@ -29,13 +29,20 @@ expected_additions = {
     'AtvAnswer': 251,
     'AtvSetComplete': 252,
     'LlamaState': 253,
+    'FuseTowerState': 254, 'SwingerRestPose': 255,
+    'PropSyncClaim': 257, 'PropSyncAnswer': 258, 'DevLoadFiller': 259,
+    'DevParityReport': 260, 'DevContainerParity': 261,
+    'GeomOctaEvent': 262, 'CoffeeActionIntent': 263,
 }
 assert {name: value for name, value in actual.items() if name not in published} == expected_additions
 version = int(re.search(r'kProtocolVersion\s*=\s*(\d+);', protocol)[1])
 release = json.loads((root / 'package/release.json').read_text())
-assert version >= 2215 and version == release['protocol']
+assert version == 2218
+assert release['protocol'] == 2217  # last qualified package; this is an unpackaged development integration
+assert 'uint16_t kind;     // ReliableKind' in protocol
+assert 'sizeof(ReliableHeader) == 8' in protocol
 assert 'kPeerCapacity = 32' in (root / 'src/votv-coop/include/coop/net/peer_limits.h').read_text()
-print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and matching release protocol')
+print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and development protocol 2218; qualified-package metadata retained')
 
 atv=(root/'src/votv-coop/src/coop/interactables/atv_sync.cpp').read_text()
 assert 'coop::atv_steering_sync::Install(session)' in atv

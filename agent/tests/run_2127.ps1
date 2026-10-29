@@ -29,7 +29,7 @@ try {
         $harness=$harness.Replace('../../src/votv-coop/src/ue_wrap/core/call.cpp',(($root -replace '\\','/')+'/src/votv-coop/src/ue_wrap/core/call.cpp'))
         $copy=Join-Path $output ($case.Name+'_test.cpp')
         [IO.File]::WriteAllText($copy,$harness)
-        & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $copy
+        & cl /nologo /std:c++20 /EHsc "/I$PSScriptRoot" /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $copy
         if ($LASTEXITCODE -ne 0) { throw "Mutation compilation failed: $($case.Name)" }
         & "$output\$($case.Name).exe"
         if ($LASTEXITCODE -eq 0) { throw "Mutation was not detected: $($case.Name)" }

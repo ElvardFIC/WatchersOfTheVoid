@@ -41,7 +41,7 @@ bool SendBlobToSlotWhile(net::Session* s,int slot,net::ReliableKind,uint32_t,con
 }}
 namespace coop::props::container_write_policy {
 Decision SpendArrival(uint32_t,uint8_t,uint64_t,net::Session&,Source,bool){return Decision::Accept;}
-Decision Accept(uint32_t,uint64_t,uint8_t,uint64_t,net::Session&,Source){test::Callback(wc::onJudge);return wc::decision;}
+Decision Accept(uint32_t,uint64_t,LiveHashReader,uint8_t,uint64_t,net::Session&,Source){test::Callback(wc::onJudge);return wc::decision;}
 void NotePublished(uint32_t eid,uint64_t hash){wc::published[eid]=hash;}
 }
 namespace coop::props::container_birth {bool Awaited(void*,uint8_t){return wc::birth;}void Complete(void*){++wc::completed;wc::birth=false;}}
@@ -60,6 +60,10 @@ std::atomic<net::Session*> g_session{nullptr};uint64_t g_applyEpoch=0;
 std::map<uint32_t,uint64_t> g_appliedHash,g_baseHash,g_sentHash;
 std::map<uint32_t,detail::AppliedBinding> g_appliedObject;
 std::set<uint32_t> g_dirty,g_retry;
+enum class ClientSliceOutcome {None, Refused, Accepted};
+std::map<uint32_t,ClientSliceOutcome> g_clientSlice;
+void Touch(uint32_t) {}
+bool ReadLiveHash(uint32_t,uint64_t&) { return false; }
 ContainerSeedRetries g_seedRetry;std::array<uint32_t,net::kMaxPeers> g_seedScans{};
 uint32_t g_nextSeq=0;
 bool IsHost(){return g_session.load()&&g_session.load()->role()==net::Role::Host;}
@@ -102,13 +106,13 @@ bool NestedSweep(const std::vector<uint8_t>&,uint8_t){++replayed;pk::Sweep(Neste
 }
 int main() {
     using namespace wc;using O=S::Ingest;
-    Reset();auto blob=Blob(7);CHECK(Apply(blob)==O::Applied&&Item().ints[0][0]==7&&published[7]==1007&&sends==std::vector<int>{2});
+    Reset();auto blob=Blob(7);CHECK(Apply(blob)==O::Applied&&Item().ints[0][0]==7&&S::g_sentHash[7]==1007&&sends==std::vector<int>{2});
     CHECK(S::IsWorldContainerInventory(&test::objects[3])&&S::InventoryOf(&test::objects[2])==&test::objects[3]&&S::OwnerOf(&test::objects[3])==&test::objects[2]&&S::GObjStackSlot(&test::objects[3])==test::stack+16);
     int allocations=test::allocations;CHECK(Apply(blob)==O::Handled&&test::allocations==allocations);
     // Each allocation failure must retain the old container and its replay debt.
     for(int at=1;at<=allocations;++at){Reset();blob=Blob(7);auto before=SR::ReadArr(test::stack+16,0);test::failAt=at;Receive(blob);
-        CHECK(pk::Size()==1&&SR::ReadArr(test::stack+16,0).data==before.data&&S::g_appliedHash.empty()&&published.empty()&&sends.empty());
-        test::failAt=0;pk::Sweep(Replay,now);CHECK(pk::Size()==0&&Item().ints[0][0]==7&&published[7]==1007);}
+        CHECK(pk::Size()==1&&SR::ReadArr(test::stack+16,0).data==before.data&&S::g_appliedHash.empty()&&S::g_sentHash.empty()&&sends.empty());
+        test::failAt=0;pk::Sweep(Replay,now);CHECK(pk::Size()==0&&Item().ints[0][0]==7&&S::g_sentHash[7]==1007);}
     for(int mode=0;mode<4;++mode){Reset();blob=Blob(7);if(mode==0)test::classesReady=false;if(mode==1)test::namesReady=false;if(mode==2)test::stringsReady=false;if(mode==3)test::signalsReady=false;
         CHECK(Apply(blob)==O::Park&&S::g_appliedHash.empty()&&sends.empty());if(mode==0)CHECK(test::allocations==0);}
     Reset();blob=Blob(7);test::Set(&test::objects[3],4,uint8_t(0x24));CHECK(Apply(blob)==O::Handled&&sends.empty());
@@ -122,12 +126,12 @@ int main() {
         if(change==7)test::Set(&test::objects[0],0,static_cast<void*>(&test::objects[4]));
         if(change==8)test::Set(&test::objects[2],0,static_cast<void*>(&test::objects[5]));
         if(change==9)test::Set(&test::objects[3],0,int32_t(0));if(change==10)S::detail::ApplySource::Changed(7);
-    };CHECK(Apply(blob)==O::Handled&&S::g_appliedHash.empty()&&published.empty()&&sends.empty());}
+    };CHECK(Apply(blob)==O::Handled&&S::g_appliedHash.empty()&&S::g_sentHash.empty()&&sends.empty());}
     Reset();blob=Blob(7);test::onNative=[]{SR::WriteArrHeader(test::stack+16,0,nullptr,0);};CHECK(Apply(blob)==O::Handled&&SR::ReadArr(test::stack+16,0).num==0);
-    Reset();blob=Blob(7);auto newer=Blob(9);test::onNative=[&]{CHECK(Apply(newer)==O::Applied);};CHECK(Apply(blob)==O::Handled&&Item().ints[0][0]==9&&published[7]==1009&&sends.size()==1);
+    Reset();blob=Blob(7);auto newer=Blob(9);test::onNative=[&]{CHECK(Apply(newer)==O::Applied);};CHECK(Apply(blob)==O::Handled&&Item().ints[0][0]==9&&S::g_sentHash[7]==1009&&sends.size()==1);
     Reset();blob=Blob(7);onJudge=[&]{auto fresh=Blob(9);CHECK(Apply(fresh)==O::Applied);};CHECK(Apply(blob)==O::Handled&&Item().ints[0][0]==9);
     Reset();blob=Blob(7);test::onNative=[]{decision=coop::props::container_write_policy::Decision::StaleBase;auto bad=Blob(9);CHECK(Apply(bad)==O::Handled);decision=coop::props::container_write_policy::Decision::Accept;};CHECK(Apply(blob)==O::Applied&&Item().ints[0][0]==7);
-    Reset();blob=Blob(7);onNames=[]{++test::world;};CHECK(Apply(blob)==O::Handled&&volume==0&&views==0&&published.empty()&&sends.empty());
+    Reset();blob=Blob(7);onNames=[]{++test::world;};CHECK(Apply(blob)==O::Handled&&volume==0&&views==0&&S::g_sentHash.empty()&&sends.empty());
     Reset();blob=Blob(7);birth=true;SR::WriteArrHeader(test::stack+16,0,nullptr,0);onView=[]{++test::world;};CHECK(Apply(blob)==O::Handled&&completed==1&&S::g_dirty.count(7));
     Reset();blob=Blob(7);CHECK(Apply(blob)==O::Applied);++test::objects[2].serial;SR::WriteArrHeader(test::stack+16,0,test::foreignItem,1);CHECK(Apply(blob)==O::Applied&&Item().ints[0][0]==7);
     Reset();blob=Blob(7);CHECK(Apply(blob)==O::Applied);++test::objects[3].serial;SR::WriteArrHeader(test::stack+16,0,test::foreignItem,1);CHECK(Apply(blob)==O::Applied&&Item().ints[0][0]==7);

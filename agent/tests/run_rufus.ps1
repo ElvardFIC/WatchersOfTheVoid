@@ -7,7 +7,7 @@ try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
     & "$env:USERPROFILE/.local/bin/python3.15.exe" agent/tests/prepare_rufus_fixture.py "$output/rufus_extracted.h"
     if($LASTEXITCODE){throw 'Rufus production fixture extraction failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/rufus_stubs /I src/votv-coop/include "/I$output" "/Fo$output/rufus.obj" "/Fe$output/rufus.exe" agent/tests/rufus_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/rufus_stubs /I agent/tests/upstream_refresh_stubs /I src/votv-coop/include "/I$output" "/Fo$output/rufus.obj" "/Fe$output/rufus.exe" agent/tests/rufus_test.cpp /link /OPT:REF
     if($LASTEXITCODE){throw 'Rufus fixture compile failed'}
     & "$output/rufus.exe"
     if($LASTEXITCODE){throw 'Rufus fixture failed'}

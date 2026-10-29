@@ -1,6 +1,7 @@
 #include "../../src/votv-coop/src/ue_wrap/devices/lightswitch.cpp"
 #include "../../src/votv-coop/src/coop/props/prop_spawn_authoring.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -12,7 +13,7 @@ Obj objs[]={{{1,0},L"prop_workbench_C"},{{2,0},L"ExecuteUbergraph_prop_workbench
     {{7,0},L"ExecuteUbergraph_tool_spawn"},{{8,0},L"GameplayStatics"},
     {{9,0},L"PlaySound2D"},{{10,0},L"use"},{{13,0},L"prop_sleepingbag_C"},
     {{14,0},L"ExecuteUbergraph_prop_sleepingbag"},{{15,0},L"sleepingbagWrap_C"},
-    {{16,0},L"fold"},{{17,0},L"gen"}};
+    {{16,0},L"fold"},{{17,0},L"gen"},{{18,0},L"lightswitch_C"}};
 Obj sw{{11,0},L"switch"}, other{{12,0},L"other"};
 void* caller=nullptr;bool body=false, locationOk=true, callOk=true, nested=false, attenuationOk=false;
 int clicks=0,uses=0;float vol=0,pitch=0;
@@ -24,7 +25,7 @@ const FName& NameOf(void* p) { return static_cast<test::Obj*>(p)->name; }
 std::wstring ToString(const FName& n) { for(auto& o:test::objs) if(o.name.ComparisonIndex==n.ComparisonIndex)return o.text;return L"other"; }
 bool NameEquals(const FName& n,const wchar_t* s) { return !_wcsicmp(ToString(n).c_str(),s); }
 void* OuterOf(void* p) { return p ? static_cast<test::Obj*>(p)->owner : nullptr; }
-void* ClassOf(void* p) { return p; }
+void* ClassOf(void* p) { return p==&test::sw || p==&test::other ? &test::objs[15] : p; }
 bool IsLive(void* p) { return p!=nullptr; }
 bool IsLiveByIndex(void* p,int32_t i) { return p && NameOf(p).ComparisonIndex==i; }
 int32_t InternalIndexOf(void* p) { return p ? NameOf(p).ComparisonIndex : -1; }
@@ -33,14 +34,19 @@ int32_t AllocateSlotSerial(int32_t) { return 1; }
 void* ObjectAt(int32_t i) { for(auto& o:test::objs) if(o.name.ComparisonIndex==i) return &o;return nullptr; }
 void* FindClass(const wchar_t* s) { for(auto& o:test::objs) if(!_wcsicmp(o.text,s))return &o;return nullptr; }
 void* FindFunction(void*,const wchar_t* s) { return FindClass(s); }
-int32_t FindPropertyOffset(void*,const wchar_t*) { return -1; }
+void* FindDispatchFunctionCached(void* cls,const wchar_t* name){return FindFunction(cls,name);}
+int32_t FindPropertyOffset(void* cls,const wchar_t*) { return cls==&test::objs[15] ? 0 : -1; }
+bool FindBoolProperty(void* cls,const wchar_t* name,int32_t& off,uint8_t& mask) {
+    if(cls!=&test::objs[15] || std::wcscmp(name,L"A"))return false;
+    off=0;mask=1;return true;
+}
 int32_t FindParamOffset(void*,const wchar_t* n) {
     if(!std::wcscmp(n,L"Sound"))return 0;
     if(!std::wcscmp(n,L"VolumeMultiplier"))return 8;
     if(!std::wcscmp(n,L"PitchMultiplier"))return 12;
     return -1;
 }
-int32_t FunctionFrameSize(void*) { return 0; }
+int32_t FunctionFrameSize(void* fn) { return fn==&test::objs[8] ? sizeof(test::Sound) : 0; }
 std::vector<ParamInfo> FunctionParams(void*) { return {}; }
 bool IsDescendantOfAny(void* p,void* const* b,size_t n,int) { for(size_t i=0;i<n;++i)if(p==b[i])return true;return false; }
 bool CallFunction(void* obj,void*,void*) {
@@ -65,11 +71,13 @@ void PlaySoundAtLocation(void* obj,void* cue,const FVector& p,void* att,float vo
 }
 }
 namespace ue_wrap::ufunction_hook {
-bool InstallPreHook(void*,PreNativeCallback cb,bool armed) { CHECK(armed);test::hook=cb;return true; }
+bool InstallPreHook(const facts::Resolved& fn,PreNativeCallback cb,bool armed) { CHECK(armed&&fn.Fn()==&test::objs[8]);test::hook=cb;return true; }
 CallerFrame CurrentCallerFrame() { return {test::caller,nullptr}; }
+void* CurrentNativeFunction() { return &test::objs[8]; }
 }
 namespace ue_wrap::script_gate {
 bool Watch(void*,int,PreFn,PostFn) { return true; }
+bool Watch(const facts::Resolved&,int,PreFn,PostFn) { return true; }
 bool IsBodyActive(void*,void*) { return test::body; }
 }
 namespace ue_wrap::fname_utils {
@@ -78,8 +86,18 @@ reflection::FName StringToFName(const std::wstring& s) { for(auto& o:test::objs)
 namespace ue_wrap::game_thread { bool IsDefinitelyOffGameThread() { return false; } }
 namespace ue_wrap::hot_path { unsigned long CurrentThreadId(){return 0;} unsigned long long CallerRva(const void*){return 0;} }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
+namespace ue_wrap::world_identity {uint32_t Generation(){return 1;}void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t* name){return reflection::FindClass(name);}}
+namespace ue_wrap::facts {
+Resolved ResolveOn(const Function& row,void* cls){return Resolved(reflection::FindFunction(cls,row.Name()),&row);}
+Resolved Resolve(const Function& row){return ResolveOn(row,reflection::FindClass(row.Class()));}
+}
 namespace coop::hand_item {void* LocalHandActor(){return nullptr;}}
 namespace coop::bucket_sync {bool IsMaterialBirth(){return false;}}
+namespace coop::props::prop_food_sync {bool IsLocalConsumedOutput(void*,void*){return false;}}
+namespace coop::prop_action_sync {bool IsLocalMreOutput(void*,void*){return false;}}
+namespace coop::kitchen_sync {bool IsLocalLidOutput(void*){return false;}}
+namespace ue_wrap::cooking_food {bool IsCookingClass(void*){return false;}bool IsCookingFood(void*){return false;}}
 int main() {
     using namespace test;using namespace ue_wrap;
     objs[1].owner=&objs[0];objs[3].owner=&objs[2];objs[4].owner=&objs[0];objs[6].owner=&objs[5];
@@ -97,7 +115,7 @@ int main() {
     coop::prop_spawn_authoring::g_toolUberName=objs[6].name;
     caller=&objs[6];CHECK(BirthIsPlayerAuthored());
     coop::prop_spawn_authoring::g_menuSpawnFn=&objs[4];body=true;caller=nullptr;CHECK(BirthIsPlayerAuthored());body=false;
-    lightswitch::g_useFn=&objs[9];
+    CHECK(lightswitch::EnsureSwitchResolved());
     CHECK(lightswitch::CallUse(&sw));CHECK(uses==1 && clicks==0); // transient attenuation failure
     attenuationOk=true;nested=true;
     CHECK(lightswitch::CallUse(&sw));CHECK(uses==3 && clicks==2 && !lightswitch::g_replayedSwitch);

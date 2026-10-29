@@ -20,6 +20,7 @@
 #include "ue_wrap/actors/floor_bed.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "coop/props/remote_prop_spawn.h"
+#include "coop/session/host_world_settle.h"  // Settled: the host's start-up births are not live edits
 #include "coop/props/join_membership_sweep.h"  // the join claim and sweep
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hot_path_guard.h"  // UE_ASSERT_GAME_THREAD
@@ -246,12 +247,16 @@ struct DrainScope {
     DrainScope() { g_draining = true; }
     ~DrainScope() { g_draining = false; }
 };
+size_t g_capDrops = 0;
 
 void OnFinishSpawnFunc(void* /*context*/, void* srcObj, void* result) {
     if (!GT::IsGameThread()) return;
     auto* s = LoadSession();
     if (!s || !s->connected()) return;
     if (s->role() != coop::net::Role::Host) return;        // host-only broadcaster
+    // The host's own world start-up is not a live edit: the game makes the level's props then, and the
+    // join's capture, held until the world has settled, expresses them as they stand.
+    if (!coop::host_world_settle::Settled() && !s->AnyWorldReadyPeer()) return;
     void* actor = result;
     if (!actor || !R::IsLive(actor)) return;
     // Wire and display mirror spawns are marked before the finish and never enqueued, since
@@ -264,6 +269,7 @@ void OnFinishSpawnFunc(void* /*context*/, void* srcObj, void* result) {
     // the caller restores charge/uses only after FinishSpawningActor returns. Queue tracked
     // actors as well so the next-tick drain can publish that final state without a second spawn.
     if (g_pendingFinished.size() >= kMaxPendingFinished) {
+        ++g_capDrops;
         UE_LOGW("host_spawn_watcher: pending-finished cap %zu hit -- dropping %p (%s)", kMaxPendingFinished,
                 actor, tracked ? "tracked: its fall and its contents are not given"
                                : "the safety census expresses it");
@@ -535,6 +541,8 @@ void DrainPendingSpawns(coop::net::Session* s) {
         else UE_LOGW("host_spawn_watcher: pending finished-spawn retry cap reached actor=%p", e.actor.Raw());
     }
 }
+
+size_t PendingCapDrops() { return g_capDrops; }
 
 void OnDisconnect() {
     ++g_pendingEpoch;

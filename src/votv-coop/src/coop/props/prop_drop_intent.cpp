@@ -1,10 +1,12 @@
 // coop/props/prop_drop_intent.cpp -- see coop/props/prop_drop_intent.h for the design.
 
 #include "coop/props/prop_drop_intent.h"
+#include "coop/props/container_contents_sync.h"
 #include "coop/comms/peer_action_feed.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_snapshot.h"
 
+#include "coop/dev/container_route_census.h"   // IsEnabled -- the dev read of the last place spawn is kept only while it runs
 #include "coop/dev/prop_birth_key_probe.h"   // the seam's key-timing and drain-exit instrumentation
 #include "coop/element/registry.h"          // EidForActor (drain: tracked/mirror exclusion)
 #include "coop/net/protocol.h"
@@ -22,7 +24,7 @@
 #include "coop/props/prop_wire_parity.h"    // PhysFlagsOf, the one builder of a live prop's flags
 #include "coop/props/prop_element_tracker.h"// GetPropElementIdForActor
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
-#include "coop/props/container_contents_sync.h"  // TakeObjInFlight -- mark a container-extraction birth
+#include "coop/props/container_writer_watch.h"   // TakeObjInFlight -- mark a container-extraction birth
 #include "coop/props/container_birth.h"           // a thrown container's birth slice
 #include "coop/session/world_load_episode.h"  // InEpisode (quiet during the join loadObjects churn)
 #include "ue_wrap/core/call.h"                   // ParamFrame + Call (setKey on the host re-spawn)
@@ -124,6 +126,7 @@ struct DrainScope {
     DrainScope() { g_draining = true; }
     ~DrainScope() { g_draining = false; }
 };
+ue_wrap::CachedObjRef g_lastPlace;           // GT-only; the most recent pending place spawn's actor (dev read only)
 constexpr size_t kMaxPending  = 32;          // runaway backstop (a settled client rarely has >1 in flight)
 constexpr int    kMaxKeyTries = 8;           // ~8 net-pump ticks (~64 ms) for the Key to restore, then give up
 
@@ -236,6 +239,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
             actor, R::ClassNameOf(actor), ue_wrap::prop::GetInteractableKeyString(actor),
             fromContainerExtract);
     }
+    if (coop::dev::container_route_census::IsEnabled()) g_lastPlace.Set(actor);   // the census drill's read, armed by its row only
     g_pending.emplace_back(actor, fromContainerExtract, playerAuthored);
     if (fromContainerExtract)
         UE_LOGI("[PROP-DROP] CLIENT enqueued container-EXTRACT birth actor=%p (admitted at drain)", actor);
@@ -731,6 +735,11 @@ void Reset() {
     g_pending.clear();
     g_parkedKeys.clear();
     g_parkFifo.clear();
+    g_lastPlace.Reset();
 }
+
+namespace dev {
+void* LastClientPlaceSpawn() { return g_lastPlace.Get(); }
+}  // namespace dev
 
 }  // namespace coop::prop_drop_intent

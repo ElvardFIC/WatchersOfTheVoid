@@ -60,6 +60,7 @@ bool IsActorUnderAnyDrive(void* actor);
 // The actor `slot`'s hold is driving on this machine, or nullptr. The host uses it as the world prop
 // a client's hand is carrying. Game thread.
 void* DrivenActor(int slot);
+bool IsOwnedHere(void* actor);
 uint16_t DrivenHoldGeneration(int slot);
 
 // A drive on `actor` belonging to a slot other than `slot` (-1 excludes none). Game thread.

@@ -34,8 +34,10 @@ source=root/'src/votv-coop'
 tracker=(source/'src/coop/props/prop_element_tracker.cpp').read_text()
 assert 'if (ue_wrap::engine::IsChildActor(actor))' in tracker
 sub=(source/'src/coop/session/subsystems.cpp').read_text()
-for call in ('Install(&session)','Tick()','QueueConnect(slot)','OnPeerLeft(slot)','OnDisconnect()'):
+for call in ('Install(&session)','Tick()','OnPeerLeft(slot)','OnDisconnect()'):
  assert 'coop::cargo_lift_sync::'+call in sub
+connect=(source/'src/coop/session/connect_replay.cpp').read_text()
+assert 'coop::cargo_lift_sync::QueueConnect(slot)' in connect
 lanes=(source/'src/coop/net/session_lanes.h').read_text()
 assert 'case ReliableKind::CargoLift:' not in lanes # default normal, not relay/pre-world
 dispatch=(source/'src/coop/dispatch/event_dispatch_world.cpp').read_text()
@@ -44,6 +46,6 @@ sync=(source/'src/coop/world/cargo_lift_sync.cpp').read_text()
 wrapper=(source/'src/ue_wrap/devices/cargo_lift.cpp').read_text()
 assert 'L::Replay(' in sync and 'L::Apply(' not in sync and 'OnGraph' not in sync
 assert 'SetSimulatePhysics' not in wrapper and 'CallParamlessNamed' not in wrapper
-pump=(source/'src/coop/session/net_pump.cpp').read_text()
+pump=(source/'src/coop/session/net_pump_world_ready.cpp').read_text()
 assert 'if (!isHost && isConnected &&' in pump and 'g_worldReadyAnnounced.store(true' in pump
 print('PASS: native button/empty use/BeginPlay/latent motion/obstruction/child-body evidence and complete network lifecycle wiring')

@@ -201,11 +201,11 @@ int main(){using namespace test;
  CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.hasVitals && decoded.vitals.health==25 && decoded.vitals.sleep==75 && decoded.items.hold[0].data.ints[0][0]==3);
  session.sent.clear();liveVitals.sleep=90;CHECK(P::SendProfileNow(&session) && !session.sent.empty());
  session.sent.clear();materialReady=false;CHECK(!P::SendProfileNow(&session) && session.sent.empty());materialReady=true;
- // A partial old-session snapshot must stop immediately and leave the new session's hash untouched.
+ // A batch already admitted to transport cannot be recalled; retired completion cannot publish a hash.
  for(int reason=0;reason<3;++reason){
   Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;
   session.onSend=[&,reason]{if(reason==0)P::OnDisconnect();if(reason==1)++world;if(reason==2)++pawnSerial;};
-  CHECK(!P::SendProfileNow(&session) && session.sent.size()==1 && P::g_lastItemsHash==0);
+  CHECK(!P::SendProfileNow(&session) && !session.sent.empty() && session.sent.size()==session.sent.front().chunks && P::g_lastItemsHash==0);
  }
  Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;
  const auto sendSequence=P::g_sendSeq;
@@ -219,14 +219,14 @@ int main(){using namespace test;
  CHECK(P::g_sendSeq==beforeCapture+1);result.clear();receive.Clear();
  for(const auto& part:session.sent)receive.OnChunk(part,1,result);
  CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.hasVitals && decoded.vitals.sleep==99);
- // The same chunker also guards targeted state transfers around every send.
+ // Targeted transfers own the whole admitted batch, but cannot commit a retired source.
  Reset();const std::vector<uint8_t> large(800,42);bool current=true;
  session.onSend=[&]{current=false;};CHECK(!coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,90,large,[&]{return current;}));
- CHECK(session.sent.size()==1);session.sent.clear();current=true;
+ CHECK(!session.sent.empty() && session.sent.size()==session.sent.front().chunks);session.sent.clear();current=true;
  session.onSend=[&]{current=false;};CHECK(!coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,93,{42},[&]{return current;}));
  CHECK(session.sent.size()==1);session.sent.clear();current=true;
  CHECK(coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,91,large,[&]{return current;}) && session.sent.size()>1);
  session.sent.clear();CHECK(!coop::blob_chunks::SendBlobToSlotWhile(nullptr,2,coop::net::ReliableKind::PropSaveData,92,large,[&]{return current;}) && session.sent.empty());
- std::puts("PASS real profile receiver/codec/chunker: current stock, malformed/stale/duplicate snapshots, partial ordering, slot reuse, role guards, wrap, forced vitals and broadcast/targeted per-chunk cancellation");
+ std::puts("PASS real profile receiver/codec/chunker: current stock, malformed/stale/duplicate snapshots, partial ordering, slot reuse, role guards, wrap, forced vitals and retired broadcast/targeted batch completion");
  return 0;
 }

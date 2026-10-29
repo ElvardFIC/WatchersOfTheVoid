@@ -1,7 +1,7 @@
 // coop/dispatch/event_feed.cpp -- the per-tick reliable-message drain: the per-slot Join edge, then the
 // ReliableKind dispatch switch. The kind-to-handler table lives here; the case bodies for the
-// six families (entity, state, signal, intent, economy, world) live in event_dispatch_<family>.cpp.
-// Session, handshake, snapshot and dev-key cases stay inline.
+// seven families (entity, state, signal, intent, economy, prop-drive, world) live in
+// event_dispatch_<family>.cpp. Session, handshake, snapshot and dev-key cases stay inline.
 
 #include "coop/dispatch/event_feed.h"
 
@@ -24,6 +24,7 @@
 #include "coop/session/join_progress.h"
 #include "coop/element/mirror_defer.h"  // deferred hide, armed at Begin and revealed at the lift
 #include "coop/net/session.h"
+#include "coop/element/bind_wait.h"  // Pump: the replay of the messages held for a bind that has since taken
 #include "coop/session/subsystems.h"
 #include "coop/creatures/npc_adoption.h"
 #include "coop/creatures/kerfur_prop_adoption.h"  // OnSnapshotComplete
@@ -93,7 +94,7 @@ void InstallLeaveLineSubscriber() {
 }
 
 // The messages the drain handed to a handler, per sender slot and kind (DrainedFrom).
-coop::roster_ledger::PerSlotState<std::array<uint32_t, 256>> g_drained;
+coop::roster_ledger::PerSlotState<std::array<uint32_t, net::kReliableKindCount + 1>> g_drained;
 
 }  // namespace
 
@@ -126,6 +127,8 @@ void OnSessionStart() {
 }
 
 void Update(net::Session& session, void* localPlayer) {
+    // A bind that took between ticks (the sweep, an adoption) has its held messages replayed first.
+    coop::element::bind_wait::Pump();
     // Order matters: the reconcile runs before the drain, so a peer's row exists by the time its
     // Join is dispatched (a Join arrives over a configured lane, the reconcile's birth condition);
     // reversed, the first Join's nickname would land on a slot the ledger did not consider occupied
@@ -170,8 +173,10 @@ void Update(net::Session& session, void* localPlayer) {
     // is the single membership declaration).
     net::Session::ReliableMessage msg;
     while (session.TryGetReliable(msg)) {
+        // The previous message may have bound a prop: its held messages run before this one.
+        coop::element::bind_wait::Pump();
         if (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-            ++g_drained[msg.senderPeerSlot][static_cast<uint8_t>(msg.kind)];
+            ++g_drained[msg.senderPeerSlot][std::min<size_t>(static_cast<uint16_t>(msg.kind), net::kReliableKindCount)];
         switch (msg.kind) {
         case net::ReliableKind::Join: {
             coop::player_handshake::HandleJoinMessage(session, msg);
@@ -342,7 +347,7 @@ void Update(net::Session& session, void* localPlayer) {
             // live one). The sweep's over-50% valve, not a skip, guards against a world wipe.
             coop::join_membership_sweep::BeginClaimTracking();
             // While the bracket is open, container-contents parks do not age: their PropSpawns are
-            // still in the Bulk stream behind us.
+            // still in the Default stream behind us.
             coop::props::container_contents_sync::NoteJoinSnapshotBracket(true);
             // The bracket's apply window opens: the reconcile window is raised or refreshed (see
             // world_load_episode.h).
@@ -383,7 +388,7 @@ void Update(net::Session& session, void* localPlayer) {
             break;
         }
         case net::ReliableKind::SnapshotComplete: {
-            // The host finished the world snapshot (the last Bulk-lane message after every
+            // The host finished the world snapshot (the last Default-lane message after every
             // PropSpawn): the loading screen lifts.
             if (msg.payloadLen < sizeof(net::SnapshotEndPayload)) {
                 UE_LOGW("event_feed: SnapshotComplete payload too short (%zu < %zu)",
@@ -480,6 +485,7 @@ void Update(net::Session& session, void* localPlayer) {
             if (HandleSignalEvent(msg)) break;
             if (HandleIntentEvent(session, msg)) break;
             if (HandleEconomyEvent(session, msg, localPlayer)) break;
+            if (HandlePropDriveEvent(session, msg)) break;
             if (HandleWorldEvent(session, msg)) break;
             // An unknown kind (a newer protocol) is logged, not silently discarded.
             UE_LOGW("event_feed: unknown ReliableKind %u -- dropping",
@@ -488,10 +494,11 @@ void Update(net::Session& session, void* localPlayer) {
         }
         }
     }
+    coop::element::bind_wait::Pump();   // the last message's bind
 }
 
 uint32_t DrainedFrom(int slot, net::ReliableKind kind) {
-    return (slot >= 0 && slot < net::kMaxPeers) ? g_drained[slot][static_cast<uint8_t>(kind)] : 0;
+    return (slot >= 0 && slot < net::kMaxPeers) ? g_drained[slot][std::min<size_t>(static_cast<uint16_t>(kind), net::kReliableKindCount)] : 0;
 }
 
 }  // namespace coop::event_feed

@@ -62,7 +62,7 @@ using namespace coop::active_drive;
 struct ActiveDrive {void* actor=nullptr;int actorIdx=-1;
  void* LiveActor()const{return ue_wrap::reflection::IsLiveByIndex(actor,actorIdx)?actor:nullptr;}};
 void ResetDriveState(ActiveDrive& d){d={};}
-std::array<ActiveDrive,4> g_drives{};
+std::array<ActiveDrive,coop::players::kMaxPeers> g_drives{};
 #include "../../_research/tests_2151/drive.h"
 }
 int main(){using namespace test;namespace C=coop::coingun_sync;using V=ue_wrap::script_gate::Verdict;

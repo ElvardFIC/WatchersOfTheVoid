@@ -1,4 +1,4 @@
-﻿#include "../../src/votv-coop/src/coop/interactables/shared_screen_sync.cpp"
+#include "../../src/votv-coop/src/coop/interactables/shared_screen_sync.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <cassert>
@@ -89,11 +89,11 @@ int main() {
     Deliver(pipe, Message(false, 1, State(5)), 1); Tick(); assert(visible[0].tab == 5);
     session.sent.clear(); S::QueueConnectBroadcastForSlot(3); Tick(); assert(session.sent.empty());
     session.ready[3] = true; Tick(); assert(Sent(session.sent, 3).rows[0].tab == 5);
-    // Reentrant teardown during a host multi-chunk broadcast must stop the old stream.
+    // Reentrant teardown after batch admission retires the old canonical and its completion.
     visible = State(5, std::wstring(500, L'x')); holder = 0; local = true; ++claim; Tick();
     visible = State(6, std::wstring(500, L'y')); session.sent.clear();
     session.callback = [] { S::OnDisconnect(); }; Tick();
-    assert(!S::g_session && S::g_canonical.empty() && session.sent.size() == 1);
+    assert(!S::g_session && S::g_canonical.empty() && !session.sent.empty() && session.sent.size() == session.sent.front().second.chunks);
 
     session.mode = net::Role::Client; session.sent.clear(); local = false; holder = 1;
     players::Registry::Get().local = 1; S::Install(&session);

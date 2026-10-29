@@ -552,6 +552,19 @@ void OnPeerLeft(int slot) {
     g_remoteDrags[slot] = {};
     RestoreHead(old);
 }
+void* LevelSocket(const std::wstring& key) {
+    if (key.empty() || key == L"None") return nullptr;
+    void* found = nullptr;
+    const auto world = ue_wrap::world_identity::CurrentWorld();
+    if (!world) return nullptr;
+    for (const auto& row : g_actors) if (void* actor = row.Get()) {
+        if (!C::IsSocket(actor) || ue_wrap::world_identity::WorldOf(actor) != world) continue;
+        if (ue_wrap::prop::GetActorSaveKeyString(actor) != key) continue;
+        if (found && found != actor) return nullptr;
+        found = actor;
+    }
+    return found;
+}
 void OnDisconnect() {
     g_localDragCord.Reset(); g_localDragActive = false; g_localDragGen = 0;
     ++g_epoch;

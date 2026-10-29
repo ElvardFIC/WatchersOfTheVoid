@@ -126,13 +126,15 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PowerGridState:
     case ReliableKind::DeskVerb:
     case ReliableKind::EraserPressIntent:
-    case ReliableKind::CoordTowerState:
+    case ReliableKind::CoordTowerState: // retained legacy ID; consumed without applying
+    case ReliableKind::FuseTowerState:
     case ReliableKind::DeskPingVerdict:
     case ReliableKind::ServerRepair:
     case ReliableKind::CommandRequest:
     case ReliableKind::StatOrderReply:
     case ReliableKind::StatQueryReply:
     case ReliableKind::PointSackRedeem:
+    case ReliableKind::CoffeeActionIntent:
     case ReliableKind::RemoverRequest:
     case ReliableKind::CreatureHitIntent:
     case ReliableKind::ProjectileFired:
@@ -184,6 +186,10 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PropScaleState:
     case ReliableKind::SharedScreen:
     case ReliableKind::LaptopUI:
+    case ReliableKind::PropDriveEnd:
+    case ReliableKind::PropSyncClaim:
+    case ReliableKind::DevParityReport:
+    case ReliableKind::DevContainerParity:
         return ClientAuthorship::Client;
     // The Host row matches MTA's protected element data, which a client may not write: opt-in there
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
@@ -233,7 +239,6 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::ChatLine:
     case ReliableKind::AuthChallenge:
     case ReliableKind::LightGroupState:
-    case ReliableKind::PropDriveEnd:
     case ReliableKind::GrabRefused:
     case ReliableKind::JoinPhaseNote:
     case ReliableKind::UpgradeLevels:
@@ -281,6 +286,10 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::DrinkSpill:
     case ReliableKind::AriralShipState:
     case ReliableKind::AtvSetComplete:
+    case ReliableKind::PropSyncAnswer:
+    case ReliableKind::SwingerRestPose:
+    case ReliableKind::GeomOctaEvent:
+    case ReliableKind::DevLoadFiller:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

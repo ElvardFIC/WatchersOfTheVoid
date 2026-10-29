@@ -1,5 +1,7 @@
 // Real player_damage guard and registration, engine/network boundary doubles.
 #include "../../src/votv-coop/src/coop/player/player_damage.cpp"
+#include "ue_wrap/actors/vitals.h"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -17,7 +19,35 @@ bool WatchClassName(const wchar_t* cls,const wchar_t* name,int,PreFn pre,PostFn 
     if (!test::accept) return false;
     test::guards[name]=pre;return true;
 }
+bool WatchName(const facts::Function& row,int tag,PreFn pre,PostFn post) {
+    if (tag==0x50530002) return WatchClassName(row.Class(),row.Name(),tag,pre,post);
+    return true; // Separate damage-delivery registrations are outside this guard fixture.
 }
+}
+namespace coop::config_registry::detail { struct RegistryDef {
+    static FlagRow Flag(){return {nullptr,RegistryCtorKey{}};}
+}; }
+namespace coop::config_registry::rows {const FlagRow player_damage_no_refusal=detail::RegistryDef::Flag();}
+namespace coop::config {bool ResolveFlag(const config_registry::FlagRow&){return false;}}
+namespace coop::creature_hit {bool IsDelivered(void*){std::abort();}}
+namespace coop::element {
+Registry& Registry::Get(){std::abort();}
+ElementId Registry::EidForActor(void*)const{std::abort();}
+}
+namespace coop::player_hit {
+bool Deliver(uint8_t,const net::PlayerHitPayload&){std::abort();}
+uint8_t BoneIndex(const std::wstring&){std::abort();}
+bool InApply(){std::abort();}
+}
+namespace ue_wrap::reflection {
+int32_t ParamOffset::Of(void*){std::abort();}
+const FName& NameOf(void*){std::abort();}
+void* ClassOf(void*){std::abort();}
+std::wstring ClassNameOf(void*){std::abort();}
+std::wstring ToString(const FName&){std::abort();}
+}
+namespace ue_wrap::facts {Resolved ResolveOn(const Function&,void*){std::abort();}}
+namespace ue_wrap::game_thread {bool RegisterInterceptor(const facts::Resolved&,UFunctionInterceptor){std::abort();}}
 namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return nullptr; } }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 namespace ue_wrap::reflection { void* FindFunction(void*,const wchar_t*) { return nullptr; } }

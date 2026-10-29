@@ -38,7 +38,10 @@ namespace ue_wrap::script_gate {
 bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn){return true;}
 bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return true;}void ResolvePendingNames(){}
 }
-namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}}
+namespace ue_wrap::prop {
+std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}
+std::wstring GetActorSaveKeyString(void* a){return GetInteractableKeyString(a);}
+}
 namespace ue_wrap::engine {void* ParentActorOf(void*,std::wstring*){return nullptr;}}
 namespace ue_wrap::cord {
 bool IsCord(void* a){return a&&static_cast<test::Obj*>(a)->type==1;}

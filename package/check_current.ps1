@@ -45,10 +45,10 @@ try {
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
         'run_stow_2157','run_2160','run_2161','run_2162','run_2163','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
-        'run_llama_marker','run_llama_events','run_llama_begin_restore','run_llama_timers','run_llama_trigger','run_llama','run_rufus','run_maxwell_native','run_madness_recovery','run_atv_companion','run_seat_presentation','run_chair_sync','run_light_presentation','run_lightswitch_native','run_atv_recovery','run_atv_spawn_lifetime','run_2149','run_2177','run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_explosion_motion',
+        'run_llama_marker','run_llama_events','run_llama_begin_restore','run_llama_timers','run_llama_trigger','run_llama','run_rufus','run_maxwell_native','run_madness_recovery','run_atv_companion','run_seat_presentation','run_chair_sync','run_light_presentation','run_lightswitch_native','run_atv_recovery','run_atv_spawn_lifetime','run_2149','run_2177','run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_upstream_refresh','run_explosion_motion',
         'run_nonentity','run_cooking','run_food_callbacks','run_prop_action_delivery','run_prop_action_native','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_save_record','run_kitchen',
-        'run_scorch','run_sponge_effects','run_window_stroke','run_toy_music','run_wall_creative','run_water_pour',
+        'run_scorch','run_sponge_effects','run_window_stroke','run_toy_music','run_wall_creative','run_water_pour','run_prop_drive_lifetime','run_2124','run_2126',
         'run_watoy','run_windows','run_2166','run_wall_delivery','run_2176','run_2157','run_2145','run_2147'
     )) {
         Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")

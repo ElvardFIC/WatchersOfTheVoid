@@ -6,6 +6,7 @@ struct Config;
 enum class Role : uint8_t { Host, Client };
 class Session {
 public:
+    bool AnyWorldReadyPeer(int = -1) const { return connected(); }
     struct ReliableMessage;
     bool linked=true;
     Role mode=Role::Host;

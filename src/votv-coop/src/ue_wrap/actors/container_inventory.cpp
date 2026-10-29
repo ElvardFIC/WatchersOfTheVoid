@@ -24,6 +24,7 @@ R::InstanceOffset g_offInvIndex{L"Index"},g_offInvOwner{L"Owner"},g_offGObjStack
 CachedObjRef g_playerClass;
 int32_t g_playerOffset=-1;
 uint8_t g_playerMask=0;
+R::InstanceOffset g_offInvObj{L"obj"}, g_offAllContainers{L"allContainers"};
 
 template <class T> T ReadAt(const void* base, int32_t off) {
     T v{};
@@ -237,6 +238,35 @@ bool CurrentVolume(void* inventory, float& out) {
     const auto off=g_offCurrVol.Of(inventory);if(off<0)return false;
     out = ReadAt<float>(inventory, off);
     return true;
+}
+
+// The host's world-settle edge: propInventory.init sets `obj` on its first line and nothing clears it,
+// so a live `obj` is the mark that a container's inventory has run its init.
+bool InventoryInitialized(void* container) {
+    void* const inv = InventoryOf(container);
+    const int offset=inv?g_offInvObj.Of(inv):-1;
+    if(offset<0)return false;
+    void* const obj=ReadAt<void*>(inv,offset);
+    return obj && R::IsLive(obj);
+}
+
+bool AllContainersResolved(void* gamemode) {
+    return gamemode && g_offAllContainers.Of(gamemode) >= 0;
+}
+
+// The gamemode's allContainers (each container adds itself at BeginPlay and leaves at its end): the
+// registry the host's world-settle edge counts against. Null and non-live entries are skipped.
+size_t AllContainers(void* gamemode, void** out, size_t cap) {
+    if (!gamemode || !out || cap == 0) return 0;
+    if (g_offAllContainers.Of(gamemode) < 0) return 0;
+    SR::Arr arr{};
+    if(!SR::TryReadArr(gamemode,g_offAllContainers.Of(gamemode),arr))return 0;
+    size_t n = 0;
+    for (int32_t i = 0; i < arr.num && n < cap; ++i) {
+        void* const c = ReadAt<void*>(arr.data, i * static_cast<int32_t>(sizeof(void*)));
+        if (c && R::IsLive(c)) out[n++] = c;
+    }
+    return n;
 }
 
 }  // namespace ue_wrap::container_inventory

@@ -7,7 +7,7 @@ Push-Location $root
 try {
     . (Join-Path $root '../_toolchain/env.ps1')
     foreach ($name in @('wire_2124', 'service_panel_2124', 'kitchen_2124', 'gravity_2124')) {
-        & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$name.obj" "/Fe$output\$name.exe" "agent\tests\${name}_test.cpp"
+        & cl /nologo /std:c++20 /EHsc /Gy /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$name.obj" "/Fe$output\$name.exe" "agent\tests\${name}_test.cpp" /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Test compilation failed: $name" }
         & "$output\$name.exe"
         if ($LASTEXITCODE -ne 0) { throw "Test failed: $name" }
@@ -39,7 +39,7 @@ try {
         $harness = $harness.Replace('../../src/votv-coop/src/' + $case.File, ($mutant -replace '\\', '/'))
         $testCopy = Join-Path $output ($case.Name + '_test.cpp')
         [IO.File]::WriteAllText($testCopy, $harness)
-        & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $testCopy
+        & cl /nologo /std:c++20 /EHsc /Gy "/I$PSScriptRoot" /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $testCopy /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Mutation compilation failed: $($case.Name)" }
         & "$output\$($case.Name).exe"
         if ($LASTEXITCODE -eq 0) { throw "Mutation was not detected: $($case.Name)" }

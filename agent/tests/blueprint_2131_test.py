@@ -39,7 +39,8 @@ source = root / 'src/votv-coop/src'
 revive = (source / 'coop/player/death_revive.cpp').read_text()
 run = revive[revive.index('bool RunRevive('):revive.index('// How many pump ticks')]
 assert run.index('ExtinguishMainPlayerFire(pawn)') < run.index('V::Write(V::Field::Health') < run.index('ClearDeadFlag(pawn)')
-assert 'fireCleared && vitalsOk' in run
+assert 'V::Read(V::Field::BurningTime, &burnTime)' in run
+assert 'vitalsOk && haveBurnTime && burnTime <= 0.f' in run
 spawn = (source / 'ue_wrap/actors/puppet_spawn.cpp').read_text()
 assert 'SetMainPlayerCanRagdoll(actor, false)' in spawn
 remote = (source / 'coop/player/remote_player_ragdoll.cpp').read_text()

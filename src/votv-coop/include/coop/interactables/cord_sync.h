@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 namespace coop::net { class Session; struct CordStatePayload; struct PropPoseSnapshot; struct PropReleasePayload; }
 namespace coop::cord_sync {
 void Install(net::Session* session);
@@ -7,6 +8,7 @@ void Tick();
 void Apply(const net::CordStatePayload& p);
 void OnIntent(const net::CordStatePayload& p, uint8_t senderSlot);
 void SendAllToSlot(int slot);
+void* LevelSocket(const std::wstring& key);
 // Reuse the per-player prop pose stream for the cord plug's moving head.
 bool UpdateLocalDragPose(net::Session& session, bool anotherPropIsHeld);
 bool IsDragPose(const net::PropPoseSnapshot& pose);

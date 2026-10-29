@@ -24,8 +24,8 @@ try {
  @{Name='reach';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='if(!allowed)continue;';After=''},
  @{Name='duplicate';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='if(r->have&&!After(p.sequence,r->state.sequence))return;';After=''},
  @{Name='age';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='value.fuel-value.fuelSpeed*float(now>=r.received?now-r.received:0)/1000.f';After='value.fuel'},
- @{Name='cancel';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='actor.Is(a)&&world==world_identity::Generation()&&IsProp(a)&&current()';After='true'},
- @{Name='subclass';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='Verb(a,L"ignite",&state.fuel,base)';After='Verb(a,L"ignite",&state.fuel)'}
+ @{Name='cancel';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='actor.Is(a)&&world==world_identity::Generation()&&FuelActor(a)&&current()';After='true'},
+ @{Name='subclass';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='Verb(a,L"ignite",&state.fuel,base,valid)';After='Verb(a,L"ignite",&state.fuel,nullptr,valid)'}
  )
  foreach($case in $cases){
   $source=[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/'+$case.File)))

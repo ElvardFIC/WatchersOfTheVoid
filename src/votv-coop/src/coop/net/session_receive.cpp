@@ -28,7 +28,7 @@ namespace {
 // otherwise refuse what the relay table forwards. Every byte value is checked, so a kind added to the relay
 // table without its authorship row fails the build here.
 constexpr bool RelayedKindsAreClientAuthored() {
-    for (int v = 0; v < 256; ++v) {
+    for (int v = 0; v < static_cast<int>(kReliableKindCount); ++v) {
         const auto k = static_cast<ReliableKind>(v);
         if (IsClientRelayableReliableKind(k) && AuthorshipOf(k) != ClientAuthorship::Client) return false;
     }
@@ -270,7 +270,7 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
         StoreRemoteTrashCarryBatch(data, len, seq);  // session_trashcarry.cpp (parse + newest-wins store)
         break;
     case MsgType::PropDrivePose:
-        StoreRemotePropDriveBatch(data, len, seq);  // session_propdrive.cpp (parse + merge by eid)
+        StoreRemotePropDriveBatch(routeSlot, data, len, seq);  // session_propdrive.cpp (parse + merge by eid)
         break;
     case MsgType::VoiceFrame:
         // Voice is a stream: every arrival is queued (no header-seq stale drop; the per-payload
@@ -300,8 +300,8 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             const ClientAuthorship who = AuthorshipOf(static_cast<ReliableKind>(rh.kind));
             if (who == ClientAuthorship::Host || who == ClientAuthorship::NotAKind) {
                 const char* why = who == ClientAuthorship::Host ? "only the host authors it" : "it names no kind";
-                if (!saidHostKind_[rh.kind]) {
-                    saidHostKind_[rh.kind] = true;
+                if (!saidHostKind_[std::min<size_t>(rh.kind, kReliableKindCount)]) {
+                    saidHostKind_[std::min<size_t>(rh.kind, kReliableKindCount)] = true;
                     UE_LOGW("net: refused kind %u from slot %d -- %s (client_authorship.h); later ones are "
                             "summed", static_cast<unsigned>(rh.kind), peerSlot, why);
                 } else {
@@ -409,6 +409,15 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             // that locks after is dropped here -- none is left for the game thread to dispatch
             // after the slot's teardown. The departed peer's message goes no further (no relay).
             if (peerConns_[peerSlot].load() != hConn) return;
+            // The join gate opens before the announce is visible to the game thread, which runs the
+            // connect replay on it: no send of that replay, and no relay reaching the slot after
+            // this, passes ungated. The snapshot's completion closes it (prop_snapshot.cpp). Lock
+            // order: the inbox mutex, then the slot's; nothing takes them the other way round.
+            if (cfg_.role == Role::Host &&
+                static_cast<ReliableKind>(rh.kind) == ReliableKind::ClientWorldReady &&
+                peerSlot >= 1 && peerSlot < kMaxPeers) {
+                backlog_.OpenJoinGate(peerSlot);
+            }
             // No hard cap here: a silent drop on an in-order reliable lane is permanent state
             // divergence. Growth is bounded upstream by the NetThread pause both roles share, which
             // stops receiving at kReliableInboxSoftPause while GNS buffers losslessly beneath; one

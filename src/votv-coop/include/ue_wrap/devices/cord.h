@@ -4,6 +4,9 @@
 namespace ue_wrap::cord {
 bool IsCord(void* actor);
 bool IsSocket(void* actor);
+bool IsCordedProp(void* actor);
+void* CordOf(void* actor);
+void* SocketOf(void* actor);
 void* Parent(void* actor);
 void* Socket(void* actor);
 bool ReadHeadPose(void* actor, FVector& location, FRotator& rotation);

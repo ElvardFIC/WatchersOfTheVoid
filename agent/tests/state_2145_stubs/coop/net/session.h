@@ -33,5 +33,18 @@ public:
   if(!sendOk || (allowSend && !allowSend(slot,k,data,n)))return false;Sent s{slot,k,{},origin};s.data.resize(n);std::memcpy(s.data.data(),data,n);sent.push_back(s);return true;
  }
  bool SendReliable(ReliableKind k,const void* data,int n,uint8_t origin=0){return SendReliableToSlot(-1,k,data,n);}
+
+    bool SendReliableBatchToSlot(int slot, ReliableKind kind, const void* raw, int bytes, int count) {
+        if (!raw || bytes < 0 || count <= 0) return false;
+        std::vector<uint8_t> owned(static_cast<const uint8_t*>(raw),static_cast<const uint8_t*>(raw)+static_cast<size_t>(bytes)*count);
+        for(int i=0;i<count;++i) if(!SendReliableToSlot(slot,kind,owned.data()+static_cast<size_t>(i)*bytes,bytes)) return false;
+        return true;
+    }
+    bool SendReliableBatch(ReliableKind kind, const void* raw, int bytes, int count) {
+        if (!raw || bytes < 0 || count <= 0) return false;
+        std::vector<uint8_t> owned(static_cast<const uint8_t*>(raw),static_cast<const uint8_t*>(raw)+static_cast<size_t>(bytes)*count);
+        for(int i=0;i<count;++i) if(!SendReliable(kind,owned.data()+static_cast<size_t>(i)*bytes,bytes)) return false;
+        return true;
+    }
 };
 }

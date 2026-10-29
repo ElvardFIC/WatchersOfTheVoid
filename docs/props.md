@@ -215,7 +215,7 @@ the presser's own machine, and no local body can wait for an answer from across 
 the peer whose verb fired authors the contents and the host arbitrates them (`coop/props/container_contents_sync`): one slice of its
 array per live container is sent at a joiner's ready edge and on change, a client's slice is
 accepted only if its author could have reached that container, has not sent more in the last
-second than an honest client produces, and edited the truth the host last published, and an
+second than an honest client produces, and edited the contents the container holds now, and an
 extraction on a client is a container-extract birth through the intent door above. The open and closed state is a keyed-device channel like a
 door's ([devices.md](devices.md)). The full break-and-spill behaviour, and the single-slot verbs, are reverse-engineered
 and designed and not built.
@@ -253,8 +253,8 @@ text is the prop's save record and crosses on the record lane above with no mess
   host did not index the notebook yet) is judged by it too, and is republished to the other
   peers only when it lands, never at arrival. It is registered with
   `coop/props/prop_record_gates`; the record lane names no class.
-- **The close reaches the host while its sender holds.** The record rides the Bulk lane and the
-  release the Normal one, so a client keeps the claim after it closes the editor until the host's
+- **The close reaches the host while its sender holds.** A client keeps the claim after it closes
+  the editor until the host's
   republish of its last publish comes back (the lane's acknowledgement: the canonical record for
   that notebook's Key arriving after its publish), and lets go anyway after 10 s, logged. Opening
   an editor while that wait is pending ends it: the old claim goes, then the new open is handled.
@@ -368,8 +368,9 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 | `PropPose` (stream) | the holder to all | the held prop's world transform, per frame, and its hold's generation |
 | `PropSpawn`, `PropDestroy` | the host to all; a destroy from either role | class, key, id, transform, physics flags, the birth scalar; the key and id |
 | `PropRelease` | the holder to all | the prop's transform, its inherited linear and angular velocity and its frozen and sleep at the edge, and the hold it closes |
-| `PropDrivePose` (stream) | the host to all | the poses of the props under a hook's drive or a broom's push that moved since their last one, with the claim generation |
-| `PropDriveEnd` | the host to all | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation |
+| `PropDrivePose` (stream) | the host to all; a syncing client to the host | the poses of the props under a hook's drive or a broom's push that moved since their last one, with the claim generation; a client's rows of the prop its own interaction moves, which the host judges before it relays one `[?]` |
+| `PropDriveEnd` | the host to all; a syncing client to the host | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation; a client's End is admitted when it is the row's syncer `[?]` |
+| `PropSyncClaim`, `PropSyncAnswer` | a client to the host; the host to that client | a client's request to sync a prop its interaction moves, and the host's grant, refusal (with the reason) or revoke (with the generation) `[?]` |
 | `PropDropIntent`, `ReelEjectIntent` | a client to the host | a place, or an unavoidable birth, for the host to author |
 | `PropStickState` | the peer that sticks or frees it, to all | frozen or static, the commit pose and the hold the stick ended; or an unstick, with the pose and velocity |
 | `PropScaleState` (202) | holder to host; validated host state to all | key, id, hold generation and root scale; never blindly relayed |

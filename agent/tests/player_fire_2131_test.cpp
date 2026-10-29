@@ -41,6 +41,8 @@ namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 // Unexercised neighbours in the same real TU must never silently act as mocks.
 namespace ue_wrap::reflection {
 int32_t FindParamOffset(void*,const wchar_t*) { std::abort(); }
+std::vector<StructFieldInfo> EnumerateStructFields(void*) { std::abort(); }
+void EngineFree(void*) { std::abort(); }
 int32_t InstanceOffset::Of(void*) { std::abort(); }
 void* PropertyInnerStruct(void*,const wchar_t*) { std::abort(); }
 bool IsLiveByIndex(void*,int32_t) { std::abort(); }
@@ -54,10 +56,12 @@ void* CurrentWorld() { std::abort(); }
 void* WorldOf(void*) { std::abort(); }
 }
 namespace ue_wrap::engine { FVector GetComponentLocation(void*) { std::abort(); } }
+namespace ue_wrap::physics_gun { void* HeldActor(void*) { std::abort(); } }
 namespace ue_wrap::hit_result { bool WriteField(void*,const wchar_t*,void*,void*,const FVector&) { std::abort(); } }
 namespace ue_wrap::reflected_offset {
 #define UNUSED_OFFSET(n) int32_t n() { std::abort(); }
 UNUSED_OFFSET(MainPlayer_heavyGrab)
+UNUSED_OFFSET(MainPlayer_droppedItem)
 UNUSED_OFFSET(MainPlayer_grabHandle)
 UNUSED_OFFSET(MainPlayer_grabTimeline)
 UNUSED_OFFSET(MainPlayer_grabbing_component)

@@ -309,3 +309,5 @@ int main(){using namespace test;
 }
 
 namespace ue_wrap::notebook { bool IsNotebookSheet(void*){return false;} }
+
+namespace coop::dev::container_route_census { bool IsEnabled(){return false;} }

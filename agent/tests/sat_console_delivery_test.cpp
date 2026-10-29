@@ -208,15 +208,15 @@ void QueueReplacement(){
    if(disconnect){S::OnDisconnect();S::Install(&session);}else S::OnPeerGone(1);
    S::Enqueue(1,replacement);
   }return true;};
-  S::Enqueue(1,old);CHECK(session.sent.size()==1);CHECK(S::g_out[1].q.size()==1);CHECK(S::g_out[1].q.front()==replacement);
-  Flush(1);const auto lines=Delivered(session,1);CHECK(lines.size()==1&&lines[0]==replacement);CHECK(S::g_out[1].q.empty());
+  S::Enqueue(1,old);CHECK(session.sent.size()==Packets(old).size());CHECK(S::g_out[1].q.size()==1);CHECK(S::g_out[1].q.front()==replacement);
+  Flush(1);const auto lines=Delivered(session,1);CHECK(lines==std::vector<std::vector<uint8_t>>({old,replacement}));CHECK(S::g_out[1].q.empty());
  }
- // Eviction of the active head must stop its remaining chunks and leave the new head owned.
+ // Eviction cannot recall an admitted batch; its completion must leave the new head owned.
  Reset();Peer(1);session.sendOk=false;S::Enqueue(1,Line(std::wstring(600,L'e')));
  for(size_t i=1;i<S::kOutboxCap;++i)S::Enqueue(1,{2,0});
  bool callback=false;session.onSend=[&](const Packet&){if(!callback){callback=true;S::Enqueue(1,Line(L"newest"));}return true;};session.sendOk=true;
- Flush(1);CHECK(session.sent.size()==1);CHECK(S::g_out[1].q.size()==S::kOutboxCap);CHECK(S::g_out[1].q.front()==std::vector<uint8_t>({2,0}));
- Flush(1);const auto delivered=Delivered(session,1);CHECK(delivered.size()==S::kOutboxCap);CHECK(delivered.back()==Line(L"newest"));
+ Flush(1);CHECK(session.sent.size()==Packets(Line(std::wstring(600,L'e'))).size());CHECK(S::g_out[1].q.size()==S::kOutboxCap);CHECK(S::g_out[1].q.front()==std::vector<uint8_t>({2,0}));
+ Flush(1);const auto delivered=Delivered(session,1);CHECK(delivered.size()==S::kOutboxCap+1);CHECK(delivered.back()==Line(L"newest"));
 }
 
 void SourceChanges(){
@@ -227,12 +227,12 @@ void SourceChanges(){
    case 5:other.connectedPeers[1]=other.readyPeers[1]=true;S::Install(&other);break;
    case 6:++session.generations[1];break;
   }}return true;};
-  S::Enqueue(1,Line(std::wstring(600,L'c')));CHECK(callback);CHECK(session.sent.size()==1);
-  CHECK(session.attempts.size()==1);CHECK(other.sent.empty());
+  S::Enqueue(1,Line(std::wstring(600,L'c')));CHECK(callback);CHECK(session.sent.size()==Packets(Line(std::wstring(600,L'c'))).size());
+  CHECK(session.attempts.size()==session.sent.size());CHECK(other.sent.empty());
  }
- // Recipient identity is also a cancellation boundary between chunks.
+ // Recipient identity also retires completion after batch admission.
  Reset();Peer(1);session.onSend=[&](const Packet&){guids[1]="replacement-guid";return true;};
- S::Enqueue(1,Line(std::wstring(600,L'g')));CHECK(session.sent.size()==1);
+ S::Enqueue(1,Line(std::wstring(600,L'g')));CHECK(session.sent.size()==Packets(Line(std::wstring(600,L'g'))).size());
 }
 
 void RefusedHistory(){

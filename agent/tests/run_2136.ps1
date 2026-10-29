@@ -25,9 +25,16 @@ try {
  @{Name='host_only';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='sender!=0||';After=''},
  @{Name='heartbeat_repeat';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='if(row->applied)return;';After='row->applied=false;'},
  @{Name='reach';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='if(!authorized)continue;';After=''},
+ @{Name='expire';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='if(now-req.at>3000)continue;';After=''},
+ @{Name='departure';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='std::erase_if(g_requests,[slot](const Request& r){return r.sender==slot;});';After=''},
+ @{Name='depart_in_call';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='(!req.sender||req.occupancy==g_occupancy[req.sender])';After='true'},
+ @{Name='reentry';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='!s||g_ticking';After='!s'},
+ @{Name='epoch';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='epoch==g_epoch&&';After=''},
  @{Name='native_direction';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='state.moving?!state.direction:state.direction';After='state.direction'},
  @{Name='busy';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='if(!g_moving.Read(a,moving)||moving)return false;';After='if(!g_moving.Read(a,moving))return false;'},
  @{Name='identity';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='Current(parts)&&stillCurrent()';After='stillCurrent()'},
+ @{Name='param_binding';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='(!rot||f.Set<FRotator>(L"NewRotation",*rot))';After='(!rot||(f.Set<FRotator>(L"NewRotation",*rot),true))'},
+ @{Name='field_mask';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='b=uint8_t(v?b|mask:b&~mask)';After='b=uint8_t(v?mask:0)'},
  @{Name='native_failure';Suite='cargo_lift_wrapper';File='ue_wrap/devices/cargo_lift.cpp';Before='if(!Position(parts.body.Get(),state.position,&state.rotation,true)||!valid())return false;';After='Position(parts.body.Get(),state.position,&state.rotation,true);'}
  )
  foreach($case in $cases){

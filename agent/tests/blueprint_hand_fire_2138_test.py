@@ -17,7 +17,7 @@ s=root/'src/votv-coop'
 h=(s/'src/coop/player/hand_item.cpp').read_text()
 destroy=h[h.index('void DestroyMirror('):h.index('void NoteSpawnFailed(')]
 assert destroy.index('prop_fire::Extinguish(actor)') < destroy.index('E::DestroyActor(actor)')
-sub=(s/'src/coop/session/subsystems.cpp').read_text()
+sub=(s/'src/coop/session/subsystems.cpp').read_text() + (s/'src/coop/session/connect_replay.cpp').read_text()
 for call in ('Install(&session)','Tick()','QueueConnect(slot)','OnPeerLeft(slot)','OnDisconnect()'):
  assert 'coop::hand_fire_sync::'+call in sub
 dispatch=(s/'src/coop/dispatch/event_dispatch_world.cpp').read_text()

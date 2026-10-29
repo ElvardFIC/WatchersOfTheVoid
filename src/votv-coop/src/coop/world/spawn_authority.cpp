@@ -57,6 +57,8 @@ UE_FACT_FN(kRowReceiveTickTickerRoachSummoner, "spawn_authority", L"ticker_roach
 UE_FACT_FN(kRowReceiveBeginPlaySuperEgger, "spawn_authority", L"superEgger_C", L"ReceiveBeginPlay", Declared);
 UE_FACT_FN(kRowReceiveBeginPlayKavotiaPatrolController, "spawn_authority", L"kavotiaPatrolController_C",
            L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowSpwnSuperEgger, "spawn_authority", L"superEgger_C", L"spwn", Declared);
+UE_FACT_FN(kRowCustomEvent5Gamemode, "spawn_authority", L"mainGamemode_C", L"CustomEvent_5", Declared);
 
 // One row: the facts row a client must not run, and the tag its refusal log carries.
 struct Row {
@@ -126,6 +128,8 @@ constexpr Row kRows[] = {
     {nullptr, L"cremator_C", L"igniteInside", "cremator.igniteInside"},
     {nullptr, L"cremator_C", L"removeTrash", "cremator.removeTrash"},
     {nullptr, L"cremator_C", L"spitFireballs_timer", "cremator.spitFireballs_timer"},
+    {&kRowSpwnSuperEgger, nullptr, nullptr, "superEgger.spwn"},
+    {&kRowCustomEvent5Gamemode, nullptr, nullptr, "gamemode.CustomEvent_5"},
 };
 constexpr int kRowCount = static_cast<int>(std::size(kRows));
 constexpr int kTagBase = 0x53410000;   // 'SA', then the row

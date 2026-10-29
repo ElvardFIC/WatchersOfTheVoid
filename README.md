@@ -41,6 +41,11 @@ The development hosting window offers **Players (including you)** under session
 settings: choose 2–32 with minus/plus or use 2/4/8/16/32 shortcuts. Both hosting
 menus remember the same choice for your next session (`net.player_limit`).
 These chooser improvements are included in package 0.9.2161.
+Transport is GameNetworkingSockets: 13 unreliable pose and state streams, a voice stream beside
+them, and one reliable ordered channel whose payloads are 193 message kinds. Each machine's engine
+re-derives animation, physics and rendering from the streamed state. The host is authoritative for
+world state, randomness and NPC simulation; a client acts by naming an intent that the host
+performs.
 
 Transport uses GameNetworkingSockets with positional voice and reliable state lanes.
 Each machine's engine performs its local simulation.

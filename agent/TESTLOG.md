@@ -1,3 +1,139 @@
+# TODO/WORK reconciliation (29 October 2026)
+
+The owner's pasted WORK selection exposed an empty Shared items and resources
+section in TODO. Copied its eight unfinished console/item/resource entries into
+that section with their existing constraints. All fifteen selected entity entries
+were already present in TODO and were not duplicated. All entries remain unchecked;
+this is tracking reconciliation, without implementation or gameplay verification.
+
+# Planned-gap review (29 October 2026)
+
+Read live VOTV-MP/Multivoid status and Known limits in props, devices, signals,
+vehicles, events-and-weather, base-computer, deployables and players; read its
+16 returned open issues and the live gxrxrt/WatchersOfTheVoid agent/TODO.md.
+Open issue/PR searches across the other 46 repositories from the existing
+build/fork-review-20261028 inventory returned no entries. This reuses that
+inventory; it is not a fresh fork enumeration or an all-branch code audit.
+Empty issue searches do not establish that a fork has no unpublished plans.
+
+Compared candidate limits with current local production controllers and the
+implementation backlog. Added UG1–UG8 to TODO with source links and recorded
+their local boundaries in WORK. Known limits are not upstream commitments;
+issue #49 is an open request, with local runtime reproduction still required.
+The fork's remaining event/entity/resource implementations already overlap
+WORK; its gameplay acceptance, optional features and publication tasks were
+not added as new implementation defects.
+
+Excluded stale upstream gaps already covered locally: upgrade_sync levels,
+ATV modules/steering/honk/condition adapters, coingun E-press/commit paths,
+shared SAT output, garden hose actions, prop-knock propagation and receiver
+hold arbitration. Existing client-physics and event/entity/resource gaps retain
+their current backlog owners. In-progress upstream integration may supersede
+individual candidates and must be reconciled before implementing them.
+
+Documentation-only review: no production code, version, build, package or game
+installation changed by this task. No gameplay result or regression pass is
+claimed. Pre-existing merge conflicts and concurrent integration edits remain
+outside this review.
+
+# Joined-client prop physics report (29 October 2026)
+
+Owner forwards a user's report: their friend's hosted game appears to work for
+the host, but the joining client sees widespread object jitter. Objects resting
+on boxes, desks and workbenches vibrate, launch away or clip through the support.
+The reporter asks whether a setting fixes it. Exact mod/game versions, other
+mods, latency/loss and whether the host sees the resulting displacement are
+unknown. This is a user report, not a locally reproduced or resolved defect.
+
+Source inspection: current config_registry_rows.inc contains network rate and
+diagnostic impairment controls, but no dedicated user-facing stack-physics fix.
+Ordinary Aprop_C poses in active_drive.h snap to the latest transform; the
+prop_drive_stream route parks simulation during drive and restores it at the
+end. These are investigation leads, not evidence of the reported root cause.
+No production change or runtime check accompanies this report.
+
+- [ ] Capture matching host/client versions, mod lists, latency/loss and logs;
+  determine whether the host also sees objects move after the client's jitter.
+- [ ] Reproduce resting single objects and stacks on boxes, desks and workbenches;
+  compare both roles before/after pickup/drop and a late join, tracing drive/park/
+  end transitions and native simulation state.
+
+# Tracking cleanup (29 October 2026)
+
+Owner requests implementation-only TODO and WORK. Both now contain unfinished
+code/tooling work; completed reports and game-only follow-ups are removed from
+WORK. The development target is 0.9.2164; the last qualified package remains
+0.9.2163 / b2217. No release metadata, production code or package changed.
+Historical references below to completed items or checks in TODO/WORK describe
+those documents before this cleanup; current implementation scope is in the
+cleaned documents. This edit does not close any game report or add test evidence.
+
+Game-only follow-ups retained from WORK (all pending):
+
+- [ ] Remote flashlight beam/mode/battery, clicks and immediate-join state on
+  matching host/client DLLs; replacement, readiness and native drift behavior.
+- [ ] Ragdoll reports 5/50: C-key/faint/fall entry and recovery, standing/crouched,
+  repeated use, slopes and stock/selected/custom rigs on every role. Include
+  reference-pose transfer and native physics-to-render takeover.
+- [ ] PC loading reports 54/55: boot, input, handoff, repeated power cycles,
+  entering/leaving during boot, power loss/restoration and join/reconnect.
+- [ ] Switches, doors, transformer repair, lamp/ambient presentation and remote
+  drone contents immediately after joining; simultaneous users and replacement.
+- [ ] Real 2–32-player admission/full/reuse, selector layout/input and group load;
+  matching capacity on the deployed master. No master deployment is recorded.
+- [ ] Tutorial chapters, host/client joins and native Solar/Sandbox behavior;
+  icon generation/quick-slot recovery after empty or stale cache files.
+- [ ] Host/player-body prop contacts, blast motion, pickup/handoff and late joins;
+  preserve the current motion lanes 188/191 (upstream ExplosionSpawn177 conflicts
+  with KitchenState177).
+- [ ] Companion ATV garage creation, late-loaded saved rigs, no third body,
+  steering/honk, driver/carrier/seat handoff, save/reload and reconnect.
+- [ ] Seated body/head/light alignment, chair angles, tilted supports, banked
+  vehicles, IK restoration, custom rigs and 32-player presentation load.
+- [ ] Sleep unanimity, awake/joining/dreaming vetoes, paced wake input and
+  replacement/reconnect; personal nightmares and rewards. Per-mattress capacity
+  remains an optional deferred suggestion; existing packets name bed classes.
+- [ ] Inventory/profile and world-container join/rejoin, held/container UI,
+  ejection/extraction, concurrent use and native volume/mass/name recovery.
+- [ ] Food/MRE/native package outputs, repair/material/resource transitions and
+  grill use across peers, including refusal, handoff, disconnect and save/reload.
+- [ ] Console input, simultaneous use, clear/history/busy state and native world
+  command effects; laptop/shared-screen inherited-state handoff and slow UI.
+- [ ] Held/world toy sounds, watoy cues/physics, native reflection schemas and
+  audio phase/timing; hand readiness, body/world replacement and joins.
+- [ ] Sponge/window foam and original-dab presentation, cleaning and stock;
+  bleeding/stain layout, stopping, cleaning, late joins and save parity.
+- [ ] Event outcomes/repeats, simultaneous triggers, frequency changes, loading,
+  late join/reconnect and teardown; personal dream/ending consequences, calendar
+  gates, shared sky phases and blank-email Ariral appearance/warp-arrow report.
+- [ ] Wisp grab/release/tear animation and limb/blood effects; other entity
+  actions/effects and native schemas. Actor admission alone does not close them.
+- [ ] Main-menu branding after restart, manager archive startup and combined
+  upstream adaptations. Existing fork/mod scenarios remain listed below.
+- [ ] Bench58: reproduce the host rifle disappearing after placement; capture
+  class/key and destruction caller/timing with VOTVCOOP_PROP_BIRTH_KEY_PROBE=1.
+  prop_rifle_C remains a candidate, not a confirmed cause.
+- [ ] Token52: identify the original UI and observe credit/spend/refusal/join;
+  shared saveSlot.Points is still a hypothesis.
+- [ ] Trowel: capture an actual key/stock mismatch through hand/slot/drop.
+  Existing native graphs preserve non-None keys; do not invent a repair from
+  the unconfirmed report.
+- [ ] Native VM stack overflow: confirm the initiating caller of recursive
+  lib_C.end; Untitled_1.CustomEvent's borders guard remains a candidate.
+  Evidence: build/requested-events-native/crash-analysis-20261024.md.
+
+Supplemental fixture failures remain failures, not game defects or passes:
+run_2124 (four/32 seats), run_2126/run_2129 (generated-control includes),
+run_2127 (gravity linkage), run_2128 (lightswitch internals), run_2129_audit
+(save callback signatures), run_2131 (Registry API), run_2132 (source assertion),
+run_2134 (lift API), run_2135 (drone dependencies), run_2136 (pump assertion),
+run_2137 (cancellation anchor), run_2138/run_2175 (hand dependencies).
+Historical inventory: build/audit-supplemental-final/results.json and runner logs;
+newer qualification sections supersede older results where explicitly recorded.
+The fork review separately exposed run_2126's obsolete ServicePanel fixture.
+Last WORK prose counters: documents 85/82, src.comment_doc_row 155/0,
+src.files_not_swept 84/0; fact rows passed 565 rows / 181 files. These are retained
+historical findings, not gates rerun by this documentation edit.
 # Release 0.9.2163 qualified offline (28 October 2026)
 
 Owner requests a 2163 release build. Cleanup preview and execution completed
@@ -69,7 +205,7 @@ was weakened to make it pass.
 # Requested third-party mod compatibility (28 October 2026)
 
 Static audit completed for eleven downloaded, SHA-256-recorded Thunderstore
-archives. Exact versions and findings are in WORK. Local read-only inspection
+archives. Exact versions and findings are in the retained archive manifests and inspection.json files. Local read-only inspection
 found only the base game PAK at the installed Paks root; no r2modmanPlus-local
 profile was found at the checked standard AppData path. This does not exclude
 a portable manager/profile elsewhere. No two-player run or install was made.
@@ -457,7 +593,7 @@ Regenerate from current call sites; recheck PASS (443 entries).
 Run all 37 scripts absent from the main runner's direct list as well. Initial
 supplemental result: 18 pass / 19 fail. Repair legacy toolchain, Python and
 research paths and run with the portable build environment: final 23 pass /
-14 fail. Details and per-runner causes are in WORK and
+14 fail. Per-runner causes are retained in the tracking-cleanup entry above and
 build/audit-supplemental-final/results.json; preserve failures without weakening
 assertions. Some supplemental scripts are already transitively covered by the
 main suite, so these counts are script runs, not independent unique test groups.

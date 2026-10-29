@@ -1817,10 +1817,6 @@ msgstr ""
 msgid "say:"
 msgstr ""
 
-#: src/ui/dev_menu.cpp
-msgid "starting up"
-msgstr ""
-
 #: src/ui/loading_screen.cpp
 msgid "the host"
 msgstr ""

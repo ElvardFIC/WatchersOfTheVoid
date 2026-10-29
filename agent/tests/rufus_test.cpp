@@ -3,6 +3,8 @@
 #include "../../src/votv-coop/src/coop/creatures/rufus_birth_guard.h"
 #include "../../src/votv-coop/src/coop/creatures/npc_spawn_lifetime.h"
 #include "coop/creatures/npc_class_policy.h"
+#include "coop/creatures/geom_octa_sync.h"
+#include "coop/config/config.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -171,3 +173,5 @@ void PitchRoll(){Reset();CHECK(!M::DriveBodyYaw(At(Actor),NAN)&&!attaches&&!sets
 int main(){using namespace test;void(*groups[])()={Family,Thiccfus,ConsoleCatch,SerialCatch,ScopeCatch,Dedup,FiniteBirth,HostYaw,ClientYaw,
     BeginPlay,Tick,Resumes,Damage,Corpse,NativeOwner,BirthReady,Adoption,Attachment,Binding,Frame,RefusedAttach,Pawn,AnimRecovery,BadYaw,PitchRoll};
     for(int i=0;i<25;++i){groups[i]();std::printf("PASS Rufus %d\n",i+1);}return 0;}
+
+namespace coop::geom_octa_sync { void OnNpcSpawnSent(uint32_t,void*,const char*,size_t,bool,int) {} }

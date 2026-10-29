@@ -63,6 +63,15 @@ bool SetActorRotation(void*,const FRotator&){return true;}
 namespace coop::prop_echo_suppress {void MarkIncomingDestroy(void*){}void MarkMirrorSpawn(void*){}ScopedMirrorSpawn::ScopedMirrorSpawn(){}ScopedMirrorSpawn::~ScopedMirrorSpawn(){}}
 namespace coop::trash_collect_sync {bool EnsureHeldItemBroadcast(void*,net::Session*){++test::releases;return true;}}
 namespace coop::prop_fire_sync {void OnHandReleased(void*){++test::fireReleases;}}
+// These fixtures use personal boxes, with no shared world identity or gun visuals.
+namespace coop::hand_item_pose {bool MeasureLocalHoldRelative(void*,void*,float*,float*){return false;}}
+namespace coop::roster_ledger {void RegisterPerSlotClear(PerSlotClearFn,void*){}}
+namespace coop::prop_element_tracker {element::ElementId GetPropElementIdForActor(void*){return element::kInvalidId;}}
+namespace coop::remote_prop {
+element::ElementId ResolveMirrorEidByActor(void*,bool){return element::kInvalidId;}
+void* ResolveLiveActorByEid(uint32_t){return nullptr;}
+}
+namespace ue_wrap::physics_gun {Visuals ReadVisuals(void*){return {};}void ApplyVisuals(void*,const Visuals&){}}
 namespace coop::players {
 Registry& Registry::Get(){static Registry r;return r;}
 uint8_t Registry::LocalPeerId()const{return test::self;}
@@ -80,6 +89,7 @@ using namespace test;
 coop::net::Session session;
 void Reset(coop::net::Role role=coop::net::Role::Host){
  S::OnDisconnect();H::Reset();++world;session={};session.mode=role;self=role==coop::net::Role::Host?0:1;
+ coop::players::Registry::Get().local=&objs[0];
  for(int i=0;i<7;++i)objs[i]={i};held=&objs[1];puppet.actor=&objs[2];puppet.posed=true;hooks=applyOk=propClass=true;applies=destroys=releases=fireReleases=0;callback={};spawnCallback={};destroyCallback={};S::Install(&session);
 }
 void Owner(){H::TickOwner(session,&objs[0],held);}

@@ -89,7 +89,7 @@ int main(){
     Reset(s,net::Role::Client);faucet=test::New(tap);CHECK(G::Enqueue(faucet,G::kToggle));++test::playerNo;G::Tick();CHECK(s.sent.empty() && G::g_pending.empty());
     Reset(s,net::Role::Client);faucet=test::New(tap);CHECK(G::Enqueue(faucet,G::kToggle));
     G::g_pending.front().key=std::wstring(128,L'a');G::g_pending.front().endpoint=std::wstring(128,L'b');
-    s.onSend=[]{++test::world;};G::Tick();CHECK(s.sent.size()==1); // cancelled before a second chunk
+    s.onSend=[]{++test::world;};G::Tick();CHECK(!s.sent.empty() && s.sent.size()==s.sent.front().chunks); // admitted batch stays owned after source retirement
     Reset(s,net::Role::Client);faucet=test::New(tap);CHECK(G::Enqueue(faucet,G::kToggle));
     s.onSend=[]{G::OnDisconnect();};G::Tick();CHECK(!G::g_session && G::g_pending.empty());
     puts("PASS garden actions: ordered host faucet clicks, duplicate/rejected sequence, role/reach/family, detach endpoint identity, native host cleanup, retained client queue, shared blob sequence and world/peer cleanup");

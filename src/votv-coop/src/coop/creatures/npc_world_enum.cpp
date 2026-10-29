@@ -9,6 +9,8 @@
 #include "coop/creatures/npc_world_enum.h"
 #include "npc_spawn_lifetime.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/element_deleter.h"
 #include "coop/element/mirror_manager.h"
 #include "coop/element/mirror_managers.h"  // PropMirrors/NpcMirrors/WaMirrors
@@ -16,6 +18,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/creatures/kerfur_entity.h"  // reserve the stable kerfur id when a kerfur NPC is registered
+#include "coop/creatures/geom_octa_sync.h"  // OnNpcSpawnSent: the Octa's events follow its spawn's send
 #include "coop/creatures/npc_sync.h"
 #include "coop/world/world_actor_sync.h"  // HostEnrollExSpawn -- the WA branch of the EX-catch drain
 #include "ue_wrap/engine/engine.h"   // TryGetActorLocation / TryGetActorRotation
@@ -117,6 +120,7 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     // fan-out's own gate first, where MTA filters inside its fan-out (CPlayerManager.cpp:162-170).
     // MTA registers an element at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39);
     // a creature that loaded with the level, or that no watched spawn source made, is enrolled here.
+    bool spawnSent = false;
     if (source.Current(coop::npc_sync::GetSession()) && s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
         coop::net::EntitySpawnPayload p{};
         const std::string& tn = el->GetTypeName();
@@ -133,11 +137,16 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
         // that eid, since the eid-keyed sweep finds nothing.
         const coop::element::ElementId offEid = coop::kerfur_entity::GetOriginOffEidForEid(eid);
         p.retireOffEid = (offEid == coop::element::kInvalidId) ? 0u : static_cast<uint32_t>(offEid);
-        if (!s->SendEntitySpawn(p, skipSlot)) {
+        spawnSent = s->SendEntitySpawn(p, skipSlot);
+        if (!spawnSent) {
             UE_LOGW("npc-sync[%s]: SendEntitySpawn failed for newly-registered eid=%u",
                     logTag, p.elementId);
         }
     }
+    // The Geom Octa's lane sends none of its events before the spawn's send. When no peer was world-ready nothing was
+    // sent, and the join's snapshot carries the spawn instead.
+    if (source.Current(coop::npc_sync::GetSession())) coop::geom_octa_sync::OnNpcSpawnSent(static_cast<uint32_t>(eid), obj, el->GetTypeName().data(),
+                                         el->GetTypeName().size(), spawnSent, -1);
     return eid;
 }
 
@@ -147,6 +156,7 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // by the NPC/world-actor allowlists; unrelated births remain host-local.
 constexpr const wchar_t* kConsoleNpcOutputs[]={L"rufus_C",L"thiccfus_C",nullptr};
 constexpr const wchar_t* kSlapperOutputs[]={L"arirSlapper_C",nullptr};
+constexpr const wchar_t* kGeomOctaNpcOutputs[]={L"geomOcta_C",L"eg_C",nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
     {L"slapperSummoner_C",kSlapperOutputs},        // chest component's native deferred spawn
     {L"ui_console_C",kConsoleNpcOutputs},          // funny console's exact Character outputs
@@ -164,6 +174,7 @@ constexpr ExSpawnSource kExSpawnSources[] = {
     {L"ufoDropper_tank_C",       nullptr},          // tank drop's firetankDeploy_C
     {L"firetankDeploy_C",        nullptr},          // deployed firetank_C
     {L"kavotiaPatrolController_C", nullptr},        // patrol set: kavotia_C and igetis_C
+    {L"mainGamemode_C", kGeomOctaNpcOutputs},
     {L"grayEventController_C",   nullptr},          // graysforest: spawn() mints the grayTest_C pack
     {L"superEgger_C",            nullptr},          // eggvasion: spwn() mints the eg_C children
     {L"tentacleBallsFollower_C", nullptr},          // tentacleBalls: runTrigger() mints the pack
@@ -218,6 +229,10 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     for (const ExSpawnSource& e : kExSpawnSources)
         if (_wcsicmp(srcName.c_str(), e.cls) == 0) { source = &e; break; }
     if (!source) return;
+    // [dev] octa_red=no_source, the Octa drill's red arm: the gamemode's row is left out of the catch.
+    static const bool s_noGamemodeSource =
+        coop::config::ResolveEnum(::coop::config_registry::rows::octa_red) == "no_source";
+    if (s_noGamemodeSource && _wcsicmp(srcName.c_str(), L"mainGamemode_C") == 0) return;
     void* cls = R::ClassOf(spawned);
     if (!cls) return;
     if(!lifetime::OutputAllowed(source->outputs,R::ToString(R::NameOf(cls))))return;

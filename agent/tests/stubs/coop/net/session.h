@@ -2,21 +2,24 @@
 // Offline transport double; production protocol and receiver implementation are unchanged.
 #include "coop/net/protocol.h"
 #include "coop/net/eid_pose_lane.h"
+#include "coop/net/end_reason.h"
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 #include <functional>
 #include <utility>
 namespace coop::net {
 struct Config;
-inline constexpr uint8_t kMaxPeers=4;
+inline constexpr uint8_t kMaxPeers=kPeerCapacity;
 enum class Role : uint8_t { Host, Client };
 class Session {
 public:
-    using BulkSinkFn = void (*)(int, const uint8_t*, int);
+    using BulkSinkFn = void (*)(const uint8_t*, int);
     BulkSinkFn bulkSink = nullptr;
     BulkSinkFn saveBeginSink = nullptr;
     void SetBulkSink(BulkSinkFn fn) { bulkSink = fn; }
     void SetSaveBeginSink(BulkSinkFn fn) { saveBeginSink = fn; }
+    bool Kick(int, EndReason, const char*) { std::abort(); }
     bool TrySendReliableToSlot(int slot, ReliableKind kind, const void* data, int size) {
         return SendReliableToSlot(slot, kind, data, size);
     }

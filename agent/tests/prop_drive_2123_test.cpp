@@ -1,5 +1,6 @@
 // Compile the production receiver against deterministic UE/transport doubles. This
 // exercises real Tick/OnEnd paths; it does not pretend to simulate Unreal physics.
+#include "../../src/votv-coop/src/coop/element/bind_wait.cpp"
 #include "../../src/votv-coop/src/coop/props/prop_drive_stream.cpp"
 #include "../../src/votv-coop/src/coop/props/prop_drive_host.cpp"
 #include <cassert>
@@ -21,8 +22,11 @@ namespace test {
 int actor, mesh;
 int serial = 1, meshSerial = 1;
 bool present = true, remoteHeld = false, simulates = true, frozen = false;
+bool bound = true;
 ue_wrap::engine::MainPlayerGrabState grab{};
 int writes = 0, parks = 0, unparks = 0;
+int linearWrites = 0, angularWrites = 0;
+ue_wrap::FVector linear{}, angular{};
 float x = 0;
 }
 namespace ue_wrap::reflection {
@@ -64,11 +68,11 @@ bool ReadMainPlayerGrabState(void*, MainPlayerGrabState& out) { out = test::grab
 bool SetActorLocation(void*, const FVector& p) { ++test::writes; test::x = p.X; return true; }
 bool SetActorRotation(void*, const FRotator&) { return true; }
 bool IsComponentSimulatingPhysics(void*) { return test::simulates; }
-bool SetComponentLinearVelocity(void*, float, float, float) { return true; }
-bool SetComponentAngularVelocity(void*, float, float, float) { return true; }
+bool SetComponentLinearVelocity(void*, float x, float y, float z) { ++test::linearWrites; test::linear={x,y,z}; return true; }
+bool SetComponentAngularVelocity(void*, float x, float y, float z) { ++test::angularWrites; test::angular={x,y,z}; return true; }
 }
 namespace coop::remote_prop {
-void* ResolveLiveActorByEid(uint32_t eid) { return eid == 1 && test::present ? &test::actor : nullptr; }
+void* ResolveLiveActorByEid(uint32_t eid) { return eid == 1 && test::present && test::bound ? &test::actor : nullptr; }
 bool IsActorUnderAnyDrive(void* p) { return p == &test::actor && test::remoteHeld; }
 std::wstring KeyToWString(const net::WireKey&) { return L""; }
 }
@@ -104,11 +108,14 @@ void RestoreSpParityPhysicsAfterConverge(void*, uint8_t) { test::simulates = tru
 
 int main() {
     namespace D = coop::prop_drive_stream;
+    namespace BW = coop::element::bind_wait;
     coop::net::Session session;
     auto reset = [&] {
-        D::OnDisconnect(); test::present = true; test::remoteHeld = false;
+        BW::Clear("fixture reset"); D::OnDisconnect(); test::present = true; test::remoteHeld = false;
         test::grab = {}; test::simulates = true; test::frozen = false;
         test::writes = test::parks = test::unparks = 0;
+        test::linearWrites = test::angularWrites = 0; test::linear = test::angular = {};
+        test::bound = true; session.mode = coop::net::Role::Client;
         session.incoming.clear();
     };
     auto pose = [&](uint8_t gen, float x) {
@@ -165,12 +172,12 @@ int main() {
     end(10, 101); assert(!D::IsParked(&test::actor) && test::x == 101 && test::simulates);
 
     // The end arriving before spawn retains only the newest final pose.
-    reset(); test::present = false; end(10, 100); end(9, 90); end(10, 101);
-    test::present = true; D::TickApplyAndDrive(session); assert(test::x == 100);
-    reset(); test::present = false; end(10, 100);
+    reset(); test::present = false; BW::MarkDeferred(1,"test spawn"); end(10, 100); end(9, 90); end(10, 101);
+    test::present = true; BW::OnBound(1); BW::Pump(); D::TickApplyAndDrive(session); assert(test::x == 100);
+    reset(); test::present = false; BW::MarkDeferred(1,"test spawn"); end(10, 100);
     test::present = true; end(11, 110); D::TickApplyAndDrive(session);
     assert(test::x == 110); // an old pending end must not undo a newer end applied immediately
-    reset(); test::present = false; end(10, 100);
+    reset(); test::present = false; BW::MarkDeferred(1,"test spawn"); end(10, 100);
     test::present = true; pose(11, 110); assert(test::x == 110 && D::IsParked(&test::actor));
 
     // Every local carry path yields before writing a pose and restores PHC simulation.
@@ -201,6 +208,12 @@ int main() {
     reset(); pose(40, 40); before = test::writes; ++test::serial;
     assert(!D::IsParked(&test::actor)); D::TickApplyAndDrive(session);
     assert(test::writes == before && test::unparks == 0);
+    // A packet can arrive before Tick retires the old object-array occupant.
+    reset(); pose(40, 40); before = test::writes; ++test::serial; test::bound=false;
+    pose(40, 1000); assert(test::writes == before && test::unparks == 0);
+    reset(); pose(40, 40); before = test::writes; ++test::serial; test::bound=false;
+    coop::net::PropDriveEndPayload retired{}; retired.eid=1; retired.gen=40; retired.x=400;
+    D::ReleaseHost(retired); assert(test::writes == before && test::unparks == 0);
     reset(); pose(40, 40); before = test::writes; ++test::serial;
     test::grab.grabbingActor = &test::actor; pose(41, 41);
     assert(test::writes == before && test::unparks == 0); // old park does not own this successor's physics
@@ -209,9 +222,20 @@ int main() {
     assert(test::unparks == 1 && !test::simulates); // release rider bookkeeping, retain frozen physics
     reset(); pose(255, 255); end(255, 256); pose(1, 1); end(255, 999);
     assert(D::IsParked(&test::actor) && test::x == 1); // generation wrap
+    // Resting translation can still carry angular momentum; all-zero ends stay asleep.
+    for (int motion=0; motion<4; ++motion) {
+        reset(); pose(50,50);
+        coop::net::PropDriveEndPayload final{}; final.eid=1; final.gen=50; final.x=50;
+        if (motion&1) final.linVelX=20;
+        if (motion&2) final.angVelZ=90;
+        D::OnEnd(final);
+        assert(test::linearWrites==(motion!=0) && test::angularWrites==(motion!=0));
+        assert(test::linear.X==final.linVelX && test::angular.Z==final.angVelZ);
+    }
+    std::puts("PASS prop lifetime and release: recycled slot before pose/host end, pure spin, translation, combined motion and sleeping rest");
     D::OnDisconnect();
     namespace H = coop::prop_drive_host;
-    reset(); H::OnDisconnect(); session.ends.clear(); session.published.clear();
+    reset(); session.mode=coop::net::Role::Host; H::OnDisconnect(); session.ends.clear(); session.published.clear();
     H::Coast(&test::actor, "test"); H::Tick(session);
     assert(H::g_driven.size() == 1 && session.published.size() == 1);
     auto generation = H::g_driven[0].gen;
@@ -227,7 +251,7 @@ int main() {
     H::g_driven[0].lastSendMs = coop::active_drive::NowMs() - 2000;
     session.sendOk = true; H::Tick(session);
     assert(H::g_driven.empty() && session.ends.size() == 1);
-    reset(); H::Claim(&test::actor, "hook"); H::Tick(session);
+    reset(); session.mode=coop::net::Role::Host; H::Claim(&test::actor, "hook"); H::Tick(session);
     H::g_driven[0].lastSendMs = H::g_driven[0].lastMoveMs = coop::active_drive::NowMs() - 2000;
     H::Tick(session); assert(H::g_driven.size() == 1); // resting claim stays active
     test::grab.gravityActor = &test::actor; H::Tick(session);
@@ -235,3 +259,8 @@ int main() {
     H::OnDisconnect();
     std::puts("PASS: production receiver/host: reordered ends, late spawn, local/remote holds, recycled slot, wrap, quick drop, slow ticks, send retry");
 }
+
+namespace coop::dev::prop_syncer_drill { bool IsEnabled(){return false;} }
+namespace coop::prop_child_release { void OnParentReleased(void*){} void Tick(uint64_t){} void OnDisconnect(){} }
+namespace coop::prop_syncer { void Tick(net::Session&,bool){} bool SkipsHostPose(uint32_t){return false;} void OnDisconnect(){} }
+namespace coop::prop_syncer_host { void Admit(net::Session&){} void OnDisconnect(){} void EndClientRow(prop_drive_host::Driven&,Ending){} }

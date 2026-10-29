@@ -10,6 +10,7 @@
 #include "coop/player/local_prop_hold.h"
 #include "coop/player/hand_item.h"
 #include "coop/props/prop_drive_stream.h"  // IsParked: the host's channel moves an unstuck copy
+#include "coop/props/prop_drive_host.h"  // OverrideClientSyncer: a replay that writes the copy ends a client's row on it
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "coop/props/remote_prop.h"
@@ -145,7 +146,7 @@ bool HasWallAttachMember(void* actor) {
 // re-derives the settled pose and plays its own glide/VFX. A delay re-opens the
 // release-beats-stick window: the hold breaks 0-100 ms after the commit and that PropRelease must
 // not arrive before the PropStickState. GNS orders reliable delivery WITHIN a lane, so the pair is
-// FIFO only because LaneForKind pins both to Lane::Normal (see the note on that pin in
+// FIFO only because both ride the one Default lane (LaneForKind in
 // coop/net/session_lanes.h). Draining next pass makes the order structural as well: TickGameplay
 // runs before local_streams' release edge.
 struct Pending {
@@ -552,6 +553,7 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
     void* comp = WallAttachCompOf(prop);  // the component, checked against the index's class
     if (!comp) {
         if (unstick && !HasWallAttachMember(prop)) {
+            coop::prop_drive_host::OverrideClientSyncer(prop, "pry replay");
             ApplyUnstick(prop, payload, keyW, senderPeerSlot);
             return;
         }
@@ -580,6 +582,9 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
         }
         return;
     }
+    // Both halves write the copy's pose or physics, so a client that syncs the prop loses it first, as to a host verb
+    // (its next row would drag the copy back off the wall). A no-op off the host and for a prop with no client row.
+    coop::prop_drive_host::OverrideClientSyncer(prop, unstick ? "unstick replay" : "stick replay");
     if (unstick) {
         ApplyUnstick(prop, payload, keyW, senderPeerSlot);
         return;

@@ -100,3 +100,5 @@ int main(){
     CHECK(session.births==1&&publishes==2&&enrollments==1);
     puts("PASS held identity: keyed/keyless mirrors refuse duplicate birth and stale save; owned state publishes; new actors enroll; key callback lifetime guarded");
 }
+
+namespace ue_wrap::swinger { bool EnsureResolved(){return false;} bool IsSwinger(void*){return false;} }

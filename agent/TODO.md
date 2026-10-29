@@ -1,13 +1,12 @@
 # TODO - implementation backlog
 
-Development target: **0.9.2163**. Last qualified package: **0.9.2163 / b2217** (offline).
-Only defects and unfinished implementation belong here. Validation, rendered
-acceptance, qualification and results belong in WORK.md and TESTLOG.md.
+Development target: **0.9.2164**.
+Only defects and unfinished implementation belong here. Technical scope is in
+[WORK.md](WORK.md); checks, results and release evidence are in
+[TESTLOG.md](TESTLOG.md).
 
 ## Priority regressions
 
-- [ ] Fix remote flashlights: every peer currently sees only their own light.
-- [ ] Fix the T-pose when players fall into ragdoll on every peer.
 - [ ] Finish held-toy native variant schemas and hook/function ownership beyond
   the validated Dingus/ABPlush capture inputs; preserve bounded native work.
 - [ ] Finish watoy start-cue and physics-hook ownership beyond the validated
@@ -34,29 +33,30 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
 
 ## Shared items and resources
 
-- [ ] Complete Console/events: Rufus/thiccfus cross-player targets/grabs, audio/HUD,
-  corpse/loot, damage/explosion transport; llama marker lifecycle; Madness/variant
-  AI, damage/effects and remaining funny-rule HUD/events and toy/squeeze sounds.
-- [ ] Finish atomic cement/wall repair request/result with exact personal stock
-  through hand/slot/drop, rejection and disconnect. Keep no-spend refusal until
-  the transaction is complete; never replay an uncertain admitted native effect.
+- [ ] Finish Rufus/thiccfus cross-player targets/grabs, audio/HUD, corpse/loot,
+  damage and explosion transport; Madness/variant AI, damage/effects and remaining
+  funny-rule HUD/events and toy/squeeze sounds.
+- [ ] Finish llama marker/save/event-accounting lifecycle beyond the existing
+  PlacedSave marker route and invocation-bound Begin recovery. Keep native host
+  contributions authoritative; do not infer latent age from an absent sender or
+  replay uncertain timer creation. Refused cleanup needs an owned retry path.
+- [ ] Finish atomic paid wall/cement repair request/result and exact personal
+  stock across hand/slot/drop, refusal and disconnect. Keep the current no-spend
+  client refusal until debit, accepted output and refund form one transaction.
 - [ ] Arbitrate concurrent water/cement/coal writers, stale in-flight records,
-  dryTimer ownership and personal-hand transitions; finish final output/accounting.
-- [ ] Finish personal debit/output/refund as one transaction, including cross-peer
-  authority, personal overrides/raw takeObj and receipt-less recovery/persistence.
-  Preserve the existing local base world-container escrow/refund boundary.
+  dryTimer ownership and personal-hand transitions; finish output/accounting.
+- [ ] Finish cross-peer personal debit/output/refund, personal extraction
+  overrides/raw takeObj, receipt-less recovery and debt persistence across
+  world/session reconstruction. Retain the local base-container escrow/refund
+  boundary; never guess a refund or replay an uncertain admitted native effect.
+- [ ] Finish remaining package/food subclass outputs, cross-peer portion/output
+  arbitration and personal effects before host acceptance. Add native poison-pour,
+  roach and reward routes plus uncertain-open refund recovery and persistence.
+  Do not admit arbitrary replaceProp. Admission alone is not a committed output.
+- [ ] Finish buried-item/treasure transaction authority and save-file persistence;
+  mirror construction must not replay native treasure/loot-producing BeginPlay.
 - [ ] Cover remaining dynamic grime sources and persist explosion/salt-rocket
   scorch provenance through full save/world reconstruction.
-- [ ] Complete shared sky-event phases/cues, audio, delayed email/accounting and
-  six pre-session latent continuations; add remaining custom effects/creatures.
-- [ ] Complete remaining package/food subclass output routes and cross-peer
-  portion/output arbitration, personal effects before host acceptance, native
-  poison-pour/roach/rewards, uncertain-open refund recovery and persistence.
-  Do not admit arbitrary replaceProp or replay uncertain effects.
-- [ ] Fix remaining stow stalls beyond indexed save-record class restoration,
-  while preserving pending item-state restoration.
-- [ ] Fill missing model previews and custom-skin compatibility without removing
-  rig exclusions. Keep skeletal scaling and arbitrary creature physics separate.
 
 ## Entity implementation
 
@@ -116,3 +116,36 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   beyond vanilla media routes; keep local device/OBS access local.
 - [ ] Audit FireTower 1.0.4 door/ModActor ownership and add any missing shared
   interaction/lifetime routes; retain matching local scenery and collision.
+
+## Unfinished upstream/fork candidates — reviewed 29 October 2026
+
+These are documented upstream limits or requests with missing local adapters,
+not promises of an upstream fix or reproduced failures of our package.
+Implementation evidence and exclusions: [WORK.md](WORK.md#upstream-gap-review--29-october-2026).
+
+- [ ] UG1 — Implement remote glowstick grab/release semantics instead of the
+  generic base grab prelude; preserve subclass effects and one native activation.
+  Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
+- [ ] UG2 — Preserve a wall attachment's support identity and destruction
+  binding when the receiver's trace misses; retire the attachment when its
+  support disappears, including late join.
+  Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
+- [ ] UG3 — Replicate toolgun freeze/unfreeze/static changes at the action,
+  including idle props; existing hold/join flag convergence is insufficient.
+  Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
+- [ ] UG4 — Enforce laptop seat stabilization across peers so another player
+  cannot carry the occupied chair away; release the protection on exit or teardown.
+  Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
+- [ ] UG5 — Add host-owned red-phone ring selection and presentation instead
+  of independent peer rolls.
+  Source: [upstream signal limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/signals.md#known-limits).
+- [ ] UG6 — Add an authoritative desk virusEvent route and its effects;
+  preserve personal consequences and avoid replaying independent client viruses.
+  Source: [upstream signal limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/signals.md#known-limits).
+- [ ] UG7 — Own signal-begin world-prop births (including lifecrystal) so
+  download-arm replay and host birth delivery cannot create two copies.
+  Source: [upstream signal limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/signals.md#known-limits).
+- [ ] UG8 — Implement runtime 3D-print result identity, mesh/content binding
+  and pose/lifetime delivery to peers with matching files. Trace the reported
+  path first; generic prop replication alone does not establish custom-mesh support.
+  Source: [upstream request #49](https://github.com/VOTV-MP/Multivoid/issues/49).

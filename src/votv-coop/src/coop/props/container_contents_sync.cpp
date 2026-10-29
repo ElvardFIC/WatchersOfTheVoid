@@ -8,6 +8,8 @@
 #include "coop/props/container_contents_sync.h"
 #include "coop/props/container_birth.h"
 #include "coop/props/container_seed_retry.h"
+#include "coop/props/container_contents_io.h"
+#include "coop/props/container_writer_watch.h"
 #include "coop/props/container_park.h"
 #include "coop/props/container_slice_wire.h"
 #include "coop/props/container_write_policy.h"
@@ -54,9 +56,19 @@ namespace wp = coop::props::container_write_policy;
 namespace pk = coop::props::container_park;
 namespace cw = coop::props::container_slice_wire;
 namespace ci = ue_wrap::container_inventory;
+namespace cio = coop::props::container_contents_io;
+namespace cww = coop::props::container_writer_watch;
 namespace cb = coop::props::container_birth;
 
 using coop::element::LivePropActor;
+
+uint64_t g_noReadyRefusals = 0, g_noReadyRetries = 0;
+std::set<uint32_t> g_noReadyEids;
+std::map<uint32_t, ClientSliceOutcome> g_clientSlice;
+std::map<uint32_t, uint32_t> g_touchEpoch;
+void Touch(uint32_t eid) { ++g_touchEpoch[eid]; }
+bool ReadLiveHash(uint32_t eid, uint64_t& outHash) { uint32_t n=0; return ContentHashOf(eid,outHash,n); }
+
 
 // Verb ids: addObject marks dirty; takeObj also arms the container-extraction window read by
 // prop_drop_intent (a client-extracted item's actor is admitted as a host-authoritative drop intent).
@@ -280,7 +292,6 @@ bool BroadcastContainer(coop::net::Session* s, uint32_t eid, void* inv, int toSl
         // baseline a later client write is judged against. With the two maps fused the host refused
         // every client write after a join: the seed is targeted, g_sentHash stayed empty, and the
         // CAS compared against 0 for every container in the world.
-        if (IsHost()) wp::NotePublished(eid, h);
         // The author of a mutation re-derives its own volume, mass and names here: the host
         // excludes the author from the relay, and the native take path does not call
         // updateVolumesAndMass, so the mutator's own displayed volume went stale while every other
@@ -507,6 +518,7 @@ Ingest ApplyContents(uint32_t eid, const std::vector<SR::SaveRecord>& recs, uint
     std::memcpy(expected.data(),slot,expected.size());
 
     g_appliedHash[eid] = blobHash;
+    Touch(eid);
     g_appliedObject[eid]={actorRef,invRef,saveRef,slot,expected};
     // The base a later local edit declares; never cleared by our own verb edge.
     if (!IsHost()) g_baseHash[eid] = blobHash;
@@ -555,7 +567,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         auto* s = g_session.load(std::memory_order_acquire);
         // No session, no arbitration, and a client slice is never applied unjudged: the refusal
         // that cannot be explained is still a refusal.
-        const wp::Decision d = s ? wp::Accept(outEid, baseHash, senderSlot, NowMs(), *s, src)
+        const wp::Decision d = s ? wp::Accept(outEid, baseHash, &ReadLiveHash, senderSlot, NowMs(), *s, src)
                                  : wp::Decision::StaleBase;
         if(!source.Current())return Ingest::Handled;
         // No body to measure the author against yet: HOLD, do not refuse. The pen replays it and
@@ -563,6 +575,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         // by the TTL, so a peer that never poses costs the host eight slices for thirty seconds.
         if (d == wp::Decision::NoBodyYet) return Ingest::Park;
         if (d != wp::Decision::Accept) {
+            g_clientSlice[outEid] = ClientSliceOutcome::Refused;
             // Every refusal answers with the host's truth so the author converges -- except the
             // rate one, because a bound on how fast an author may spend the host must not make
             // the host spend more the faster it is pushed. No peer of this build can reach that
@@ -637,6 +650,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
     // moved on, and the second peer to edit a container was refused for being as up to date as the
     // first.
     if (outcome == Ingest::Applied && IsHost() && senderSlot != 0) {
+        g_clientSlice[outEid] = ClientSliceOutcome::Accepted;
         if (merged) {
             // The author lacks the host's part: the merged contents go to every peer, the author
             // included, by the host's own fan-out on the next sweep.
@@ -647,7 +661,6 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
             return outcome;
         }
         g_sentHash[outEid] = contentHash;
-        wp::NotePublished(outEid, contentHash);
         UE_LOGI("container_contents: eid=%u slot %u ACCEPTED -- the published baseline is now "
                 "%llu, which is what the relay carries", outEid, static_cast<unsigned>(senderSlot),
                 static_cast<unsigned long long>(contentHash));
@@ -715,7 +728,6 @@ sg::Verdict OnVerbEntry(const sg::Call& br) {
     // The local change is stamped, so the host can tell a stale client write from a clean one.
     // Host-only: nothing on a client ever reads it, and an ungated stamp grows a row per container
     // that peer has ever touched.
-    if (IsHost()) wp::NoteLocalChange(eid, NowMs());
     // And the applied hash is dropped: it means "an identical blob is a no-op" only while our state
     // still equals what we applied, and after our own mutation a corrective re-publish of the
     // unchanged host truth would look like a duplicate; a client whose write was refused once kept
@@ -743,7 +755,6 @@ void NoteLocalContentsChange(void* owner) {
     const auto eid=static_cast<uint32_t>(coop::element::Registry::Get().EidForActor(owner));
     if(eid==static_cast<uint32_t>(coop::element::kInvalidId))return;
     g_dirty.insert(eid);detail::ApplySource::Changed(eid);g_appliedHash.erase(eid);
-    if(IsHost())wp::NoteLocalChange(eid,NowMs());
 }
 
 // From event_feed's client-side SnapshotBegin and SnapshotComplete dispatch, on the game thread.
@@ -760,6 +771,14 @@ bool TakeObjWindowOpen() {
     return armed != 0 && now >= armed && now - armed <= kTakeObjWindowMs;
 }
 
+
+void MarkHostWrite(uint32_t eid) {
+    g_dirty.insert(eid);
+    g_appliedHash.erase(eid);
+    detail::ApplySource::Changed(eid);
+    Touch(eid);
+}
+
 void Install(coop::net::Session* session) {
     auto* previous=g_session.load(std::memory_order_acquire);
     const auto world=ue_wrap::world_identity::Generation(),serial=coop::net::session_serial::Current();
@@ -769,12 +788,14 @@ void Install(coop::net::Session* session) {
     // container's own save record carries the index into that stack, with none of the arbitration.
     coop::prop_save_data::DeclareClassOwnedElsewhere(L"prop_container_C");
     g_session.store(session, std::memory_order_release);
+    cww::Install(session);
 }
 
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
 
+    cww::Tick();
     if (!g_verbsRegistered) {
         g_verbsRegistered =
             sg::WatchName(kRowAddObject, kVerbDirty, &OnVerbEntry, nullptr) &&
@@ -906,8 +927,96 @@ bool ContentsDigest(uint32_t eid, int32_t& outCount, float& outVol) {
     return true;
 }
 
+bool ContentHashOf(uint32_t eid, uint64_t& outHash, uint32_t& outRecords) {
+    void* actor = LivePropActor(eid);
+    if (!actor || !ci::IsContainer(actor)) return false;
+    void* inv = ci::InventoryOf(actor);
+    if (!inv || !ci::IsWorldInventory(inv)) return false;
+    if (cb::Awaited(actor, 0)) return false;   // a transfer in progress is not a settled reading
+    std::vector<SR::SaveRecord> recs;
+    if (!cio::ReadRecords(inv, recs)) return false;
+    outHash = cw::ContentHash(eid, recs);
+    outRecords = static_cast<uint32_t>(recs.size());
+    return true;
+}
+
+bool DevRecordHashes(uint32_t eid, std::vector<uint64_t>& out, uint64_t& whole) {
+    out.clear();
+    void* actor = LivePropActor(eid);
+    void* inv = actor && ci::IsContainer(actor) ? ci::InventoryOf(actor) : nullptr;
+    std::vector<SR::SaveRecord> recs;
+    if (!inv || !ci::IsWorldInventory(inv) || !cio::ReadRecords(inv, recs)) return false;
+    for (const SR::SaveRecord& r : recs) out.push_back(cw::ContentHash(eid, std::vector<SR::SaveRecord>{r}));
+    whole = cw::ContentHash(eid, recs);
+    return true;
+}
+
+bool ApplyAppended(uint32_t eid, const std::vector<SR::SaveRecord>& recs, bool publish) {
+    auto* session=g_session.load();
+    const auto epoch=g_applyEpoch;
+    detail::ApplySource scope(session,eid,0,[&]{return g_session.load()==session && epoch==g_applyEpoch;});
+    scope.Claim();
+    if (ApplyContents(eid,recs,cw::ContentHash(eid,recs),scope,{})!=Ingest::Applied) return false;
+    if (publish) MarkHostWrite(eid);
+    return true;
+}
+
+bool DevRawAppend(uint32_t eid, bool publish) {
+    void* actor = LivePropActor(eid);
+    void* inv = actor && ci::IsContainer(actor) ? ci::InventoryOf(actor) : nullptr;
+    std::vector<SR::SaveRecord> recs;
+    if (!inv || !ci::IsWorldInventory(inv) || !cio::ReadRecords(inv, recs, /*neuterNested=*/false) || recs.empty())
+        return false;
+    recs.push_back(recs.front());
+    return ApplyAppended(eid, recs, publish);
+}
+
+bool DevRawAppendActor(uint32_t eid, void* item, bool publish) {
+    void* actor = LivePropActor(eid);
+    void* inv = actor && ci::IsContainer(actor) ? ci::InventoryOf(actor) : nullptr;
+    std::vector<SR::SaveRecord> recs;
+    SR::SaveRecord rec;
+    if (!item || !inv || !ci::IsWorldInventory(inv) || !cio::ReadRecords(inv, recs, /*neuterNested=*/false) ||
+        !SR::CaptureRecord(item, rec))
+        return false;
+    recs.push_back(std::move(rec));
+    return ApplyAppended(eid, recs, publish);
+}
+
+size_t AppliedEids() { return g_appliedHash.size(); }
+
+uint64_t NoReadyRefusals() { return g_noReadyRefusals; }
+
+uint64_t NoReadyRetries() { return g_noReadyRetries; }
+
+bool NoReadyRefusedEid(uint32_t eid) { return g_noReadyEids.count(eid) != 0; }
+
+bool SentBaselineKnown(uint32_t eid) { return g_sentHash.count(eid) != 0; }
+
+uint32_t TouchEpochOf(uint32_t eid) {
+    const auto it = g_touchEpoch.find(eid);
+    return it == g_touchEpoch.end() ? 0 : it->second;
+}
+
+ClientSliceOutcome LastClientSliceOutcome(uint32_t eid) {
+    const auto it = g_clientSlice.find(eid);
+    return it == g_clientSlice.end() ? ClientSliceOutcome::None : it->second;
+}
+void ForEachWorldContainer(void (*callback)(uint32_t,void*),void* ctx) {
+    if (!callback) return;
+    std::vector<coop::element::Registry::ActorIdPair> pairs;
+    coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::Prop,pairs);
+    for (const auto& pair:pairs) {
+        if (!pair.actor || !R::IsLiveByIndex(pair.actor,pair.internalIdx) || !ci::IsContainer(pair.actor)) continue;
+        void* inv=ci::InventoryOf(pair.actor);
+        if(inv && ci::IsWorldInventory(inv)) callback(static_cast<uint32_t>(pair.id),ctx);
+    }
+}
+
 void OnDisconnect() {
     ++g_applyEpoch;
+    cww::OnDisconnect();
+    g_noReadyRefusals=g_noReadyRetries=0; g_noReadyEids.clear(); g_clientSlice.clear(); g_touchEpoch.clear();
     g_session.store(nullptr,std::memory_order_release);
     g_dirty.clear();
     g_retry.clear();

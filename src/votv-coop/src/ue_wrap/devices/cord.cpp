@@ -55,6 +55,18 @@ bool SetLocation(void* component, const FVector& location) {
 }
 bool IsCord(void* a) { return Is(a, 0); }
 bool IsSocket(void* a) { return Is(a, 1); }
+bool IsCordedProp(void* a) {
+    if (!a || !R::IsLive(a)) return false;
+    static CachedObjRef type;
+    if (!type.Get()) type.Set(object_index::ClassByName(L"prop_corded_C"));
+    void* cls = type.Get();
+    return cls && R::IsDescendantOfAny(R::ClassOf(a), &cls, 1);
+}
+void* CordOf(void* a) {
+    static R::InstanceOffset field{L"obj_cord"};
+    return IsCordedProp(a) ? Obj(a, field) : nullptr;
+}
+void* SocketOf(void* a) { return IsCord(a) ? Socket(a) : nullptr; }
 void* Parent(void* a) { static R::InstanceOffset f{L"parent"}; return Obj(a, f); }
 void* Socket(void* a) { static R::InstanceOffset f{L"socket"}; return Obj(a, f); }
 bool ReadHeadPose(void* a, FVector& location, FRotator& rotation) {

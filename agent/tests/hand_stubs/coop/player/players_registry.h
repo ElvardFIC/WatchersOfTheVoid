@@ -6,7 +6,8 @@ inline constexpr uint8_t kMaxPeers=4;
 class Registry {
 public:
  static Registry& Get();
- void* Local(){return nullptr;}
+ void* local=nullptr;
+ void* Local(){return local;}
  uint8_t LocalPeerId()const;
  coop::RemotePlayer* Puppet(uint8_t);
 };
