@@ -7,9 +7,9 @@
 // external drive CLAIMS it here (the hook lane is the first); the claim outlives the verb until
 // the body rests; while claimed or coasting the prop's pose goes out on MsgType::PropDrivePose
 // whenever it moved, and one reliable PropDriveEnd closes the stream with the final pose, the
-// host's physics flags and the velocity. MTA's unoccupied-vehicle syncer, with the host as the
-// only syncer since props are host-authoritative. A row can also name a client as its author
-// (prop_syncer_host grants it); the host then publishes the client's admitted pose as it would its own.
+// host's physics flags and the velocity. Refused sends retain per-recipient debt after the driven row retires.
+// MTA's unoccupied-vehicle model uses the host as its only syncer; a row may also name a client as
+// author (prop_syncer_host grants it), whose admitted pose the host then publishes.
 //
 // Game thread; the table is the host's, Pump runs on both roles. Verb-fed and never scanned: the set holds only
 // what a caller claimed or a client was granted.
@@ -18,10 +18,29 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace coop::net { class Session; }
 
 namespace coop::prop_drive_host {
+
+enum class ClaimSource : uint8_t { Legacy, Hook, Kerfur, Kerfus, Watoy, Rocket, Grayboar, ClientFeeder, Count };
+inline constexpr size_t kClaimSourceCount = static_cast<size_t>(ClaimSource::Count);
+struct ClaimLease {
+    uint32_t eid = 0;
+    uint64_t token = 0, epoch = 0;
+    uint32_t world = 0, serial = 0;
+    void* worldObject = nullptr;
+    ClaimSource source = ClaimSource::Legacy;
+    explicit operator bool() const { return token != 0; }
+};
+// A source owns only its contribution. Repeated claims return its current token;
+// releasing an old token cannot close a replacement or another source's claim.
+ClaimLease ClaimOwned(void* actor, ClaimSource source, const char* reason,
+                      const std::function<bool()>& current = {});
+bool ReleaseOwned(const ClaimLease& lease, const std::function<bool()>& current = {});
+bool OwnsClaim(const ClaimLease& lease);
+bool HasClaims(void* actor);
 
 // Put `actor`, a keyed Aprop_C descendant this host owns, under the drive. Idempotent while the
 // claim holds, so a feeder may call it every pass for every prop it sees tied; a re-claim of a

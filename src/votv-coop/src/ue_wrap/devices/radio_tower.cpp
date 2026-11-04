@@ -10,7 +10,6 @@
 
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
-#include "ue_wrap/core/component_calls.h"
 #include "ue_wrap/core/field_io.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -19,12 +18,15 @@
 #include "ue_wrap/engine/hit_result.h"
 #include "ue_wrap/world/world_singleton.h"
 
+#include "tower_access.h"
+
 #include <algorithm>
 
 namespace ue_wrap::radio_tower {
 namespace {
 
 namespace R = reflection;
+namespace TA = tower_access;
 using field_io::TArrayView;
 
 constexpr const wchar_t* kClassName = L"radiotower_C";
@@ -32,7 +34,6 @@ constexpr const wchar_t* kClassName = L"radiotower_C";
 struct Bool { int32_t off = -1; uint8_t mask = 0; };
 
 CachedObjRef g_cls;             // radiotower_C; a class the map loads, so a new world may load a new one
-CachedObjRef g_tower;           // the gamemode's radiotower
 Bool     g_broken, g_anim, g_skipPuzzle;
 int32_t  g_offFuses = -1;       // TArray<uint8>
 int32_t  g_offCells = -1;       // TArray<bool> puzzleData
@@ -49,8 +50,7 @@ constexpr const wchar_t* kSoundFields[] = { L"audio_click", L"audio_success", L"
                                             L"audio_fusePullout", L"audio_lever", L"audio_scramble" };
 constexpr int kSoundCount = sizeof(kSoundFields) / sizeof(kSoundFields[0]);
 int32_t  g_offSound[kSoundCount] = {};
-int32_t  g_offGmTower = -1;     // mainGamemode_C::radiotower
-void*    g_gmCls = nullptr;     // the gamemode class that offset was read from
+bool     g_resolving = false, g_interacting = false;
 bool     g_membersResolved = false;
 bool     g_latchedOff = false;  // the class loaded without a member: it will not appear later
 
@@ -76,38 +76,44 @@ void* LiveObjectAt(void* obj, int32_t off) {
 
 void* ArrayObject(void* obj, int32_t off, int32_t index) {
     const TArrayView& a = ArrayAt(obj, off);
-    if (!a.data || index < 0 || index >= a.num) return nullptr;
+    const int limit = off == g_offFuseSlots ? kMaxFuses : kMaxCells;
+    if (!TA::Array(a, limit) || index < 0 || index >= a.num) return nullptr;
     void* o = reinterpret_cast<void* const*>(a.data)[index];
     return (o && R::IsLive(o)) ? o : nullptr;
 }
 
 // Resolve every member from `cls`, the loaded radiotower_C; a member missing from it latches the wrapper off.
 bool ResolveMembers(void* cls) {
+    const int32_t size = R::StructSize(cls);
     const wchar_t* missing = nullptr;
-    auto need = [&](int32_t off, const wchar_t* name) { if (off < 0 && !missing) missing = name; return off; };
+    auto need = [&](int32_t off, const wchar_t* name, int32_t bytes) {
+        if (!TA::Span(off, bytes, size)) { if (!missing) missing = name; return -1; }
+        return off;
+    };
     auto needBool = [&](Bool& b, const wchar_t* name) {
-        if (!R::FindBoolProperty(cls, name, b.off, b.mask) || !b.mask) { b.off = -1; if (!missing) missing = name; }
+        if (!R::FindBoolProperty(cls, name, b.off, b.mask) || !TA::Span(b.off, 1, size) ||
+            !b.mask || (b.mask != 0xff && (b.mask & (b.mask - 1)))) { b.off = -1; if (!missing) missing = name; }
     };
     needBool(g_broken, L"isBroken");
     needBool(g_anim, L"animation");
     needBool(g_skipPuzzle, L"skipPuzzle");
-    g_offFuses = need(R::FindPropertyOffset(cls, L"fuses"), L"fuses");
-    g_offCells = need(R::FindPropertyOffset(cls, L"puzzleData"), L"puzzleData");
-    g_offSize = need(R::FindPropertyOffset(cls, L"puzzleSize"), L"puzzleSize");
+    g_offFuses = need(R::FindPropertyOffset(cls, L"fuses"), L"fuses", sizeof(TArrayView));
+    g_offCells = need(R::FindPropertyOffset(cls, L"puzzleData"), L"puzzleData", sizeof(TArrayView));
+    g_offSize = need(R::FindPropertyOffset(cls, L"puzzleSize"), L"puzzleSize", 2 * sizeof(int32_t));
     needBool(g_lookButton, L"isLookAtButton");
     needBool(g_lookConfirm, L"lookAtConfirm");
     needBool(g_lookReset, L"lookAtReset");
     needBool(g_lookFuse, L"lookAtFuse");
-    g_offButtonIndex = need(R::FindPropertyOffset(cls, L"lookAtIndex"), L"lookAtIndex");
-    g_offFuseIndex = need(R::FindPropertyOffset(cls, L"lookAtFuseIndex"), L"lookAtFuseIndex");
-    g_offButtons = need(R::FindPropertyOffset(cls, L"puzzleButtons"), L"puzzleButtons");
-    g_offFuseSlots = need(R::FindPropertyOffset(cls, L"fusesButtons"), L"fusesButtons");
-    g_offConfirmBox = need(R::FindPropertyOffset(cls, L"button_confirm"), L"button_confirm");
-    g_offResetBox = need(R::FindPropertyOffset(cls, L"button_reset"), L"button_reset");
-    g_offLeverTl = need(R::FindPropertyOffset(cls, L"TL_lever"), L"TL_lever");
-    g_offResetTl = need(R::FindPropertyOffset(cls, L"TL_reset"), L"TL_reset");
+    g_offButtonIndex = need(R::FindPropertyOffset(cls, L"lookAtIndex"), L"lookAtIndex", sizeof(int32_t));
+    g_offFuseIndex = need(R::FindPropertyOffset(cls, L"lookAtFuseIndex"), L"lookAtFuseIndex", sizeof(int32_t));
+    g_offButtons = need(R::FindPropertyOffset(cls, L"puzzleButtons"), L"puzzleButtons", sizeof(TArrayView));
+    g_offFuseSlots = need(R::FindPropertyOffset(cls, L"fusesButtons"), L"fusesButtons", sizeof(TArrayView));
+    g_offConfirmBox = need(R::FindPropertyOffset(cls, L"button_confirm"), L"button_confirm", sizeof(void*));
+    g_offResetBox = need(R::FindPropertyOffset(cls, L"button_reset"), L"button_reset", sizeof(void*));
+    g_offLeverTl = need(R::FindPropertyOffset(cls, L"TL_lever"), L"TL_lever", sizeof(void*));
+    g_offResetTl = need(R::FindPropertyOffset(cls, L"TL_reset"), L"TL_reset", sizeof(void*));
     for (int i = 0; i < kSoundCount; ++i) g_offSound[i] = need(R::FindPropertyOffset(cls, kSoundFields[i]),
-                                                               kSoundFields[i]);
+                                                               kSoundFields[i], sizeof(void*));
     if (missing) {
         g_latchedOff = true;
         UE_LOGW("radio_tower: radiotower_C is loaded but %ls did not resolve -- the tower reads and writes stay "
@@ -120,18 +126,38 @@ bool ResolveMembers(void* cls) {
     return true;
 }
 
-// Take `cls` as the class. Members resolve from the first one taken: a class the same map loads again has the
-// same layout. Reads the class's property chain only, never the object array.
+// Resolve the layout once per class incarnation; a replacement also retires a failed layout.
 bool Adopt(void* cls) {
-    if (!g_membersResolved && !ResolveMembers(cls)) return false;
+    if (g_resolving || !cls || !R::IsLive(cls)) return false;
+    if (g_cls.Is(cls)) return g_membersResolved && !g_latchedOff;
+    TA::Busy resolving(g_resolving);
+    g_membersResolved = false;
+    g_latchedOff = false;
     g_cls.Set(cls);
-    return true;
+    const uint32_t world = world_identity::Generation();
+    const bool ok = ResolveMembers(cls);
+    if (!g_cls.Is(cls) || world != world_identity::Generation()) {
+        g_cls.Reset(); g_membersResolved = false; g_latchedOff = false;
+        return false;
+    }
+    return ok;
 }
 
-bool Usable(void* tower) { return tower && g_membersResolved && R::IsLive(tower); }
+struct Scope : TA::Lifetime {
+    bool ready = false;
+    explicit Scope(void* tower) : TA::Lifetime(tower) {
+        ready = TA::Lifetime::Current() && R::NameEquals(R::NameOf(cls.Raw()), kClassName) && Adopt(cls.Raw());
+    }
+    bool Current() const {
+        return ready && TA::Lifetime::Current() && g_cls.Is(cls.Raw()) && g_membersResolved && !g_resolving;
+    }
+};
+
+bool Usable(void* tower) { return Scope(tower).Current(); }
 
 bool CallNamed(void* tower, const wchar_t* fn) {
-    return Usable(tower) && component_calls::CallParamlessNamed(tower, fn);
+    Scope scope(tower);
+    return TA::Dispatch(tower, fn, [&] { return scope.Current(); }, [](ParamFrame&) { return true; });
 }
 
 // The component a look-at names, the part a use strikes.
@@ -174,62 +200,89 @@ void WriteLook(void* tower, const LookAt& at) {
     if (at.part == Part::Fuse) IntAt(tower, g_offFuseIndex) = at.index;
 }
 
-// The gamemode's radiotower field, its offset read once per gamemode class.
-void* GamemodeTower() {
-    void* gm = world_singleton::Gamemode();
-    void* gmCls = gm ? R::ClassOf(gm) : nullptr;
-    if (!gmCls) return nullptr;
-    if (gmCls != g_gmCls) {
-        g_offGmTower = R::FindPropertyOffset(gmCls, L"radiotower");
-        g_gmCls = gmCls;
-    }
-    if (g_offGmTower < 0) return nullptr;
-    void* rt = ObjectAt(gm, g_offGmTower);
-    return (rt && R::IsLive(rt)) ? rt : nullptr;
+bool SameLook(const SavedLook& a, const SavedLook& b) {
+    return a.button == b.button && a.confirm == b.confirm && a.reset == b.reset && a.fuse == b.fuse && a.buttonIndex == b.buttonIndex && a.fuseIndex == b.fuseIndex;
 }
+struct LookRestore {
+    const Scope& scope;
+    SavedLook saved, staged;
+    LookRestore(const Scope& s, const LookAt& at) : scope(s), saved(SaveLook(s.actor.Raw())) {
+        WriteLook(scope.actor.Raw(), at);
+        staged = SaveLook(scope.actor.Raw());
+    }
+    ~LookRestore() {
+        if (scope.Current() && SameLook(SaveLook(scope.actor.Raw()), staged)) RestoreLook(scope.actor.Raw(), saved);
+    }
+};
+
 
 }  // namespace
 
 void* Instance() {
-    if (g_latchedOff) return nullptr;
-    if (g_membersResolved && g_tower.Alive()) return g_tower.Raw();
-    void* rt = GamemodeTower();
-    if (!rt || !Adopt(R::ClassOf(rt))) return nullptr;
-    g_tower.Set(rt);
-    return rt;
+    void* gm = world_singleton::Gamemode();
+    TA::Lifetime owner(gm);
+    if (!owner.Current()) return nullptr;
+    const int32_t off = R::FindPropertyOffset(owner.cls.Raw(), L"radiotower");
+    if (!owner.Current()) return nullptr;
+    const int32_t size = R::StructSize(owner.cls.Raw());
+    if (!owner.Current() || !TA::Span(off, sizeof(void*), size)) return nullptr;
+    void* rt = ObjectAt(gm, off);
+    Scope tower(rt);
+    return tower.Current() && owner.Current() && ObjectAt(gm, off) == rt ? rt : nullptr;
 }
 
-bool IsTower(void* obj) {
-    if (!obj || g_latchedOff) return false;
-    void* cls = R::ClassOf(obj);
-    if (!cls) return false;
-    if (!g_membersResolved || !g_cls.Alive() || cls != g_cls.Raw()) {
-        // The object in hand names its class: a name compare, and the property chain on the first one.
-        if (!R::NameEquals(R::NameOf(cls), kClassName) || !Adopt(cls)) return false;
+bool IsTower(void* obj) { return Usable(obj); }
+
+bool Read(void* tower, State& out) {
+    Scope scope(tower);
+    if (!scope.Current()) return false;
+    State value{};
+    value.isBroken = ReadBit(tower, g_broken);
+    value.animation = ReadBit(tower, g_anim);
+    value.skipPuzzle = ReadBit(tower, g_skipPuzzle);
+    const int32_t width = IntAt(tower, g_offSize), height = IntAt(tower, g_offSize + 4);
+    if (width < 0 || width > kMaxCells || height < 0 || height > kMaxCells || width * height > kMaxCells) return false;
+    value.width = static_cast<uint8_t>(width);
+    value.height = static_cast<uint8_t>(height);
+    const int32_t timelineOffsets[] = {g_offLeverTl, g_offResetTl};
+    void* timelines[] = {ObjectAt(tower, timelineOffsets[0]), ObjectAt(tower, timelineOffsets[1])};
+    CachedObjRef refs[2];
+    for (int i = 0; i < 2; ++i) {
+        if (timelines[i] && R::IsLive(timelines[i])) refs[i].Set(timelines[i]);
     }
+    auto timelinesCurrent = [&] {
+        if (!scope.Current()) return false;
+        for (int i = 0; i < 2; ++i)
+            if (ObjectAt(tower, timelineOffsets[i]) != timelines[i] || (timelines[i] && !refs[i].Get())) return false;
+        return true;
+    };
+    for (int i = 0; i < 2; ++i) {
+        if (!timelinesCurrent()) return false;
+        engine_timeline::State tl{};
+        const bool read = refs[i].Get() && engine_timeline::Read(timelines[i], tl);
+        if (!timelinesCurrent()) return false;
+        if (read) {
+            if (i == 0) { value.leverPlaying = tl.playing; value.leverForward = !tl.reverse; }
+            else value.resetPlaying = tl.playing;
+        }
+    }
+    const TArrayView f = ArrayAt(tower, g_offFuses);
+    const TArrayView puzzle = ArrayAt(tower, g_offCells);
+    if (!TA::Array(f, kMaxFuses) || !TA::Array(puzzle, kMaxCells)) return false;
+    value.fuseCount = static_cast<uint8_t>(f.num);
+    for (int i = 0; i < f.num; ++i) {
+        if (f.data[i] > 2) return false;
+        value.fuses[i] = f.data[i];
+    }
+    value.cellCount = static_cast<uint8_t>(puzzle.num);
+    for (int i = 0; i < puzzle.num; ++i) value.cells[i] = puzzle.data[i] != 0;
+    out = value;
     return true;
 }
 
-bool Read(void* tower, State& out) {
+bool WriteBroken(void* tower, bool broken) {
     if (!Usable(tower)) return false;
-    out = State{};
-    out.isBroken = ReadBit(tower, g_broken);
-    out.animation = ReadBit(tower, g_anim);
-    out.skipPuzzle = ReadBit(tower, g_skipPuzzle);
-    engine_timeline::State tl;
-    if (engine_timeline::Read(LiveObjectAt(tower, g_offLeverTl), tl)) {
-        out.leverPlaying = tl.playing;
-        out.leverForward = !tl.reverse;
-    }
-    if (engine_timeline::Read(LiveObjectAt(tower, g_offResetTl), tl)) out.resetPlaying = tl.playing;
-    const TArrayView& f = ArrayAt(tower, g_offFuses);
-    out.fuseCount = static_cast<uint8_t>(f.data ? std::clamp(f.num, 0, kMaxFuses) : 0);
-    for (int i = 0; i < out.fuseCount; ++i) out.fuses[i] = f.data[i];
-    out.width = static_cast<uint8_t>(std::clamp(IntAt(tower, g_offSize), 0, kMaxCells));
-    out.height = static_cast<uint8_t>(std::clamp(IntAt(tower, g_offSize + 4), 0, kMaxCells));
-    const TArrayView& p = ArrayAt(tower, g_offCells);
-    out.cellCount = static_cast<uint8_t>(p.data ? std::clamp(p.num, 0, kMaxCells) : 0);
-    for (int i = 0; i < out.cellCount; ++i) out.cells[i] = p.data[i] != 0;
+    WriteBit(tower, g_broken, broken);
     return true;
 }
 
@@ -240,18 +293,18 @@ bool WriteAnimation(void* tower, bool animation) {
 }
 
 bool WriteFuse(void* tower, int32_t slot, uint8_t value) {
-    if (!Usable(tower)) return false;
-    TArrayView& f = ArrayAt(tower, g_offFuses);
-    if (!f.data || slot < 0 || slot >= f.num) return false;
+    if (slot < 0 || slot >= kMaxFuses || value > 2 || !Usable(tower)) return false;
+    const TArrayView f = ArrayAt(tower, g_offFuses);
+    if (!TA::Array(f, kMaxFuses) || slot >= f.num) return false;
     f.data[slot] = value;
     return true;
 }
 
-bool WriteCells(void* tower, const bool* cells, int32_t count) {
-    if (!Usable(tower) || !cells) return false;
-    TArrayView& p = ArrayAt(tower, g_offCells);
-    if (!p.data || p.num != count) return false;
-    for (int32_t i = 0; i < count; ++i) p.data[i] = cells[i] ? 1 : 0;
+bool WriteCells(void* tower, const bool* values, int32_t count) {
+    if (!values || count < 0 || count > kMaxCells || !Usable(tower)) return false;
+    const TArrayView p = ArrayAt(tower, g_offCells);
+    if (!TA::Array(p, kMaxCells) || p.num != count) return false;
+    for (int32_t i = 0; i < count; ++i) p.data[i] = values[i] ? 1 : 0;
     return true;
 }
 
@@ -261,94 +314,127 @@ bool CompleteMinigame(void* tower) { return CallNamed(tower, L"completeMinigame"
 bool Scramble(void* tower) { return CallNamed(tower, L"scramble"); }
 
 bool SetBroken(void* tower, bool broken, bool pullLever) {
-    if (!Usable(tower)) return false;
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(tower), L"setBroken");
-    ParamFrame f(fn);
-    return fn && f.valid() && f.Set<bool>(L"isBroken", broken) && f.Set<bool>(L"pullLever", pullLever) &&
-           Call(tower, f);
+    Scope scope(tower);
+    return TA::Dispatch(tower, L"setBroken", [&] { return scope.Current(); }, [&](ParamFrame& f) {
+        return f.Set<bool>(L"isBroken", broken) && f.Set<bool>(L"pullLever", pullLever);
+    });
 }
 
 bool PlayLever(void* tower, Lever lever, bool forward) {
-    if (!Usable(tower)) return false;
-    if (lever == Lever::Reset) {
-        return forward && engine_timeline::PlayFromStart(LiveObjectAt(tower, g_offResetTl));
-    }
-    void* tl = LiveObjectAt(tower, g_offLeverTl);
-    return forward ? engine_timeline::PlayFromStart(tl) : engine_timeline::ReverseFromEnd(tl);
+    Scope scope(tower);
+    if (!scope.Current() || (lever != Lever::Confirm && lever != Lever::Reset) ||
+        (lever == Lever::Reset && !forward)) return false;
+    const int32_t off = lever == Lever::Reset ? g_offResetTl : g_offLeverTl;
+    void* tl = ObjectAt(tower, off);
+    TA::Lifetime timeline(tl);
+    if (!timeline.Current()) return false;
+    return TA::Dispatch(tl, forward ? L"PlayFromStart" : L"ReverseFromEnd", [&] {
+        return scope.Current() && timeline.Current() && ObjectAt(tower, off) == tl;
+    }, [](ParamFrame&) { return true; });
 }
 
 bool Play(void* tower, Sound sound) {
     const int i = static_cast<int>(sound);
-    if (!Usable(tower) || i < 0 || i >= kSoundCount) return false;
-    return engine::PlayAudioComponent(ObjectAt(tower, g_offSound[i]));
+    Scope scope(tower);
+    if (!scope.Current() || i < 0 || i >= kSoundCount) return false;
+    const int32_t off = g_offSound[i];
+    void* comp = ObjectAt(tower, off);
+    TA::Lifetime component(comp);
+    if (!component.Current()) return false;
+    return TA::Dispatch(comp, L"Play", [&] {
+        return scope.Current() && component.Current() && ObjectAt(tower, off) == comp;
+    }, [](ParamFrame& f) { return f.Set<float>(L"StartTime", 0.f); });
 }
 
 bool Alert(void* tower, bool damagedHealth) {
-    if (!Usable(tower)) return false;
+    Scope scope(tower);
+    if (!scope.Current()) return false;
     void* console = world_singleton::Find(L"ui_console_C");
-    void* fn = console ? R::FindDispatchFunctionCached(R::ClassOf(console), L"radioTowerBroken") : nullptr;
-    if (!fn) return false;
-    ParamFrame f(fn);
-    return f.valid() && f.Set<void*>(L"radiotower", tower) && f.Set<bool>(L"damagedHealth", damagedHealth) &&
-           Call(console, f);
+    return TA::Dispatch(console, L"radioTowerBroken", [&] { return scope.Current(); }, [&](ParamFrame& f) {
+        return f.Set<void*>(L"radiotower", tower) && f.Set<bool>(L"damagedHealth", damagedHealth);
+    });
 }
 
 bool ReadLookAt(void* tower, LookAt& out) {
     if (!Usable(tower)) return false;
-    out = LookAt{};
+    LookAt value{};
     // getActionOptions tests the button, the confirm lever, the reset lever, then the fuse; the use tests the fuse
     // first, then the button, the reset lever and the confirm lever. Only one is ever set by a trace.
-    if (ReadBit(tower, g_lookFuse)) out = {Part::Fuse, IntAt(tower, g_offFuseIndex)};
-    else if (ReadBit(tower, g_lookButton)) out = {Part::Button, IntAt(tower, g_offButtonIndex)};
-    else if (ReadBit(tower, g_lookReset)) out.part = Part::Reset;
-    else if (ReadBit(tower, g_lookConfirm)) out.part = Part::Confirm;
+    if (ReadBit(tower, g_lookFuse)) value = {Part::Fuse, IntAt(tower, g_offFuseIndex)};
+    else if (ReadBit(tower, g_lookButton)) value = {Part::Button, IntAt(tower, g_offButtonIndex)};
+    else if (ReadBit(tower, g_lookReset)) value.part = Part::Reset;
+    else if (ReadBit(tower, g_lookConfirm)) value.part = Part::Confirm;
+    if (value.part == Part::Button || value.part == Part::Fuse) {
+        const int limit = value.part == Part::Fuse ? kMaxFuses : kMaxCells;
+        const int32_t off = value.part == Part::Fuse ? g_offFuses : g_offCells;
+        const TArrayView a = ArrayAt(tower, off);
+        if (!TA::Array(a, limit) || value.index < 0 || value.index >= a.num) return false;
+    }
+    out = value;
     return true;
 }
 
 bool ReadFuseLook(void* tower, int32_t& slot) {
     if (!Usable(tower)) return false;
-    slot = IntAt(tower, g_offFuseIndex);
+    const int32_t value = IntAt(tower, g_offFuseIndex);
+    const TArrayView f = ArrayAt(tower, g_offFuses);
+    if (!TA::Array(f, kMaxFuses) || value < 0 || value >= f.num) return false;
+    slot = value;
     return true;
 }
 
-bool Use(void* tower, void* player, const LookAt& at) {
-    if (!Usable(tower) || !player) return false;
+bool Interact(void* tower, void* player, const LookAt& input, void* fuse, bool insert) {
+    const LookAt at = input;
+    if (g_interacting) return false;
+    TA::Busy busy(g_interacting);
+    Scope scope(tower);
+    TA::Lifetime owner(player), held(fuse);
+    if (!scope.Current() || !owner.Current() || (insert && !held.Current())) return false;
     void* part = PartComponent(tower, at);
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(tower), L"actionOptionIndex");
-    if (!part || !fn) return false;
-    const SavedLook saved = SaveLook(tower);
-    WriteLook(tower, at);
-    const FVector where = engine::GetComponentLocation(part);
-    ParamFrame f(fn);
-    const bool ok = f.valid() && f.Set<void*>(L"player", player) && hit_result::Write(f, L"hit", tower, part, where) &&
-                    f.Set<uint8_t>(L"action", 4) && f.Set<void*>(L"lookAtComponent", part) && Call(tower, f);
-    if (R::IsLive(tower)) RestoreLook(tower, saved);
-    return ok;
+    TA::Lifetime component(part);
+    auto current = [&] {
+        return scope.Current() && owner.Current() && component.Current() &&
+               (!insert || held.Current()) && PartComponent(tower, at) == part;
+    };
+    if (!current()) return false;
+    FVector where{};
+    if (!TA::Location(part, current, where)) return false;
+    if (!current() || !TA::Finite(where)) return false;
+    // The restorer stays alive through dispatch, including C++ exception unwinding.
+    LookRestore restore(scope, at);
+    auto staged = [&] { return current() && SameLook(SaveLook(tower), restore.staged); };
+    return TA::Dispatch(tower, insert ? L"playerUsedOn" : L"actionOptionIndex", staged,
+        [&](ParamFrame& f) {
+            return current() && f.Set<void*>(L"player", player) && current() &&
+                   hit_result::WriteWhile(f, L"hit", tower, part, where, staged) && current() &&
+                   f.Set<void*>(L"lookAtComponent", part) &&
+                   (insert ? f.Set<void*>(L"holdObject", fuse) : f.Set<uint8_t>(L"action", 4));
+        });
 }
 
-bool PartLocation(void* tower, const LookAt& at, FVector& out) {
-    if (!Usable(tower)) return false;
+bool Use(void* tower, void* player, const LookAt& at) {
+    return Interact(tower, player, at, nullptr, false);
+}
+
+bool PartLocation(void* tower, const LookAt& input, FVector& out) {
+    const LookAt at = input;
+    Scope scope(tower);
+    if (!scope.Current()) return false;
     void* part = PartComponent(tower, at);
-    if (!part) return false;
-    out = engine::GetComponentLocation(part);
+    TA::Lifetime component(part);
+    if (!component.Current()) return false;
+    auto current = [&] {
+        return scope.Current() && component.Current() && PartComponent(tower, at) == part;
+    };
+    FVector where{};
+    if (!TA::Location(part, current, where)) return false;
+    if (!scope.Current() || !component.Current() || PartComponent(tower, at) != part || !TA::Finite(where)) return false;
+    out = where;
     return true;
 }
 
 bool InsertFuse(void* tower, void* player, int32_t slot, void* fuse) {
-    if (!Usable(tower) || !player || !fuse) return false;
-    const LookAt at{Part::Fuse, slot};
-    void* part = PartComponent(tower, at);
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(tower), L"playerUsedOn");
-    if (!part || !fn) return false;
-    const SavedLook saved = SaveLook(tower);
-    WriteLook(tower, at);
-    const FVector where = engine::GetComponentLocation(part);
-    ParamFrame f(fn);
-    // radiotower playerUsedOn (:741) reads the player, the hit's component and holdObject; holdPropName stays empty.
-    const bool ok = f.valid() && f.Set<void*>(L"player", player) && hit_result::Write(f, L"hit", tower, part, where) &&
-                    f.Set<void*>(L"lookAtComponent", part) && f.Set<void*>(L"holdObject", fuse) && Call(tower, f);
-    if (R::IsLive(tower)) RestoreLook(tower, saved);
-    return ok;
+    return Interact(tower, player, {Part::Fuse, slot}, fuse, true);
 }
 
 }  // namespace ue_wrap::radio_tower

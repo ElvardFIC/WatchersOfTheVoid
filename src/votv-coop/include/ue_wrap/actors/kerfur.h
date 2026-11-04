@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
 
 namespace ue_wrap::kerfur {
 
@@ -30,6 +31,9 @@ bool IsKerfurActor(void* actor);
 // bytecode-proven), so it differs across peers and is useless for matching. In 0.9.0n the
 // kerfur is the only save-persisted pet NPC, but the check is class-agnostic.
 bool HasSaveKey(void* actor);
+// Known absence is readable; malformed metadata or an interrupted read is not.
+// The output is unchanged on failure.
+bool TryHasSaveKey(void* actor, bool& present, const std::function<bool()>& current = {});
 
 // Host read of the kerfur's authoritative cosmetic/command state for the pose stream.
 // Returns false (outs untouched) for non-kerfur actors. state = enum_kerfurCommand byte
@@ -63,6 +67,8 @@ bool ReadKill(void* actor);
 // equipment read `playerActor` (holdObject_kerf, objectViewer assign); pass a live
 // AmainPlayer_C all the same. Returns false if actionName is unresolved. Game thread only.
 bool RunActionName(void* kerfurActor, void* playerActor, const wchar_t* name);
+bool RunActionNameWhile(void* kerfurActor, void* playerActor, const wchar_t* name,
+                        const std::function<bool()>& current, bool* dispatched);
 
 // Is `out` the variable the disc insert's player reads write: lib.getMainPlayer's out argument as
 // passed from the Omega's ubergraph (`callerFunction`, whose frame is `callerLocals`)? The insert's
@@ -71,6 +77,8 @@ bool RunActionName(void* kerfurActor, void* playerActor, const wchar_t* name);
 // False until the class loads, and while this build's class lacks the variable (said once per class
 // object). Game thread.
 bool IsInsertPlayerRead(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out);
+bool IsInsertPlayerReadWhile(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out,
+                            const std::function<bool()>& current);
 
 // Whether the Omega holds a disc it took for its reports (`hasFloppy`). False when it is not an Omega or
 // the field did not resolve. Game thread.

@@ -7,6 +7,7 @@
 #include "coop/net/protocol.h"
 #include "coop/player/hand_history.h"
 #include "coop/player/hand_item_pose.h"  // where the mirror sits: the owner's measure, the per-tick drive
+#include "coop/player/emote_sync.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/player/roster_ledger.h"
@@ -461,6 +462,10 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
 bool DriveMirror(void* mirrorActor, coop::RemotePlayer* pup, const SlotHand& hand) {
     ue_wrap::CachedObjRef identity; identity.Set(mirrorActor);
     const auto epoch = g_handEpoch;
+    const auto emote=coop::emote_sync::DriveHand(pup->GetActor(),mirrorActor);
+    if(emote==coop::emote_sync::HandDrive::Retired)return false;
+    if(emote==coop::emote_sync::HandDrive::Applied)return epoch==g_handEpoch && identity.Get();
+    if(epoch!=g_handEpoch || !identity.Get())return false;
     ue_wrap::FVector eye{};
     if (!pup->TryGetHeadPosition(eye)) return false;
     const ue_wrap::FVector fwd = pup->GetSyncedAimDirection();

@@ -6,6 +6,7 @@
 #include "coop/props/prop_key_index.h"
 #include "coop/world/material_save_sync.h"
 #include "coop/props/food_save_sync.h"
+#include "ue_wrap/actors/llama_marker.h"
 #include "coop/dev/class_lifetime_probe.h"
 #include "coop/dev/init_seam_probe.h"
 #include "coop/dev/key_parity_probe.h"
@@ -102,6 +103,8 @@ void PostMenuTick() {
 }
 
 void TickFrameTail() {
+    // Failed marker construction owns cleanup independently of a live session.
+    ue_wrap::llama_marker::Tick();
     // Self-clearing and cheap when idle: an empty nameplate snapshot hides the HUD at the menu.
     coop::nameplate::Update();
     coop::dev::object_overlay::Update(); coop::dev::ragdoll_bone_overlay::Update();

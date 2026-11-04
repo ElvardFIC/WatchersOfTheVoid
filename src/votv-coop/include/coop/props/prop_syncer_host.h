@@ -45,10 +45,11 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
 bool ElectFromMark(void* actor);
 
 // A client's PropDriveEnd from peer slot `slot`: the rest End of the drive it syncs. Validated at the router.
-// Game thread.
+// The admitted End retains per-recipient delivery independently of the retired row. Game thread.
 void OnClientEnd(coop::net::Session& s, const coop::net::PropDriveEndPayload& p, uint8_t slot);
 
-// Per gameplay tick, before the rows' publish: drain every origin's PropDrivePose rows and admit them against
+// Per gameplay tick, retry retained grant/revoke controls for their original recipient and drain every origin's
+// PropDrivePose rows and admit them against
 // the rows that name their sender; once a second, hand back the rows of a silent or far syncer (a thrown prop's silence is
 // judged per tick by prop_drive_host, kThrowSilenceMs). Game thread.
 void Admit(coop::net::Session& s);

@@ -51,6 +51,7 @@
 #include "coop/props/notebook_refresh.h"
 #include "coop/props/bucket_sync.h"
 #include "coop/props/dingus_music_sync.h"
+#include "coop/player/emote_sync.h"
 #include "coop/props/llama_sync.h"
 #include "coop/props/watoy_sync.h"
 #include "coop/props/sponge_effects_sync.h"
@@ -310,6 +311,7 @@ void Install(coop::net::Session& session) {
     coop::desk_short_circuit_sync::Install(&session);
     coop::madness_sync::Install(&session);
     coop::dingus_music_sync::Install(&session);
+    coop::emote_sync::Install(&session);
     coop::llama_sync::Install(&session);
     coop::watoy_sync::Install(&session);
     coop::sponge_effects_sync::Install(&session);
@@ -460,6 +462,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::desk_short_circuit_sync::OnPeerLeft(slot);
     coop::madness_sync::OnPeerLeft(slot);
     coop::dingus_music_sync::OnPeerLeft(slot);
+    coop::emote_sync::OnPeerLeft(slot);
     coop::llama_sync::OnPeerLeft(slot);
     coop::watoy_sync::OnPeerLeft(slot);
     coop::sponge_effects_sync::OnPeerLeft(slot);
@@ -617,6 +620,7 @@ DisconnectStats DisconnectAll() {
     coop::desk_short_circuit_sync::OnDisconnect();
     coop::madness_sync::OnDisconnect();
     coop::dingus_music_sync::OnDisconnect();
+    coop::emote_sync::OnDisconnect();
     coop::llama_sync::OnDisconnect();
     coop::watoy_sync::OnDisconnect();
     coop::sponge_effects_sync::OnDisconnect();
@@ -779,6 +783,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::desk_short_circuit_sync::Tick();
     coop::madness_sync::Tick();
     coop::dingus_music_sync::Tick();
+    coop::emote_sync::Tick();
     coop::llama_sync::Tick();
     coop::watoy_sync::Tick();
     coop::sponge_effects_sync::Tick();

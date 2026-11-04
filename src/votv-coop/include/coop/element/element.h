@@ -60,6 +60,7 @@ public:
 
     ElementId   GetId() const   { return m_id; }
     ElementType GetType() const { return m_type; }
+    uint64_t GetIncarnation() const { return m_incarnation; }
 
     // The save-stable identity: for a prop the game's key string, which survives save
     // serialisation; empty for runtime-only elements, whose id is the only identity.
@@ -137,6 +138,7 @@ private:
 
     ElementId   m_id           = kInvalidId;
     ElementType m_type         = ElementType::Unknown;
+    uint64_t    m_incarnation  = 0;
     std::string m_name;
     std::string m_typeName;
     void*       m_actor        = nullptr;

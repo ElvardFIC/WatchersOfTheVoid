@@ -1,5 +1,9 @@
 # Fork head recheck — 4 November 2026
 
+The subsequent owner-requested three-way history merge is recorded in TESTLOG.
+It preserves the fork adaptations below and records upstream `4fbf1acf0` as a
+parent. The earlier 436-commit graph counter below describes the pre-merge audit.
+
 Rechecked the 50 previously reachable default heads through GitHub. Only arigalit
 and Ghezra advanced: arigalit now matches the integrated upstream `4fbf1acf0`;
 Ghezra reaches `33d98330c`, 41 commits after the first review below. Dafirka stays

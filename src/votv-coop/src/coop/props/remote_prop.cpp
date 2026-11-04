@@ -310,7 +310,7 @@ void OnRelease(int senderSlot, const coop::net::PropReleasePayload& payload, voi
         if (propActor) EndAnyHoldOn(propActor);
         else if (releasedSlot >= 0) ResetDriveState(g_drives[releasedSlot]);
         if (isHost && robotHasIt)
-            coop::prop_drive_host::Claim(propActor, "kerfur-take");
+            (void)coop::prop_drive_host::ClaimOwned(propActor, coop::prop_drive_host::ClaimSource::Kerfur, "kerfur-take");
         return;
     }
     if (propActor && linSpeed > 150.f && senderSlot >= 0 &&

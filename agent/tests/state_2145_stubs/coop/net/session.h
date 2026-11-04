@@ -14,6 +14,8 @@ class Session {
 public:
  struct ReliableMessage {};
  Role mode=Role::Host;bool linked=true,active=true,sendOk=true,ready=true;
+ uint64_t stops=0;
+ uint64_t StopCount()const{return stops;}
  std::function<bool(int,ReliableKind,const void*,int)> allowSend;
  struct Sent{int slot;ReliableKind kind;std::vector<uint8_t> data;uint8_t origin=0;};std::vector<Sent> sent;
  bool poseActive=false; PropPoseSnapshot pose{};

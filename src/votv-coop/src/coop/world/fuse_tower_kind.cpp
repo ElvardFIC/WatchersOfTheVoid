@@ -9,6 +9,7 @@
 #include "coop/world/fuse_tower_kind.h"
 
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/devices/coord_tower.h"
 #include "ue_wrap/devices/radio_tower.h"
 #include "ue_wrap/facts/function_row.h"
@@ -69,7 +70,7 @@ CT::LookAt CoordPart(uint8_t op, int32_t index) {
 
 bool CoordReadRow(void* tower, FuseTowerRow& w) {
     CT::State st;
-    if (!CT::Read(tower, st)) return false;
+    if (!CT::Read(tower, st) || st.fuseCount>CT::kMaxFuses || st.lightCount>CT::kMaxLights) return false;
     w = FuseTowerRow{};
     w.id = st.id;
     w.kind = coop::net::kFuseTowerKindCoordinate;
@@ -86,79 +87,84 @@ bool CoordReadRow(void* tower, FuseTowerRow& w) {
     return true;
 }
 
-void CoordApply(void* tower, const FuseTowerRow& c, const ApplyCtx& x) {
-    CT::State l;
-    if (!CT::Read(tower, l)) return;
-    Edges& edges = *x.edges;
-    const bool live = x.live;
-    const bool broken = (c.flags & coop::net::kFuseTowerBroken) != 0;
-    bool lights[CT::kMaxLights] = {};
-    bool lightsDiffer = false;
-    if (c.lightCount == l.lightCount) {
-        for (int i = 0; i < c.lightCount; ++i) {
-            lights[i] = LightBit(c.lights, i);
-            lightsDiffer = lightsDiffer || lights[i] != l.lights[i];
-        }
-    } else if (!*x.sizeWarned) {
-        // Every peer plays under the host's rules (ue_wrap/world/game_rules.h), which size the puzzle.
-        *x.sizeWarned = true;
-        UE_LOGW("fuse_tower: tower %d's puzzle has %u lights here and %u on the host -- its lights are not applied",
-                c.id, l.lightCount, c.lightCount);
+// A row keeps paint debt and presentation receipts separately. Callbacks own
+// their storage and are checked before/after every engine operation.
+enum Effect : unsigned { Repair,Click,Pull,Insert,Fail,Confirm,ResetSound,Reset,Damage,BreakAlert,ConfirmSound,SetState,
+                         RepairCount=16,BreakCount,PressCount,PullCount,InsertCount,FailCount,LeverCount,ResetCount };
+constexpr uint64_t Bit(unsigned n){return uint64_t{1}<<n;}
+constexpr uint64_t kPuzzle=1,kBroken=2,kFuses=4;
+struct ApplyRun {
+    ue_wrap::CachedObjRef actor;
+    const ApplyCtx& ctx;
+    uint64_t localWanted=0,localDirty=0,localTried=0;
+    ApplyRun(void* a,const ApplyCtx& c):ctx(c){actor.Set(a);}
+    bool Current() const {return actor.Get()&&ctx.edges&&ctx.sizeWarned&&(!ctx.current||ctx.current())&&actor.Get();}
+    void Request(uint64_t bits){if(Current()){if(ctx.effects)ctx.effects(bits);else localWanted|=bits;}}
+    uint64_t Wanted(){return Current()?(ctx.effects?ctx.effects(0):localWanted):0;}
+    void Mark(uint64_t bits){if(Current()){if(ctx.writes)ctx.writes(bits,0);else localDirty|=bits;}}
+    template<class F> bool Write(F&& f){if(!Current())return false;const bool ok=f();return Current()&&ok;}
+    template<class F> bool Paint(uint64_t bit,F&& f){
+        if(!Current())return false;
+        if(!((ctx.writes?ctx.writes(0,0):localDirty)&bit))return true;
+        if(!Write(f))return false;
+        if(ctx.writes)ctx.writes(0,bit);else localDirty&=~bit;
+        return Current();
     }
-    if (lightsDiffer) CT::WriteLights(tower, lights, c.lightCount);
-    if (l.isBroken && !broken) {
-        if (live) {
-            CT::SolvePuzzle(tower);  // the repair: every light lit, painted, its success sound, isBroken off, painted
-        } else {
-            // The tower's first row is state, not an act: solvePuzzle's body without its sound (@2098..@2105); the
-            // lights are the row's, written above.
-            CT::WriteBroken(tower, false);
-            CT::UpdPuzzle(tower);
-            CT::UpdBroken(tower);
-        }
-        ++edges.repairs;
-        UE_LOGI("fuse_tower: tower %d repaired as the host's", c.id);
-    } else if (!l.isBroken && broken) {
-        CT::WriteBroken(tower, true);
-        CT::UpdPuzzle(tower);
-        CT::UpdBroken(tower);
-        ++edges.breaks;
-        UE_LOGI("fuse_tower: tower %d broke as the host's", c.id);
-    } else if (lightsDiffer) {
-        CT::UpdPuzzle(tower);
-        if (live) CT::Play(tower, CT::Sound::Click);  // a press, the host's route's own click
-        ++edges.presses;
+    bool First(uint64_t bit){
+        if(!Current())return false;
+        if(ctx.firstAttempt)return ctx.firstAttempt(bit);
+        if(localTried&bit)return false;localTried|=bit;return true;
     }
-    bool fusesDiffer = false, pulled = false, inserted = false;
-    if (c.fuseCount == l.fuseCount) {
-        for (int i = 0; i < c.fuseCount; ++i) {
-            if (c.fuses[i] == l.fuses[i]) continue;
-            pulled = pulled || (l.fuses[i] == 2 && c.fuses[i] == 0);
-            inserted = inserted || (l.fuses[i] == 0 && c.fuses[i] == 1);
-            CT::WriteFuse(tower, i, c.fuses[i]);
-            fusesDiffer = true;
-        }
+    template<class F> bool EffectOnce(unsigned n,F&& f){
+        if(!Current())return false;const auto bit=Bit(n);
+        if(!(Wanted()&bit))return true;
+        const bool first=First(bit);if(!Current())return false;
+        if(first)f(); // A false/faulted native attempt is uncertain, never an invitation to replay it.
+        return Current();
     }
-    if (fusesDiffer) {
-        CT::UpdFuses(tower);
-        if (live && pulled) CT::Play(tower, CT::Sound::FusePulled);
-        if (live && inserted) CT::Play(tower, CT::Sound::FuseInserted);
-        edges.pulls += pulled ? 1 : 0;
-        edges.inserts += inserted ? 1 : 0;
+    bool Count(unsigned n,uint32_t& value){return EffectOnce(n,[&]{++value;});}
+};
+bool CoordApply(void* tower,const FuseTowerRow& c,const ApplyCtx& x){
+    ApplyRun run(tower,x);CT::State l;
+    if(!run.Current()||!CT::Read(tower,l)||!run.Current()||c.lightCount>CT::kMaxLights||l.lightCount>CT::kMaxLights||
+        c.fuseCount>CT::kMaxFuses||l.fuseCount>CT::kMaxFuses)return false;
+    const bool broken=(c.flags&net::kFuseTowerBroken)!=0,changed=l.isBroken!=broken;
+    bool lights[CT::kMaxLights]{};bool lightDiff=false,fuseDiff=false,pulled=false,inserted=false;
+    if(c.lightCount==l.lightCount){for(int i=0;i<c.lightCount;++i){lights[i]=LightBit(c.lights,i);lightDiff=lightDiff||lights[i]!=l.lights[i];}}
+    else if(!*x.sizeWarned){*x.sizeWarned=true;UE_LOGW("fuse_tower: coordinate puzzle dimensions differ");}
+    if(c.fuseCount==l.fuseCount)for(int i=0;i<c.fuseCount;++i)if(c.fuses[i]!=l.fuses[i]){
+        fuseDiff=true;pulled=pulled||(l.fuses[i]==2&&c.fuses[i]==0);inserted=inserted||(l.fuses[i]==0&&c.fuses[i]==1);
     }
-    const bool up = (c.flags & coop::net::kFuseTowerLeverUp) != 0;
-    if (up != l.leverUp) {
-        // A lever that goes down on a tower broken before and after is the judgement's fail branch: its other
-        // caller, a scramble, breaks a whole tower (Scramble Radar Dish's end, and loadData, before any join).
-        if (!up && l.isBroken && broken) {
-            if (live) CT::Play(tower, CT::Sound::Fail);
-            ++edges.fails;
-        }
-        CT::MoveLever(tower, up);
-        ++edges.levers;
-    }
-    // The lever's end, which judges the puzzle, is refused here, and it is what clears the flag: the host's.
-    CT::WriteLeverMoving(tower, (c.flags & coop::net::kFuseTowerLeverMoving) != 0);
+    const bool up=(c.flags&net::kFuseTowerLeverUp)!=0,leverDiff=up!=l.leverUp;
+    uint64_t wanted=0;
+    if(changed)wanted|=Bit(broken?BreakCount:RepairCount);
+    if(changed&&!broken&&x.live)wanted|=Bit(Repair);
+    if(lightDiff&&!changed){wanted|=Bit(PressCount);if(x.live)wanted|=Bit(Click);}
+    if(pulled){wanted|=Bit(PullCount);if(x.live)wanted|=Bit(Pull);}
+    if(inserted){wanted|=Bit(InsertCount);if(x.live)wanted|=Bit(Insert);}
+    if(leverDiff){wanted|=Bit(Confirm)|Bit(LeverCount);if(!up&&l.isBroken&&broken){wanted|=Bit(FailCount);if(x.live)wanted|=Bit(Fail);}}
+    run.Request(wanted);
+    if(lightDiff||changed||!x.live)run.Mark(kPuzzle);
+    if(changed||!x.live)run.Mark(kBroken);
+    if(fuseDiff||!x.live)run.Mark(kFuses);
+    if(lightDiff&&!run.Write([&]{return CT::WriteLights(tower,lights,c.lightCount);}))return false;
+    if(c.fuseCount==l.fuseCount)for(int i=0;i<c.fuseCount;++i)if(c.fuses[i]!=l.fuses[i])
+        if(!run.Write([&]{return CT::WriteFuse(tower,i,c.fuses[i]);}))return false;
+    if(!run.EffectOnce(Repair,[&]{return CT::SolvePuzzle(tower);}))return false;
+    if((run.Wanted()&Bit(Repair))&&c.lightCount==l.lightCount)
+        if(!run.Write([&]{return CT::WriteLights(tower,lights,c.lightCount);}))return false;
+    if(changed&&!run.Write([&]{return CT::WriteBroken(tower,broken);}))return false;
+    if(!run.Paint(kPuzzle,[&]{return CT::UpdPuzzle(tower);})||!run.Paint(kBroken,[&]{return CT::UpdBroken(tower);}))return false;
+    if(!run.EffectOnce(Click,[&]{return CT::Play(tower,CT::Sound::Click);}))return false;
+    if(!run.Paint(kFuses,[&]{return CT::UpdFuses(tower);}))return false;
+    if(!run.EffectOnce(Pull,[&]{return CT::Play(tower,CT::Sound::FusePulled);})||
+       !run.EffectOnce(Insert,[&]{return CT::Play(tower,CT::Sound::FuseInserted);})||
+       !run.EffectOnce(Fail,[&]{return CT::Play(tower,CT::Sound::Fail);})||
+       !run.EffectOnce(Confirm,[&]{return CT::MoveLever(tower,up);}))return false;
+    if(!run.Write([&]{return CT::WriteLeverMoving(tower,(c.flags&net::kFuseTowerLeverMoving)!=0);}))return false;
+    auto& e=*x.edges;
+    return run.Count(RepairCount,e.repairs)&&run.Count(BreakCount,e.breaks)&&run.Count(PressCount,e.presses)&&
+        run.Count(PullCount,e.pulls)&&run.Count(InsertCount,e.inserts)&&run.Count(FailCount,e.fails)&&run.Count(LeverCount,e.levers);
 }
 
 Look CoordReadUse(void* tower, uint8_t& op, int32_t& index) {
@@ -205,7 +211,7 @@ RT::LookAt RadioPart(uint8_t op, int32_t index) {
 
 bool RadioReadRow(void* tower, FuseTowerRow& w) {
     RT::State st;
-    if (!RT::Read(tower, st)) return false;
+    if (!RT::Read(tower, st) || st.fuseCount>RT::kMaxFuses || st.cellCount>RT::kMaxCells) return false;
     w = FuseTowerRow{};
     w.id = 0;
     w.kind = coop::net::kFuseTowerKindRadio;
@@ -228,92 +234,56 @@ bool RadioReadRow(void* tower, FuseTowerRow& w) {
 // The tower's own graph is not run for the host's act: its writes, painters, sounds and lever timelines are made
 // here, and the alert its scramble broadcasts is raised on the console by hand. The scramble itself, the lever's
 // judgement and the reset event's roll are refused at the gate, so the host's rows are the only author.
-void RadioApply(void* tower, const FuseTowerRow& c, const ApplyCtx& x) {
-    RT::State l;
-    if (!RT::Read(tower, l)) return;
-    Edges& edges = *x.edges;
-    const bool live = x.live;
-    const bool broken = (c.flags & coop::net::kFuseTowerBroken) != 0;
-    bool cells[RT::kMaxCells] = {};
-    bool cellsDiffer = false;
-    if (c.lightCount == l.cellCount) {
-        for (int i = 0; i < c.lightCount; ++i) {
-            cells[i] = LightBit(c.lights, i);
-            cellsDiffer = cellsDiffer || cells[i] != l.cells[i];
-        }
-    } else if (!*x.sizeWarned) {
-        *x.sizeWarned = true;
-        UE_LOGW("fuse_tower: the radio tower's puzzle has %u cells here and %u on the host -- its cells are not "
-                "applied", l.cellCount, c.lightCount);
+bool RadioApply(void* tower,const FuseTowerRow& c,const ApplyCtx& x){
+    ApplyRun run(tower,x);RT::State l;
+    if(!run.Current()||!RT::Read(tower,l)||!run.Current()||c.lightCount>RT::kMaxCells||l.cellCount>RT::kMaxCells||
+        c.fuseCount>RT::kMaxFuses||l.fuseCount>RT::kMaxFuses)return false;
+    const bool broken=(c.flags&net::kFuseTowerBroken)!=0,changed=l.isBroken!=broken;
+    bool cells[RT::kMaxCells]{};bool cellDiff=false,fuseDiff=false,pulled=false,inserted=false,blown=false;
+    if(c.lightCount==l.cellCount){for(int i=0;i<c.lightCount;++i){cells[i]=LightBit(c.lights,i);cellDiff=cellDiff||cells[i]!=l.cells[i];}}
+    else if(!*x.sizeWarned){*x.sizeWarned=true;UE_LOGW("fuse_tower: radio puzzle dimensions differ");}
+    if(c.fuseCount==l.fuseCount)for(int i=0;i<c.fuseCount;++i)if(c.fuses[i]!=l.fuses[i]){
+        fuseDiff=true;pulled=pulled||(l.fuses[i]==2&&c.fuses[i]==0);inserted=inserted||(l.fuses[i]==0&&c.fuses[i]==1);blown=blown||(l.fuses[i]==1&&c.fuses[i]==2);
     }
-    if (cellsDiffer) RT::WriteCells(tower, cells, c.lightCount);
-    if (l.isBroken && !broken) {
-        if (live) {
-            RT::CompleteMinigame(tower);  // every cell lit, painted, tryToFix: isBroken off, its success sound
-        } else {
-            RT::SetBroken(tower, false, false);  // the tower's first row is state, not an act: no sound
-            RT::UpdPuzzle(tower);
-        }
-        ++edges.repairs;
-        UE_LOGI("fuse_tower: the radio tower repaired as the host's");
-    } else if (!l.isBroken && broken) {
-        RT::SetBroken(tower, true, false);
-        RT::UpdPuzzle(tower);
-        if (live) RT::Alert(tower, false);  // "is down!", what scramble broadcasts on a break
-        ++edges.breaks;
-        UE_LOGI("fuse_tower: the radio tower broke as the host's");
-    } else if (cellsDiffer) {
-        RT::UpdPuzzle(tower);
-        if (live) RT::Play(tower, RT::Sound::Click);
-        ++edges.presses;
-    }
-    bool fusesDiffer = false, pulled = false, inserted = false, blown = false;
-    if (c.fuseCount == l.fuseCount) {
-        for (int i = 0; i < c.fuseCount; ++i) {
-            if (c.fuses[i] == l.fuses[i]) continue;
-            pulled = pulled || (l.fuses[i] == 2 && c.fuses[i] == 0);
-            inserted = inserted || (l.fuses[i] == 0 && c.fuses[i] == 1);
-            blown = blown || (l.fuses[i] == 1 && c.fuses[i] == 2);
-            RT::WriteFuse(tower, i, c.fuses[i]);
-            fusesDiffer = true;
-        }
-    }
-    if (fusesDiffer) {
-        RT::UpdFuses(tower);
-        if (live && pulled) RT::Play(tower, RT::Sound::FusePulled);
-        if (live && inserted) RT::Play(tower, RT::Sound::FuseInserted);
-        if (live && blown) RT::Alert(tower, true);  // "has been damaged!", what scramble broadcasts on a fuse blow
-        edges.pulls += pulled ? 1 : 0;
-        edges.inserts += inserted ? 1 : 0;
-    }
-    // Each lever is started once, when the host's row first has it running (or running the other way); its
-    // timeline then ends by itself, and its end event, which judges or clears `animation`, is refused here.
-    const bool leverMoving = (c.flags & coop::net::kFuseTowerLeverMoving) != 0;
-    const bool leverUp = (c.flags & coop::net::kFuseTowerLeverUp) != 0;
-    const bool resetMoving = (c.flags & coop::net::kFuseTowerResetMoving) != 0;
-    const bool wasMoving = (x.prevFlags & coop::net::kFuseTowerLeverMoving) != 0;
-    const bool wasUp = (x.prevFlags & coop::net::kFuseTowerLeverUp) != 0;
-    const bool resetWas = (x.prevFlags & coop::net::kFuseTowerResetMoving) != 0;
-    if (leverMoving && (!wasMoving || wasUp != leverUp)) {
-        if (leverUp) {
-            if (live) RT::Play(tower, RT::Sound::Lever);
-        } else {
-            // The lever heading back is the judgement's fail branch (tryToFix's resetLever).
-            if (live) RT::Play(tower, RT::Sound::Fail);
-            ++edges.fails;
-        }
-        if (live) RT::PlayLever(tower, RT::Lever::Confirm, leverUp);
-        ++edges.levers;
-    }
-    // The reset lever's timeline event plays the scramble and click sounds, which a tower's first row must not
-    // make: a lever already running when the tower first reads is left at rest, and `animation` below clears with
-    // the host's next row.
-    if (resetMoving && !resetWas && live) {
-        RT::Play(tower, RT::Sound::Lever);
-        RT::PlayLever(tower, RT::Lever::Reset, true);
-        ++edges.levers;
-    }
-    RT::WriteAnimation(tower, (c.flags & coop::net::kFuseTowerAnimating) != 0);
+    const bool moving=(c.flags&net::kFuseTowerLeverMoving)!=0,up=(c.flags&net::kFuseTowerLeverUp)!=0;
+    const bool confirm=moving&&(!(x.prevFlags&net::kFuseTowerLeverMoving)||bool(x.prevFlags&net::kFuseTowerLeverUp)!=up);
+    const bool reset=(c.flags&net::kFuseTowerResetMoving)&&!(x.prevFlags&net::kFuseTowerResetMoving)&&x.live;
+    uint64_t wanted=0;
+    if(changed){wanted|=Bit(broken?BreakCount:RepairCount);if(x.live)wanted|=Bit(broken?BreakAlert:Repair);
+        if(broken||!x.live)wanted|=Bit(SetState);}
+    if(cellDiff&&!changed){wanted|=Bit(PressCount);if(x.live)wanted|=Bit(Click);}
+    if(pulled){wanted|=Bit(PullCount);if(x.live)wanted|=Bit(Pull);}
+    if(inserted){wanted|=Bit(InsertCount);if(x.live)wanted|=Bit(Insert);}
+    if(blown&&x.live)wanted|=Bit(Damage);
+    if(confirm){wanted|=Bit(LeverCount);if(!up)wanted|=Bit(FailCount);if(x.live)wanted|=Bit(Confirm)|Bit(up?ConfirmSound:Fail);}
+    if(reset)wanted|=Bit(ResetSound)|Bit(Reset)|Bit(ResetCount);
+    run.Request(wanted);
+    if(cellDiff||changed||!x.live)run.Mark(kPuzzle);
+    if(changed||!x.live)run.Mark(kBroken);
+    if(fuseDiff||!x.live)run.Mark(kFuses);
+    if(cellDiff&&!run.Write([&]{return RT::WriteCells(tower,cells,c.lightCount);}))return false;
+    if(c.fuseCount==l.fuseCount)for(int i=0;i<c.fuseCount;++i)if(c.fuses[i]!=l.fuses[i])
+        if(!run.Write([&]{return RT::WriteFuse(tower,i,c.fuses[i]);}))return false;
+    if(!run.EffectOnce(Repair,[&]{return RT::CompleteMinigame(tower);}))return false;
+    if((run.Wanted()&Bit(Repair))&&c.lightCount==l.cellCount)
+        if(!run.Write([&]{return RT::WriteCells(tower,cells,c.lightCount);}))return false;
+    if(!run.EffectOnce(SetState,[&]{return RT::SetBroken(tower,broken,false);}))return false;
+    if(!run.Paint(kBroken,[&]{return RT::WriteBroken(tower,broken);})||!run.Paint(kPuzzle,[&]{return RT::UpdPuzzle(tower);}))return false;
+    if(!run.EffectOnce(BreakAlert,[&]{return RT::Alert(tower,false);})||!run.EffectOnce(Click,[&]{return RT::Play(tower,RT::Sound::Click);}))return false;
+    if(!run.Paint(kFuses,[&]{return RT::UpdFuses(tower);}))return false;
+    if(!run.EffectOnce(Pull,[&]{return RT::Play(tower,RT::Sound::FusePulled);})||
+       !run.EffectOnce(Insert,[&]{return RT::Play(tower,RT::Sound::FuseInserted);})||
+       !run.EffectOnce(Damage,[&]{return RT::Alert(tower,true);})||
+       !run.EffectOnce(ConfirmSound,[&]{return RT::Play(tower,RT::Sound::Lever);})||
+       !run.EffectOnce(Fail,[&]{return RT::Play(tower,RT::Sound::Fail);})||
+       !run.EffectOnce(Confirm,[&]{return RT::PlayLever(tower,RT::Lever::Confirm,up);})||
+       !run.EffectOnce(ResetSound,[&]{return RT::Play(tower,RT::Sound::Lever);})||
+       !run.EffectOnce(Reset,[&]{return RT::PlayLever(tower,RT::Lever::Reset,true);}))return false;
+    if(!run.Write([&]{return RT::WriteAnimation(tower,(c.flags&net::kFuseTowerAnimating)!=0);}))return false;
+    auto& e=*x.edges;
+    return run.Count(RepairCount,e.repairs)&&run.Count(BreakCount,e.breaks)&&run.Count(PressCount,e.presses)&&
+        run.Count(PullCount,e.pulls)&&run.Count(InsertCount,e.inserts)&&run.Count(FailCount,e.fails)&&
+        run.Count(LeverCount,e.levers)&&run.Count(ResetCount,e.levers);
 }
 
 Look RadioReadUse(void* tower, uint8_t& op, int32_t& index) {
@@ -345,6 +315,7 @@ Look RadioReadUse(void* tower, uint8_t& op, int32_t& index) {
 bool Resolved(Kind kind) { return kind == Kind::Radio ? RT::Instance() != nullptr : CT::EnsureResolved(); }
 
 int32_t ReadAll(Tower* out, int32_t cap) {
+    if(!out||cap<=0)return -1;
     int32_t n = 0;
     if (cap > 0)
         if (void* radio = RT::Instance()) out[n++] = {Kind::Radio, 0, radio};
@@ -352,7 +323,7 @@ int32_t ReadAll(Tower* out, int32_t cap) {
     const int32_t room = std::min<int32_t>(cap - n, coop::net::kFuseTowers);
     const int32_t c = room > 0 ? CT::ReadAll(towers, room) : 0;
     if (c < 0) return n > 0 ? n : -1;
-    for (int32_t i = 0; i < c; ++i) out[n++] = {Kind::Coordinate, CT::IdOf(towers[i]), towers[i]};
+    for (int32_t i = 0; i < std::clamp(c,0,room); ++i) out[n++] = {Kind::Coordinate, CT::IdOf(towers[i]), towers[i]};
     return n;
 }
 
@@ -381,7 +352,7 @@ bool ReadView(Kind kind, void* tower, View& out) {
     out = View{};
     if (kind == Kind::Radio) {
         RT::State st;
-        if (!RT::Read(tower, st)) return false;
+        if (!RT::Read(tower, st) || st.fuseCount>RT::kMaxFuses || st.cellCount>RT::kMaxCells) return false;
         out.broken = st.isBroken;
         out.fuseCount = st.fuseCount;
         for (int i = 0; i < st.fuseCount; ++i) out.fuses[i] = st.fuses[i];
@@ -389,7 +360,7 @@ bool ReadView(Kind kind, void* tower, View& out) {
         return true;
     }
     CT::State st;
-    if (!CT::Read(tower, st)) return false;
+    if (!CT::Read(tower, st) || st.fuseCount>CT::kMaxFuses || st.lightCount>CT::kMaxLights) return false;
     out.broken = st.isBroken;
     out.fuseCount = st.fuseCount;
     for (int i = 0; i < st.fuseCount; ++i) out.fuses[i] = st.fuses[i];
@@ -401,21 +372,25 @@ bool ReadRow(const Tower& tower, FuseTowerRow& row) {
     return tower.kind == Kind::Radio ? RadioReadRow(tower.obj, row) : CoordReadRow(tower.obj, row);
 }
 
-void ApplyRow(Kind kind, void* tower, const FuseTowerRow& row, const ApplyCtx& ctx) {
-    if (kind == Kind::Radio) RadioApply(tower, row, ctx);
-    else CoordApply(tower, row, ctx);
+bool ApplyRow(Kind kind, void* tower, const FuseTowerRow& row, const ApplyCtx& ctx) {
+    if(kind==Kind::Radio)return RadioApply(tower,row,ctx);
+    if(kind==Kind::Coordinate)return CoordApply(tower,row,ctx);
+    return false;
 }
 
-bool ConvergePanel(Kind kind, void* tower, void* player, const FuseTowerRow& row, bool& opens, bool& ran) {
-    if (kind != Kind::Coordinate) return false;
-    CT::State l;
-    if (!CT::Read(tower, l) || l.isAnim) return false;
-    const bool open = (row.flags & coop::net::kFuseTowerOpened) != 0;
-    const bool target = (row.flags & coop::net::kFuseTowerAnim) ? !open : open;
-    if (l.opened == target) return false;
-    opens = target;
-    ran = CT::Use(tower, player, CT::LookAt{CT::Part::Retract, -1});
-    return true;
+bool ConvergePanel(Kind kind,void* tower,void* player,const FuseTowerRow& row,bool& opens,bool& ran,
+                   const std::function<bool()>& allowed) {
+    if(kind!=Kind::Coordinate)return false;
+    ue_wrap::CachedObjRef actor,body;actor.Set(tower);body.Set(player);
+    const auto current=[&]{return actor.Get()&&body.Get()&&(!allowed||allowed())&&actor.Get()&&body.Get();};
+    CT::State state;
+    if(!current()||!CT::Read(tower,state)||!current()||state.isAnim)return false;
+    const bool open=(row.flags&net::kFuseTowerOpened)!=0;
+    const bool target=(row.flags&net::kFuseTowerAnim)?!open:open;
+    if(state.opened==target)return false;
+    const bool result=CT::Use(tower,player,CT::LookAt{CT::Part::Retract,-1});
+    if(!current())return false;
+    opens=target;ran=result;return true;
 }
 
 bool PartLocation(Kind kind, void* tower, uint8_t op, int32_t index, ue_wrap::FVector& out) {
@@ -488,17 +463,24 @@ const char* CanInsert(Kind kind, void* tower, const View& view, int32_t slot) {
     return nullptr;
 }
 
-void TakePull(Kind kind, void* tower, int32_t slot) {
+bool TakePull(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current) {
+    const auto active = [&] { return !current || current(); };
+    if (!active()) return false;
     // The pull's writes on the host's copy; its fuse is already in its puller's hand.
     if (kind == Kind::Radio) {
-        RT::WriteFuse(tower, slot, 0);
+        if (!RT::WriteFuse(tower, slot, 0)) return false;
+        if (!active()) return true;
         RT::UpdFuses(tower);
+        if (!active()) return true;
         RT::Play(tower, RT::Sound::FusePulled);
-        return;
+        return true;
     }
-    CT::WriteFuse(tower, slot, 0);
+    if (!CT::WriteFuse(tower, slot, 0)) return false;
+    if (!active()) return true;
     CT::UpdFuses(tower);
+    if (!active()) return true;
     CT::Play(tower, CT::Sound::FusePulled);
+    return true;
 }
 
 // The insert's own branch on the difficulty (coordRadarDish playerUsedOn @4823, radiotower playerUsedOn :696):
@@ -508,25 +490,36 @@ bool EasyInsert() {
     return difficulty >= 0 && difficulty <= 1;
 }
 
-void TakeInsert(Kind kind, void* tower, int32_t slot) {
+bool TakeInsert(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current) {
+    const auto active = [&] { return !current || current(); };
+    if (!active()) return false;
     // The insert's writes on the host's copy; its fuse is already spent (playerUsedOn @5129..@5317, :681-701).
     if (kind == Kind::Radio) {
-        RT::WriteFuse(tower, slot, 1);
+        if (!RT::WriteFuse(tower, slot, 1)) return false;
+        if (!active()) return true;
         RT::Play(tower, RT::Sound::FuseInserted);
+        if (!active()) return true;
         RT::UpdFuses(tower);
-        return;
+        return true;
     }
-    CT::WriteFuse(tower, slot, 1);
+    if (!CT::WriteFuse(tower, slot, 1)) return false;
+    if (!active()) return true;
     CT::Play(tower, CT::Sound::FuseInserted);
+    if (!active()) return true;
     CT::UpdFuses(tower);
+    return true;
 }
 
-void TakeEasyInsert(Kind kind, void* tower, int32_t slot) {
+void TakeEasyInsert(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current) {
+    const auto active = [&] { return !current || current(); };
+    if (!active()) return;
     if (kind == Kind::Radio) {
         // radiotower playerUsedOn :681-696: the slot good, its sound, updFuses, completeMinigame; the fuse stays.
-        RT::WriteFuse(tower, slot, 1);
+        if (!RT::WriteFuse(tower, slot, 1) || !active()) return;
         RT::Play(tower, RT::Sound::FuseInserted);
+        if (!active()) return;
         RT::UpdFuses(tower);
+        if (!active()) return;
         RT::CompleteMinigame(tower);
         return;
     }
@@ -535,6 +528,7 @@ void TakeEasyInsert(Kind kind, void* tower, int32_t slot) {
 
 bool IsFuse(void* actor) { return CT::IsFuse(actor); }
 void* SpawnFuse(const ue_wrap::FVector& at) { return CT::SpawnFuse(at); }
+void* SpawnFuseTracked(const ue_wrap::FVector& at,bool& attempted,const std::function<bool()>& current) { return CT::SpawnFuseTracked(at,attempted,current); }
 bool IsPulledFuse(void* actor) { return CT::IsPulledFuse(actor); }
 
 const WatchRows& WatchesOf(Kind kind) { return kWatches[static_cast<int>(kind)]; }

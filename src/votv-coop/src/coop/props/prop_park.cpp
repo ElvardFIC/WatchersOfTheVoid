@@ -1,5 +1,6 @@
 // coop/props/prop_park.cpp -- see coop/props/prop_park.h.
 #include "coop/props/prop_park.h"
+#include "coop/net/peer_limits.h"
 #include "coop/props/rider_hold.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/hot_path_guard.h"
@@ -16,7 +17,7 @@ namespace coop::prop_park {
 namespace {
 namespace E = ue_wrap::engine;
 namespace R = ue_wrap::reflection;
-constexpr int kMaxRiders = 4;
+constexpr int kMaxRiders = coop::net::kPeerCapacity;
 struct Rider {
     ue_wrap::CachedObjRef updated, movement;
     rider_hold::Token hold = 0;
@@ -43,9 +44,8 @@ bool Current(void* actor, const ParkRecord& row) {
     return !g_draining && it != g_parked.end() && it->second == row &&
            row->world == ue_wrap::world_identity::Generation() && row->actor.Get() == actor;
 }
-void RootSimulate(void* actor, void* mesh, bool on) {
-    if (mesh) E::SetComponentSimulatePhysics(mesh, on);
-    else E::SetActorSimulatePhysics(actor, on);
+bool RootSimulate(void* actor, void* mesh, bool on) {
+    return mesh ? E::SetComponentSimulatePhysics(mesh, on) : E::SetActorSimulatePhysics(actor, on);
 }
 struct Busy {
     ParkRecord row;
@@ -55,12 +55,16 @@ struct Busy {
 } // namespace
 
 void Park(void* actor, void* mesh) {
+    Park(actor, mesh, {});
+}
+bool Park(void* actor, void* mesh, const std::function<bool()>& source) {
     UE_ASSERT_GAME_THREAD("prop_park::Park");
-    if (g_draining || !actor || !R::IsLive(actor)) return;
+    const auto allowed = [&] {return !source || source();};
+    if (!allowed() || g_draining || !actor || !R::IsLive(actor)) return false;
     ue_wrap::CachedObjRef actorRef, meshRef;
     actorRef.Set(actor);
     if (mesh) {
-        if (!R::IsLive(mesh)) return;
+        if (!R::IsLive(mesh)) return false;
         meshRef.Set(mesh);
     }
     const auto world = ue_wrap::world_identity::Generation();
@@ -69,28 +73,28 @@ void Park(void* actor, void* mesh) {
         auto stale = it->second;
         g_parked.erase(it);
         GiveBack(*stale); // native callbacks can insert a successor; do not overwrite it
-        if (world != ue_wrap::world_identity::Generation() || actorRef.Get() != actor ||
-            (mesh && meshRef.Get() != mesh) || g_parked.contains(actor)) return;
+        if (!allowed() || world != ue_wrap::world_identity::Generation() || actorRef.Get() != actor ||
+            (mesh && meshRef.Get() != mesh) || g_parked.contains(actor)) return false;
         it = g_parked.end();
     }
     const bool first = it == g_parked.end();
     auto row = first ? std::make_shared<Record>() : it->second;
-    if (row->busy) return;
+    if (row->busy) return false;
     // A cached pointer whose old component slot was recycled is not permission
     // to change the new occupant. A genuinely different component can be supplied.
-    if (!first && mesh && row->mesh.Raw() == mesh && row->mesh.Get() != mesh) return;
+    if (!first && mesh && row->mesh.Raw() == mesh && row->mesh.Get() != mesh) return false;
     row->actor = actorRef;
     row->mesh = meshRef;
     row->world = world;
     if (first) g_parked.emplace(actor, row);
     Busy busy(row);
     const auto current = [&] {
-        return Current(actor, row) && (!mesh || meshRef.Get() == mesh);
+        return allowed() && Current(actor, row) && (!mesh || meshRef.Get() == mesh);
     };
     if (first) {
         E::AttachedCharacter found[kMaxRiders]{};
         const int count = E::AttachedCharactersOf(actor, found, kMaxRiders);
-        if (!current()) return;
+        if (!current()) return false;
         const int n = std::clamp(count, 0, kMaxRiders);
         for (int i = 0; i < n; ++i) {
             if (!found[i].updated || !found[i].movement || !R::IsLive(found[i].updated) ||
@@ -106,43 +110,51 @@ void Park(void* actor, void* mesh) {
         const auto& rider = row->riders[i];
         void* updated = rider.updated.Get();
         if (!rider.hold && updated) still[i] = E::IsComponentSimulatingPhysics(updated);
-        if (!current()) return;
+        if (!current()) return false;
     }
-    RootSimulate(actor, mesh, false);
-    if (!current()) return;
+    const bool parked = RootSimulate(actor, mesh, false);
+    if (!current() || !parked) return false;
     for (size_t i = 0; i < row->riders.size(); ++i) {
         auto& rider = row->riders[i];
         void* updated = rider.updated.Get();
         if (!still[i] || !updated) continue;
         const bool simulates = E::IsComponentSimulatingPhysics(updated);
-        if (!current()) return;
+        if (!current()) return false;
         if (simulates || rider.updated.Get() != updated) continue;
         void* movement = rider.movement.Get();
         const auto token = rider_hold::Take(movement);
         if (!current() || rider.updated.Get() != updated || rider.movement.Get() != movement) {
             if (token) rider_hold::Give(movement, token);
-            return;
+            return false;
         }
         rider.hold = token;
     }
+    return current();
 }
 
 void Unpark(void* actor, void* mesh, bool rootSimulates) {
+    Unpark(actor, mesh, rootSimulates, {});
+}
+bool Unpark(void* actor, void* mesh, bool rootSimulates, const std::function<bool()>& source) {
     UE_ASSERT_GAME_THREAD("prop_park::Unpark");
-    if (g_draining || !actor) return;
+    const auto allowed = [&] {return !source || source();};
+    if (!allowed() || g_draining || !actor) return false;
     if (auto it = g_parked.find(actor); it != g_parked.end()) {
         auto row = it->second;
         g_parked.erase(it); // detach before physics and tick setters can reenter
         const bool live = row->actor.Get() == actor &&
                           row->world == ue_wrap::world_identity::Generation();
         const bool meshLive = !mesh || row->mesh.Get() == mesh;
-        if (live && meshLive && rootSimulates) RootSimulate(actor, mesh, true);
+        bool restored = true;
+        if (live && meshLive && rootSimulates) restored = allowed() && RootSimulate(actor, mesh, true);
+        // Returning an owned movement lease is cleanup, including after source cancellation.
         GiveBack(*row);
-        return;
+        return allowed() && live && meshLive && restored;
     }
     // An explicit release can arrive before a first pose/park.
     if (rootSimulates && R::IsLive(actor) && (!mesh || R::IsLive(mesh)))
-        RootSimulate(actor, mesh, true);
+        return allowed() && RootSimulate(actor, mesh, true) && allowed();
+    return allowed();
 }
 
 void OnDisconnect() {

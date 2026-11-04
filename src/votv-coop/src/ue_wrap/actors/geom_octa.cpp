@@ -3,6 +3,7 @@
 #include "ue_wrap/actors/geom_octa.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/reflection.h"
 
@@ -26,24 +27,24 @@ R::InstanceOffset g_minSphere{L"minSphere"};
 
 // The live object in the pointer slot `off` bytes into `base`, or null.
 void* LivePointerAt(void* base, int32_t off) {
-    if (!base || off < 0) return nullptr;
+    if (!base || !R::IsLive(base) || off < 0) return nullptr;
     void* p = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(base) + static_cast<size_t>(off));
     return (p && R::IsLive(p)) ? p : nullptr;
 }
 
 }  // namespace
 
-void* TargetActor(void* octa) { return octa ? LivePointerAt(octa, g_target.Of(octa)) : nullptr; }
+void* TargetActor(void* octa) { return octa && R::IsLive(octa) ? LivePointerAt(octa, g_target.Of(octa)) : nullptr; }
 
 bool IsAnim(void* octa) {
-    if (!octa) return false;
+    if (!octa || !R::IsLive(octa)) return false;
     // The member's place is kept per class object and found again when another class object comes (a reloaded world).
-    static void*   cls = nullptr;
+    static CachedObjRef cls;
     static int32_t off = -1;
     static uint8_t mask = 0;
     void* const c = R::ClassOf(octa);
-    if (c != cls) {
-        cls = c;
+    if (!cls.Is(c) || off < 0 || !mask) {
+        cls.Set(c);
         off = -1;
         mask = 0;
         if (!R::FindBoolProperty(c, L"isAnim", off, mask)) off = -1;
@@ -51,40 +52,43 @@ bool IsAnim(void* octa) {
     return off >= 0 && (*(static_cast<const uint8_t*>(octa) + off) & mask) != 0;
 }
 
-void* MinSphere(void* octa) { return octa ? LivePointerAt(octa, g_minSphere.Of(octa)) : nullptr; }
+void* MinSphere(void* octa) { return octa && R::IsLive(octa) ? LivePointerAt(octa, g_minSphere.Of(octa)) : nullptr; }
 
 bool IsFinishNotify(const script_gate::Call& call) {
+    if (!call.function || !call.locals) return false;
     static R::ParamOffset notifyName{L"NotifyName"};
     const int32_t off = notifyName.Of(call.function);
-    if (off < 0 || !call.locals) return false;
+    const int32_t size = R::FunctionFrameSize(call.function);
+    if (off < 0 || off > size || sizeof(R::FName) > static_cast<size_t>(size - off)) return false;
     R::FName name{};
     std::memcpy(&name, call.locals + off, sizeof(name));
     return R::NameEquals(name, L"finish");
 }
 
 void* GraphFunction(void* octa) {
-    return octa ? R::FindFunction(R::ClassOf(octa), L"ExecuteUbergraph_geomOcta") : nullptr;
+    return octa && R::IsLive(octa) ? R::FindFunction(R::ClassOf(octa), L"ExecuteUbergraph_geomOcta") : nullptr;
 }
 
 bool CallMinSphereBeginOverlap(void* octa, void* otherActor) {
-    void* fn = octa ? R::FindFunction(R::ClassOf(octa), kMinSphereOverlap) : nullptr;
+    if (!octa || !R::IsLive(octa) || (otherActor && !R::IsLive(otherActor))) return false;
+    void* sphere = MinSphere(octa);
+    if (!sphere) return false;
+    void* fn = R::FindFunction(R::ClassOf(octa), kMinSphereOverlap);
     ParamFrame f(fn);
     if (!fn || !f.valid()) return false;
-    f.Set<void*>(L"OverlappedComponent", MinSphere(octa));
-    f.Set<void*>(L"OtherActor", otherActor);
-    return Call(octa, f);
+    return f.Set<void*>(L"OverlappedComponent", sphere) && f.Set<void*>(L"OtherActor", otherActor) && Call(octa, f);
 }
 
 bool CallFireFinishNotify(void* octa) {
-    void* fn = octa ? R::FindFunction(R::ClassOf(octa), kFireFinish) : nullptr;
+    void* fn = octa && R::IsLive(octa) ? R::FindFunction(R::ClassOf(octa), kFireFinish) : nullptr;
     ParamFrame f(fn);
     if (!fn || !f.valid()) return false;
     // The name `finish`, resolved once.
     static R::FName name{};
     if (name.ComparisonIndex == 0 && name.Number == 0) name = fname_utils::StringToFName(L"finish");
-    return f.SetRaw(L"NotifyName", &name, sizeof(name)) && Call(octa, f);
+    return R::NameEquals(name, L"finish") && f.SetRaw(L"NotifyName", &name, sizeof(name)) && Call(octa, f);
 }
 
-void* LaserOwner(void* laser) { return laser ? LivePointerAt(laser, g_owner.Of(laser)) : nullptr; }
+void* LaserOwner(void* laser) { return laser && R::IsLive(laser) ? LivePointerAt(laser, g_owner.Of(laser)) : nullptr; }
 
 }  // namespace ue_wrap::geom_octa

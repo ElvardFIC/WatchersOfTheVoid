@@ -11,5 +11,6 @@ inline bool SetKey(void*,const std::wstring&){return false;}
 inline bool Capture(void*,save_record::SaveRecord&){return false;}
 inline bool Apply(void*,const save_record::SaveRecord&){return false;}
 inline void* Spawn(const save_record::SaveRecord&){return nullptr;}
+inline void Tick(){}
 inline void OnDisconnect(){}
 }

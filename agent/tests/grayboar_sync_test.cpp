@@ -49,6 +49,7 @@ uint32_t GetPropElementIdForActor(void* p){assert(p==&test::body);return test::e
 }
 namespace coop::prop_drive_host {
 void Claim(void* p,const char*){assert(p==&test::body);++test::claims;}
+ClaimLease ClaimOwned(void* p,ClaimSource source,const char*,const std::function<bool()>& current){assert(source==ClaimSource::Grayboar);if(current&&!current())return {};assert(p==&test::body);++test::claims;ClaimLease lease;lease.eid=test::eid;lease.token=1;lease.source=source;return lease;}
 }
 namespace coop::prop_drive_stream {
 bool IsParked(void*){return test::parked;}

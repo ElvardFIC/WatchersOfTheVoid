@@ -173,6 +173,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::DeskShortCircuit:
     case ReliableKind::HookRetrieve:
     case ReliableKind::DingusMusic:
+    case ReliableKind::EmoteState:
     case ReliableKind::Watoy:
     case ReliableKind::SpongeEffect:
     case ReliableKind::WallCreative:

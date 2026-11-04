@@ -10,10 +10,15 @@
 #include "coop/element/registry.h"
 #include "coop/net/net_clock.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
 
 #include "ue_wrap/actors/geom_octa.h"
+#include "ue_wrap/actors/kerfur.h"
+#include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
@@ -24,6 +29,12 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <array>
+#include <memory>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <functional>
 
 namespace coop::geom_octa_sync {
 namespace {
@@ -65,6 +76,11 @@ constexpr int kTagPropSphere = 0x4F435436;   // 'OCT6'
 constexpr int32_t kMoveEntry = 5538;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+uint64_t g_epoch = 0;
+uint32_t g_world = 0;
+uint32_t g_serial=0;
+uint64_t g_stops=0;
+N::Role g_role=N::Role::Host;
 bool g_watched = false;
 
 Counters g_counters{};
@@ -120,18 +136,25 @@ uint32_t PeekVerdicts(void* octa) {
 
 // `aggro`'s entry as the PRE saw it: whether the Octa had a target, kept for the POST of the same call. The body's
 // guard tests the old target, not the argument, so the POST alone cannot tell a passed guard from a refused one.
-struct AggroEntry {
-    void* octa = nullptr;
+struct Invocation {
+    ue_wrap::CachedObjRef octa, function;
+    void* stack = nullptr;
+    uint64_t invocation = 0, epoch = 0;
+};
+struct AggroEntry : Invocation {
+    ue_wrap::CachedObjRef target;
     bool  hadTarget = false;
 };
-AggroEntry g_aggroEntry;
+std::array<AggroEntry, 32> g_aggroEntries{};
+std::array<Invocation, 32> g_fireEntries{};
 
 R::ParamOffset g_aggroArg{L"actor"};
 R::ParamOffset g_graphEntry{L"EntryPoint"};
 
 bool IsHost() {
     coop::net::Session* s = g_session.load(std::memory_order_acquire);
-    return s && s->role() == coop::net::Role::Host;
+    return s && s->running() && g_role==N::Role::Host && s->role() == coop::net::Role::Host &&
+        g_world == ue_wrap::world_identity::Generation() && g_serial==N::session_serial::Current() && g_stops==s->StopCount();
 }
 
 // The element id of `actor` when the registry names it an Npc element, else the invalid id.
@@ -174,8 +197,8 @@ void TargetText(const WireTarget& t, char (&out)[40]) {
 
 // ---- what the host knows of each Octa's EntitySpawn, and the one Aggro it keeps ----
 //
-// The host never sends a GeomOctaEvent before that Octa's EntitySpawn has been sent: the event rides Default behind the spawn
-// and the client's mirror must exist. The Octa's first aggro runs inside its own spawn's finish, on both spawn routes,
+// Host enrollment enables decisions; DrainDecisions separately proves each recipient's ordered birth admission.
+// The event rides Default behind that recipient's idempotent birth. The Octa's first aggro runs inside its own spawn's finish, on both spawn routes,
 // before the NPC lane's send (the dev route sends at the interceptor's PRE, the gamemode's at the drain), so an Aggro
 // that finds no sent spawn is kept, one per Octa, and goes out from OnNpcSpawnSent.
 // Divergence from MTA, whose server never holds a message for an element: an element exists from its creation
@@ -263,36 +286,183 @@ void Keep(void* octa, const WireTarget& target, uint32_t base) {
 unsigned long long Now() { return static_cast<unsigned long long>(coop::net::NowMs()); }
 
 // The argument `aggro` was called with, when live; null for None.
-void* AggroArgument(const sg::Call& call) {
+bool AggroArgument(const sg::Call& call, void*& arg) {
+    if (!call.function || !call.locals) return false;
     const int32_t off = g_aggroArg.Of(call.function);
-    if (off < 0 || !call.locals) return nullptr;
-    void* arg = nullptr;
+    const int32_t size = R::FunctionFrameSize(call.function);
+    if (off < 0 || off > size || sizeof(arg) > static_cast<size_t>(size - off)) return false;
+    arg = nullptr;
     std::memcpy(&arg, call.locals + off, sizeof(arg));
-    return arg && R::IsLive(arg) ? arg : nullptr;
+    return !arg || R::IsLive(arg);
 }
 
 sg::Verdict OnAggroPre(const sg::Call& call) {
-    if (!IsHost()) return sg::Verdict::Run;
-    g_aggroEntry = AggroEntry{call.object, GO::TargetActor(call.object) != nullptr};
+    if (call.depth < 1 || call.depth > static_cast<int>(g_aggroEntries.size())) return sg::Verdict::Run;
+    // A cancelled body has no POST. The next PRE at its depth replaces it.
+    auto& entry = g_aggroEntries[call.depth - 1];
+    entry = {};
+    void* target = nullptr;
+    if (!IsHost() || !call.invocation || !R::IsLive(call.object) ||
+        !AggroArgument(call, target) || coop::npc_mirror_brain::IsMarkedMirror(call.object)) return sg::Verdict::Run;
+    entry.octa.Set(call.object);
+    entry.function.Set(call.function);
+    entry.target.Set(target);
+    entry.stack = call.stack;
+    entry.invocation = call.invocation;
+    entry.epoch = g_epoch;
+    entry.hadTarget = GO::TargetActor(call.object) != nullptr;
     return sg::Verdict::Run;
 }
 
-// A GeomOctaEvent to every world-ready peer, or to the one `slot` (>= 0); false when there is none to send to or the
-// send failed.
-bool SendEvent(const N::GeomOctaEventPayload& p, int slot = -1) {
-    N::Session* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() != N::Role::Host || !s->connected() || !s->AnyWorldReadyPeer()) return false;   // nobody to tell
-    if (slot >= 0 ? s->SendReliableToSlot(slot, N::ReliableKind::GeomOctaEvent, &p, sizeof(p))
-                  : s->SendReliable(N::ReliableKind::GeomOctaEvent, &p, sizeof(p)))
-        return true;
-    // A refused send is a lost decision: counted always, said once. The client times that look out.
-    static bool said = false;
-    ++g_counters.sendFailed;
-    if (!said) {
-        said = true;
-        UE_LOGW("geom_octa_sync: a GeomOctaEvent could not be sent (reliable channel busy?) -- counted; said once");
+struct Decision {
+    struct Peer {uint32_t generation=0;bool pending=false,attempted=false;uint64_t at=0;};
+    N::Session* session=g_session.load();
+    uint64_t epoch=g_epoch;
+    N::GeomOctaEventPayload p{};
+    std::string nativeClass;
+    ue_wrap::CachedObjRef actor,cls,target,nativeTarget;
+    std::array<Peer,N::kMaxPeers> peers{};
+    void* Target()const{
+        if(p.targetKind==N::kGeomOctaTargetSlot){
+            if(!p.target)return coop::players::Registry::Get().Local();
+            auto* puppet=coop::players::Registry::Get().Puppet(uint8_t(p.target));return puppet?puppet->GetActor():nullptr;
+        }
+        const auto* element=EL::Registry::Get().Get(p.target);return element?element->LiveActor():nullptr;
     }
+    bool Current()const{
+        return session==g_session.load() && epoch==g_epoch && IsHost() && session->connected() &&
+            actor.Get() && cls.Get() && R::ClassOf(actor.Raw())==cls.Raw() && NpcEid(actor.Raw())==p.octaEid &&
+            EL::Registry::Get().Get(p.octaEid)->GetTypeName()==nativeClass &&
+            GO::TargetActor(actor.Raw())==nativeTarget.Raw() && (!nativeTarget.Raw()||nativeTarget.Get()) &&
+            (p.targetKind==N::kGeomOctaTargetNone || (target.Get()&&Target()==target.Raw()));
+    }
+};
+std::vector<std::shared_ptr<Decision>> g_decisions;
+struct BirthReceipt {
+    uint32_t eid=0;
+    ue_wrap::CachedObjRef actor,cls;
+    std::array<uint32_t,N::kMaxPeers> generation{};
+    std::array<uint64_t,N::kMaxPeers> worldRevision{};
+    bool Current()const{return actor.Get()&&cls.Get()&&R::ClassOf(actor.Raw())==cls.Raw()&&NpcEid(actor.Raw())==eid;}
+};
+std::vector<BirthReceipt> g_births;
+bool BirthKnown(const Decision& decision,int slot,uint32_t generation,uint64_t worldRevision){
+    for(const auto& birth:g_births)if(birth.eid==decision.p.octaEid && birth.actor.Raw()==decision.actor.Raw() &&
+        birth.cls.Raw()==decision.cls.Raw() && birth.Current() && generation && birth.generation[slot]==generation &&
+        birth.worldRevision[slot]==worldRevision)return true;
     return false;
+}
+void NoteBirth(const Decision& decision,int slot,uint32_t generation,uint64_t worldRevision){
+    g_births.erase(std::remove_if(g_births.begin(),g_births.end(),[](const auto& birth){return !birth.Current();}),g_births.end());
+    for(auto& birth:g_births)if(birth.eid==decision.p.octaEid&&birth.actor.Raw()==decision.actor.Raw()&&birth.cls.Raw()==decision.cls.Raw()){
+        birth.generation[slot]=generation;birth.worldRevision[slot]=worldRevision;return;
+    }
+    if(g_births.size()>=kMaxSent)g_births.erase(g_births.begin());
+    BirthReceipt birth;birth.eid=decision.p.octaEid;birth.actor=decision.actor;birth.cls=decision.cls;
+    birth.generation[slot]=generation;birth.worldRevision[slot]=worldRevision;g_births.push_back(birth);
+}
+bool CaptureBirth(const Decision& decision,N::EntitySpawnPayload& packet,const std::function<bool()>& current){
+    ue_wrap::FVector location{},scale{};ue_wrap::FRotator rotation{};
+    if(!current() || !ue_wrap::engine::TryGetActorTransform(decision.actor.Raw(),location,rotation,scale,current) || !current())return false;
+    if(std::fabs(location.X)>N::kMaxCoord||std::fabs(location.Y)>N::kMaxCoord||std::fabs(location.Z)>N::kMaxCoord)return false;
+    if(decision.nativeClass.empty()||decision.nativeClass.size()>63)return false;
+    for(unsigned char c:decision.nativeClass)if(c<33||c>126)return false;
+    packet={};packet.className.len=static_cast<uint8_t>(decision.nativeClass.size());
+    std::memcpy(packet.className.data,decision.nativeClass.data(),decision.nativeClass.size());
+    packet.elementId=decision.p.octaEid;
+    packet.locX=location.X;packet.locY=location.Y;packet.locZ=location.Z;
+    packet.rotPitch=rotation.Pitch;packet.rotYaw=rotation.Yaw;packet.rotRoll=rotation.Roll;
+    packet.scaleX=scale.X;packet.scaleY=scale.Y;packet.scaleZ=scale.Z;
+    if(!current())return false;
+    packet.savePersisted=ue_wrap::kerfur::HasSaveKey(decision.actor.Raw())?1:0;
+    return current();
+}
+bool g_drainingDecisions=false;
+void DrainDecisions(){
+    if(g_drainingDecisions)return;
+    struct Busy{Busy(){g_drainingDecisions=true;}~Busy(){g_drainingDecisions=false;}}busy;
+    const auto pending=g_decisions;size_t budget=32;
+    std::array<bool,N::kMaxPeers> blocked{};
+    for(const auto& decision:pending){
+        const auto installed=[&]{return std::find(g_decisions.begin(),g_decisions.end(),decision)!=g_decisions.end();};
+        if(!installed())continue;
+        if(!decision->Current()){
+            g_decisions.erase(std::remove(g_decisions.begin(),g_decisions.end(),decision),g_decisions.end());continue;
+        }
+        auto* session=decision->session;
+        for(int slot=1;slot<N::kMaxPeers;++slot){
+            auto& peer=decision->peers[slot];if(!peer.pending)continue;
+            if(!session->IsSlotConnected(slot)||peer.generation!=session->peerGenerationForSlot(slot)){peer.pending=false;continue;}
+            const auto now=N::NowMs();
+            if(blocked[slot] || !session->IsSlotWorldReady(slot) || (peer.attempted&&(now<peer.at||now-peer.at<250))){blocked[slot]=true;continue;}
+            if(!budget)return;--budget;
+            peer.attempted=true;peer.at=now;
+            const uint64_t worldRevision=session->SlotWorldReadyRevision(slot);
+            if(!BirthKnown(*decision,slot,peer.generation,worldRevision)){
+                N::EntitySpawnPayload birth{};
+                const auto continuing=[&]{return installed()&&decision->Current()&&peer.pending&&
+                    peer.generation==session->peerGenerationForSlot(slot)&&session->IsSlotWorldReady(slot)&&
+                    session->SlotWorldReadyRevision(slot)==worldRevision;};
+                if(!CaptureBirth(*decision,birth,continuing)){blocked[slot]=true;continue;}
+                if(!installed()||!decision->Current())return;
+                if(peer.generation!=session->peerGenerationForSlot(slot)||!session->IsSlotConnected(slot)){peer.pending=false;continue;}
+                if(!session->IsSlotWorldReady(slot)||session->SlotWorldReadyRevision(slot)!=worldRevision){blocked[slot]=true;continue;}
+                const bool born=session->SendReliableToSlot(slot,N::ReliableKind::EntitySpawn,&birth,sizeof birth);
+                if(!installed()||!decision->Current())return;
+                if(!peer.pending)continue;
+                if(peer.generation!=session->peerGenerationForSlot(slot)||!session->IsSlotConnected(slot)){peer.pending=false;continue;}
+                if(!born){++g_counters.sendFailed;blocked[slot]=true;continue;}
+                if(session->SlotWorldReadyRevision(slot)!=worldRevision){blocked[slot]=true;continue;}
+                NoteBirth(*decision,slot,peer.generation,worldRevision);
+                if(!session->IsSlotWorldReady(slot)){blocked[slot]=true;continue;}
+                if(!budget)return;--budget;
+            }
+            if(session->SlotWorldReadyRevision(slot)!=worldRevision||!session->IsSlotWorldReady(slot)){blocked[slot]=true;continue;}
+            const auto packet=decision->p;
+            const bool accepted=session->SendReliableToSlot(slot,N::ReliableKind::GeomOctaEvent,&packet,sizeof packet);
+            if(!installed()||!decision->Current())return;
+            if(session->SlotWorldReadyRevision(slot)!=worldRevision){blocked[slot]=true;continue;}
+            if(peer.generation!=session->peerGenerationForSlot(slot)||!session->IsSlotConnected(slot)){peer.pending=false;continue;}
+            if(accepted)peer.pending=false;
+            else {++g_counters.sendFailed;blocked[slot]=true;}
+        }
+        bool remains=false;for(const auto& peer:decision->peers)remains|=peer.pending;
+        if(!remains)g_decisions.erase(std::remove(g_decisions.begin(),g_decisions.end(),decision),g_decisions.end());
+    }
+}
+bool SendEvent(const N::GeomOctaEventPayload& input, int slot = -1) {
+    if(!IsHost()||!g_session.load()->connected()||slot==0||slot>=N::kMaxPeers||slot < -1)return false;
+    auto decision=std::make_shared<Decision>();decision->p=input;
+    const auto* element=EL::Registry::Get().Get(input.octaEid);
+    if(!element)return false;
+    decision->nativeClass=element->GetTypeName();
+    decision->actor.Set(element->LiveActor());if(decision->actor.Get())decision->cls.Set(R::ClassOf(decision->actor.Raw()));
+    if(decision->actor.Get())decision->nativeTarget.Set(GO::TargetActor(decision->actor.Raw()));
+    if(input.targetKind!=N::kGeomOctaTargetNone)decision->target.Set(decision->Target());
+    if(!decision->Current())return false;
+    if(input.op==N::kGeomOctaOpAggro){
+        for(auto& old:g_decisions)if(old->p.octaEid==input.octaEid)
+            for(int target=1;target<N::kMaxPeers;++target)if(slot<0||target==slot)old->peers[target].pending=false;
+    }
+    g_decisions.erase(std::remove_if(g_decisions.begin(),g_decisions.end(),[](const auto& row){
+        if(!row->Current())return true;for(const auto& peer:row->peers)if(peer.pending)return false;return true;
+    }),g_decisions.end());
+    if(input.op==N::kGeomOctaOpVerdict){
+        size_t kept=0;
+        for(size_t i=g_decisions.size();i>0;--i){
+            const auto& old=g_decisions[i-1];
+            if(old->p.octaEid==input.octaEid && old->p.op==N::kGeomOctaOpVerdict && ++kept>=4)
+                g_decisions.erase(g_decisions.begin()+i-1);
+        }
+    }
+    if(g_decisions.size()>=kMaxSent*(N::kMaxPeers+4)){++g_counters.sendFailed;return false;}
+    bool audience=false;
+    for(int target=1;target<N::kMaxPeers;++target)if((slot<0||target==slot)&&decision->session->IsSlotConnected(target)){
+        auto& peer=decision->peers[target];peer.generation=decision->session->peerGenerationForSlot(target);
+        peer.pending=peer.generation!=0;audience|=peer.pending;
+    }
+    if(!audience)return false;
+    g_decisions.push_back(decision);DrainDecisions();return decision->Current();
 }
 
 void SendAggro(uint32_t eid, const WireTarget& target, uint32_t base, int slot = -1) {
@@ -307,7 +477,7 @@ void SendAggro(uint32_t eid, const WireTarget& target, uint32_t base, int slot =
     if (SendEvent(p, slot)) {
         char join[24] = "";
         if (slot >= 0) std::snprintf(join, sizeof(join), " join slot=%d", slot);   // a joiner's snapshot, not a live send
-        UE_LOGI("[OCTA] aggro sent eid=%u target=%s base=%u%s t=%llu", static_cast<unsigned>(eid), text,
+        UE_LOGI("[OCTA] aggro queued eid=%u target=%s base=%u%s t=%llu", static_cast<unsigned>(eid), text,
                 static_cast<unsigned>(base), join, Now());
     }
 }
@@ -323,16 +493,21 @@ void SendVerdict(uint32_t eid, uint32_t n, int refire) {
     p.verdictNo = n;
     p.refire = static_cast<uint8_t>(refire);
     if (SendEvent(p))
-        UE_LOGI("[OCTA] verdict sent eid=%u n=%u refire=%d t=%llu", static_cast<unsigned>(eid),
+        UE_LOGI("[OCTA] verdict queued eid=%u n=%u refire=%d t=%llu", static_cast<unsigned>(eid),
                 static_cast<unsigned>(n), refire, Now());
 }
 
 void OnAggroPost(const sg::Call& call) {
-    if (!IsHost() || g_aggroEntry.octa != call.object) return;
-    const bool hadTarget = g_aggroEntry.hadTarget;
-    g_aggroEntry = AggroEntry{};
-    if (hadTarget) return;   // the guard refused: nothing was decided
-    const WireTarget target = WireTargetOf(AggroArgument(call));
+    if (call.depth < 1 || call.depth > static_cast<int>(g_aggroEntries.size())) return;
+    auto& pending = g_aggroEntries[call.depth - 1];
+    if (!call.invocation || pending.invocation != call.invocation || pending.stack != call.stack ||
+        pending.octa.Raw() != call.object || pending.function.Raw() != call.function) return;
+    const auto entry = pending;
+    pending = {};
+    if (!IsHost() || entry.epoch != g_epoch || entry.hadTarget || !entry.octa.Get() ||
+        !entry.function.Get() || (entry.target.Raw() && !entry.target.Get()) ||
+        coop::npc_mirror_brain::IsMarkedMirror(call.object)) return;
+    const WireTarget target = WireTargetOf(entry.target.Get());
     char text[40];
     TargetText(target, text);
     std::snprintf(g_lastTarget, sizeof(g_lastTarget), "%s", text);
@@ -348,9 +523,26 @@ void OnAggroPost(const sg::Call& call) {
     // peer that becomes ready later is served by the join, not by this event.
 }
 
+sg::Verdict OnFireFinishPre(const sg::Call& call) {
+    if (call.depth < 1 || call.depth > static_cast<int>(g_fireEntries.size())) return sg::Verdict::Run;
+    auto& entry = g_fireEntries[call.depth - 1];
+    entry = {};
+    if (!IsHost() || !call.invocation || !R::IsLive(call.object) || !GO::IsFinishNotify(call) ||
+        coop::npc_mirror_brain::IsMarkedMirror(call.object)) return sg::Verdict::Run;
+    entry.octa.Set(call.object); entry.function.Set(call.function);
+    entry.stack = call.stack; entry.invocation = call.invocation; entry.epoch = g_epoch;
+    return sg::Verdict::Run;
+}
+
 void OnFireFinishPost(const sg::Call& call) {
-    // Only the notify named `finish` is a verdict: the fire section's other notifies are not.
-    if (!IsHost() || !GO::IsFinishNotify(call)) return;
+    if (call.depth < 1 || call.depth > static_cast<int>(g_fireEntries.size())) return;
+    auto& pending = g_fireEntries[call.depth - 1];
+    if (!call.invocation || pending.invocation != call.invocation || pending.stack != call.stack ||
+        pending.octa.Raw() != call.object || pending.function.Raw() != call.function) return;
+    const auto entry = pending;
+    pending = {};
+    if (!IsHost() || entry.epoch != g_epoch || !entry.octa.Get() || !entry.function.Get() ||
+        coop::npc_mirror_brain::IsMarkedMirror(call.object)) return;
     const EL::ElementId id = NpcEid(call.object);
     const uint32_t n = CountVerdict(call.object);
     const int refire = GO::TargetActor(call.object) ? 1 : 0;
@@ -408,7 +600,9 @@ sg::Verdict NoteOverlap(const sg::Call& call, int which) {
     const uint32_t total = which == 0 ? ++g_counters.overlapMin : ++g_counters.overlapProp;
     const int32_t off = g_overlapOther.Of(call.function);
     void* other = nullptr;
-    if (off >= 0 && call.locals) std::memcpy(&other, call.locals + off, sizeof(other));
+    const int32_t size = R::FunctionFrameSize(call.function);
+    if (off >= 0 && off <= size && sizeof(other) <= static_cast<size_t>(size - off) && call.locals)
+        std::memcpy(&other, call.locals + off, sizeof(other));
     if (other && !R::IsLive(other)) other = nullptr;
     void* cls = other ? R::ClassOf(other) : nullptr;
     for (size_t i = 0; i < g_seenCount; ++i)
@@ -429,9 +623,12 @@ constexpr int kMaxDepth = 32;
 thread_local int32_t t_entryAtDepth[kMaxDepth];
 
 int32_t EntryOf(const sg::Call& call) {
+    if (!call.function || !call.locals) return -1;
     const int32_t off = g_graphEntry.Of(call.function);
+    const int32_t size = R::FunctionFrameSize(call.function);
     int32_t entry = -1;
-    if (off >= 0 && call.locals) std::memcpy(&entry, call.locals + off, sizeof(entry));
+    if (off >= 0 && off <= size && sizeof(entry) <= static_cast<size_t>(size - off))
+        std::memcpy(&entry, call.locals + off, sizeof(entry));
     return entry;
 }
 
@@ -455,7 +652,17 @@ void OnGraphPost(const sg::Call& call) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto serial=N::session_serial::Current();
+    if (g_session.load(std::memory_order_acquire) != session || g_world != world || g_serial!=serial ||
+        (session && (g_stops!=session->StopCount() || g_role!=session->role()))) {
+        OnDisconnect();
+        g_world = world;
+    }
     g_session.store(session, std::memory_order_release);
+    g_serial=serial;g_stops=session?session->StopCount():0;
+    g_role=session?session->role():N::Role::Host;
+    DrainDecisions();
     if (g_watched) return;
     // Each watch registers once; one that is refused is said once and asked again on the next call, which the install
     // fanout makes every pump tick, until all five hold.
@@ -470,7 +677,7 @@ void Install(coop::net::Session* session) {
     };
     static Watch watches[] = {
         {&kRowAggro, kTagAggro, &OnAggroPre, &OnAggroPost},
-        {&kRowFireFinish, kTagFire, nullptr, &OnFireFinishPost},
+        {&kRowFireFinish, kTagFire, &OnFireFinishPre, &OnFireFinishPost},
         {&kRowCloseFinish, kTagClose, nullptr, &OnCloseFinishPost},
         {&kRowLaserBeginPlay, kTagLaser, nullptr, &OnLaserPost},
         {&kRowOctaGraph, kTagGraph, &OnGraphPre, &OnGraphPost},
@@ -555,6 +762,10 @@ void OpenVerdictWindow(uint32_t n, void* octa) {
 const char* LastAggroTarget() { return g_lastTarget; }
 
 void OnDisconnect() {
+    ++g_epoch;
+    g_session.store(nullptr, std::memory_order_release);
+    g_world = 0;
+    g_serial=0;g_stops=0;g_decisions.clear();g_births.clear();
     for (VerdictCount& v : g_verdicts) v = VerdictCount{};
     g_verdictNext = 0;
     for (KeptAggro& k : g_kept) k = KeptAggro{};
@@ -565,7 +776,8 @@ void OnDisconnect() {
     g_windowSerial = 0;
     g_seenCount = 0;
     g_lastTarget[0] = '\0';
-    g_aggroEntry = AggroEntry{};
+    g_aggroEntries.fill({});
+    g_fireEntries.fill({});
     coop::geom_octa_relay::OnDisconnect();   // the client's half of the lane ends with the session too
 }
 

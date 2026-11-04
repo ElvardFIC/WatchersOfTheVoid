@@ -14,6 +14,8 @@
 #include "coop/net/intent_bucket.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
+#include "coop/element/registry.h"
 #include "coop/net/throw_bounds.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
@@ -28,6 +30,7 @@
 #include "coop/props/prop_wire_parity.h"      // PhysFlagsOf: the flags an End carries
 #include "coop/props/remote_prop.h"           // ResolveLiveActorByEid
 #include "prop_drive_rows.h"                  // co-located private header (src tree, not include/)
+#include "prop_end_delivery.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
@@ -35,10 +38,12 @@
 #include "ue_wrap/engine/engine.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -72,13 +77,143 @@ constexpr uint64_t kPassMs = 1000;
 
 // The host's session, cached by the entry points: a row's reader that ends it (Tick, Claim, Coast) has none of its own.
 coop::net::Session* g_session = nullptr;
+uint64_t g_epoch = 0, g_stops = 0;
+uint32_t g_world = 0, g_serial = 0;
+std::array<uint64_t, coop::net::kMaxPeers> g_departures{};
+bool g_draining = false;
+uint64_t g_offerRevision = 0;
+std::unordered_map<uint32_t, uint64_t> g_offers, g_retiring;
 coop::roster_ledger::PerSlotState<coop::net::IntentBucket> g_claimBuckets;
 // The slot a row was last handed back from, and when: the ATV's late-syncer record, kept after the row is gone.
-struct HandBack { uint8_t slot = 0; uint64_t ms = 0; };
+struct HandBack { uint8_t slot = 0; uint64_t ms = 0; uint32_t occupant = 0; uint64_t departure = 0; };
 std::unordered_map<uint32_t, HandBack> g_handBack;
 uint64_t g_nextPassMs = 0;
-// Per client slot, kept capacity: the drain allocates nothing in steady state.
-std::vector<coop::net::PropDriveRow> g_take[coop::net::kMaxPeers];
+struct Context {
+    coop::net::Session* session = g_session;
+    uint64_t epoch = g_epoch, stops = g_stops;
+    uint32_t world = g_world, serial = g_serial;
+    bool Current() const {
+        return session && session == g_session && epoch == g_epoch &&
+            world == ue_wrap::world_identity::Generation() && serial == coop::net::session_serial::Current() &&
+            stops == session->StopCount() && session->connected() && session->role() == coop::net::Role::Host;
+    }
+};
+uint64_t Elapsed(uint64_t now, uint64_t before) { return now >= before ? now - before : 0; }
+bool ValidSlot(uint8_t slot) { return slot > 0 && slot < coop::net::kMaxPeers; }
+struct Sender {
+    Context context;
+    uint8_t slot = 0;
+    uint32_t occupant = 0;
+    uint64_t departure = 0;
+    explicit Sender(uint8_t value) : slot(value) {
+        if (context.Current() && ValidSlot(slot)) {
+            occupant = context.session->peerGenerationForSlot(slot);
+            departure = g_departures[slot];
+        }
+    }
+    bool Alive() const {
+        return context.Current() && ValidSlot(slot) && occupant &&
+            occupant == context.session->peerGenerationForSlot(slot) && departure == g_departures[slot] &&
+            context.session->IsSlotConnected(slot);
+    }
+    bool Current() const { return Alive() && context.session->IsSlotWorldReady(slot); }
+};
+bool BoundActor(const Driven& row) {
+    void* actor = row.ref.Get();
+    return actor && row.cls.Get() && R::ClassOf(actor) == row.cls.Get() &&
+        static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(actor)) == row.eid;
+}
+struct Receipt {
+    Context context;
+    Sender sender;
+    Driven value;
+    explicit Receipt(const Driven& row) : sender(row.syncer), value(row) {}
+    bool Matches() const {
+        if (!context.Current()) return false;
+        const Driven* row = coop::prop_drive_host::FindByEid(value.eid);
+        return row && row->revision == value.revision && row->gen == value.gen && row->syncer == value.syncer &&
+            row->claimSeq == value.claimSeq && row->ref.Raw() == value.ref.Raw();
+    }
+    bool SourceCurrent() const {
+        return sender.Current() && value.ownerGeneration == sender.occupant && value.ownerDeparture == sender.departure;
+    }
+    bool Current() const { return Matches() && SourceCurrent() && BoundActor(value); }
+    bool Alive() const {
+        if (!context.Current() || !SourceCurrent() || !BoundActor(value)) return false;
+        const Driven* row = coop::prop_drive_host::FindByEid(value.eid);
+        return row && row->episode == value.episode && row->gen == value.gen &&
+            row->syncer == value.syncer && row->claimSeq == value.claimSeq;
+    }
+};
+bool Save(const Receipt& receipt, Driven row) {
+    if (!receipt.Current()) return false;
+    row.revision = coop::prop_drive_host::NewRowRevision();
+    *coop::prop_drive_host::FindByEid(row.eid) = row;
+    return true;
+}
+std::vector<Receipt> Snapshot() {
+    std::vector<Receipt> rows;
+    for (const auto& row : coop::prop_drive_host::Rows()) if (!row.dead && row.syncer) rows.emplace_back(row);
+    return rows;
+}
+void Bind(coop::net::Session& s) {
+    if (g_session && (g_session != &s || g_world != ue_wrap::world_identity::Generation() ||
+        g_serial != coop::net::session_serial::Current() || g_stops != s.StopCount() ||
+        s.role() != coop::net::Role::Host || !s.connected()))
+        coop::prop_drive_host::OnDisconnect();
+    g_session = &s; g_world = ue_wrap::world_identity::Generation();
+    g_serial = coop::net::session_serial::Current(); g_stops = s.StopCount();
+}
+struct Target {
+    Sender sender;
+    uint32_t eid;
+    uint64_t offer;
+    ue_wrap::CachedObjRef ref, cls;
+    Target(const Sender& source, uint32_t id) : sender(source), eid(id), offer(++g_offerRevision) { g_offers[eid] = offer; }
+    bool Matches() const {
+        const auto found = g_offers.find(eid);
+        return sender.Current() && found != g_offers.end() && found->second == offer &&
+            !coop::prop_drive_host::FindByEid(eid);
+    }
+    bool Current() const {
+        return Matches() && ref.Get() && cls.Get() && R::ClassOf(ref.Get()) == cls.Get() &&
+            static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(ref.Get())) == eid;
+    }
+    ~Target() {
+        const auto found = g_offers.find(eid);
+        if (found != g_offers.end() && found->second == offer) g_offers.erase(found);
+    }
+};
+struct Retirement {
+    Receipt receipt;
+    uint64_t token = 0;
+    bool departed;
+    Retirement(const Receipt& source, bool left = false) : receipt(source), departed(left) {
+        if (!receipt.Matches()) return;
+        token = coop::prop_drive_host::NewRowRevision();
+        coop::prop_drive_host::EraseRow(*coop::prop_drive_host::FindByEid(receipt.value.eid));
+        g_retiring[receipt.value.eid] = token;
+    }
+    static bool OwnsProof(const Receipt& receipt, uint64_t token, bool departed) {
+        const auto found = g_retiring.find(receipt.value.eid);
+        const auto& sender = receipt.sender;
+        return token && receipt.context.Current() && found != g_retiring.end() && found->second == token &&
+            !coop::prop_drive_host::FindByEid(receipt.value.eid) &&
+            (departed ? (ValidSlot(sender.slot) && g_departures[sender.slot] == sender.departure &&
+                         sender.context.session->peerGenerationForSlot(sender.slot) == sender.occupant) : receipt.SourceCurrent());
+    }
+    bool Owns() const { return OwnsProof(receipt, token, departed); }
+    bool Current() const { return Owns() && BoundActor(receipt.value); }
+    std::function<bool()> Guard() const {
+        return [copy = receipt, id = token, left = departed] {
+            return OwnsProof(copy, id, left) && BoundActor(copy.value);
+        };
+    }
+    ~Retirement() {
+        const auto found = g_retiring.find(receipt.value.eid);
+        if (token && found != g_retiring.end() && found->second == token) g_retiring.erase(found);
+    }
+};
 
 // Each outcome is counted and said at the first and at every 100th, so a client's flood costs the log nothing.
 uint32_t g_granted = 0, g_admitted = 0, g_notSyncer = 0, g_lateSyncer = 0, g_staleGen = 0, g_paced = 0, g_steps = 0;
@@ -101,8 +236,85 @@ void Tally(uint32_t& n, const char* what, uint32_t eid, unsigned slot) {
         UE_LOGI("[PROP-SYNC] HOST %s eid=%u slot %u (#%u)", what, eid, slot, n);
 }
 
-void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, uint16_t seq, uint8_t gen, PropSyncResult result,
-            PropSyncRefusal why, coop::net::PropSyncKind kind = coop::net::PropSyncKind::Claim) {
+struct ControlAnswer;
+using ControlReceipt = std::shared_ptr<ControlAnswer>;
+std::unordered_map<uint64_t, ControlReceipt> g_answers;
+bool g_answerDraining = false;
+size_t g_answerCursor = 0;
+constexpr size_t kAnswerBudget = 16;
+constexpr uint64_t kAnswerRetryMs = 250;
+uint64_t AnswerKey(uint32_t eid, uint8_t slot) { return (uint64_t(eid) << 8) | slot; }
+struct ControlAnswer {
+    Sender recipient;
+    Driven owner;
+    coop::net::PropSyncAnswerPayload payload{};
+    bool grant = false, tombstone = false, attempted = false;
+    uint64_t lastAttempt = 0;
+    explicit ControlAnswer(const Driven& row) : recipient(row.syncer), owner(row) {}
+    uint64_t Key() const { return AnswerKey(payload.eid, recipient.slot); }
+    bool Basic() const {
+        const auto found = g_answers.find(Key());
+        if (found == g_answers.end() || found->second.get() != this || !recipient.Alive()) return false;
+        if (owner.ownerGeneration != recipient.occupant || owner.ownerDeparture != recipient.departure) return false;
+        if (!grant) return true;
+        const Driven* row = coop::prop_drive_host::FindByEid(owner.eid);
+        return row && row->episode == owner.episode && row->gen == owner.gen &&
+            row->syncer == owner.syncer && row->claimSeq == owner.claimSeq &&
+            row->ref.Raw() == owner.ref.Raw();
+    }
+    bool ActorCurrent() const { return Basic() && owner.ref.Get() && owner.cls.Get(); }
+    bool Current() const {
+        if (tombstone) return Basic(); // A death notice stops the old grant without dereferencing its dead actor.
+        if (!ActorCurrent()) return false;
+        void* cls = R::ClassOf(owner.ref.Raw());
+        if (!ActorCurrent() || cls != owner.cls.Raw()) return false;
+        const auto eid = coop::prop_element_tracker::GetPropElementIdForActor(owner.ref.Raw());
+        if (!ActorCurrent() || static_cast<uint32_t>(eid) != owner.eid) return false;
+        cls = R::ClassOf(owner.ref.Raw());
+        return ActorCurrent() && cls == owner.cls.Raw();
+    }
+};
+void EraseAnswer(const ControlReceipt& answer) {
+    const auto found = g_answers.find(answer->Key());
+    if (found != g_answers.end() && found->second == answer) g_answers.erase(found);
+}
+bool TryAnswer(const ControlReceipt& answer, uint64_t now) {
+    if (!answer->Basic()) { EraseAnswer(answer); return false; }
+    if (!answer->recipient.context.session->IsSlotWorldReady(answer->recipient.slot)) return false;
+    if (answer->attempted && Elapsed(now, answer->lastAttempt) < kAnswerRetryMs) return false;
+    answer->attempted = true; answer->lastAttempt = now;
+    if (!answer->Current()) { EraseAnswer(answer); return false; }
+    const auto payload = answer->payload;
+    const bool sent = answer->recipient.context.session->SendReliableToSlot(answer->recipient.slot,
+        coop::net::ReliableKind::PropSyncAnswer, &payload, sizeof(payload));
+    if (!answer->Current()) { EraseAnswer(answer); return false; }
+    if (sent) EraseAnswer(answer);
+    return sent;
+}
+struct AnswerDrain {
+    AnswerDrain() { g_answerDraining = true; }
+    ~AnswerDrain() { g_answerDraining = false; }
+};
+void DrainAnswers(uint64_t now) {
+    const Context context;
+    if (g_answerDraining) return;
+    if (!context.Current()) { g_answers.clear(); g_answerCursor = 0; return; }
+    if (g_answers.empty()) return;
+    AnswerDrain drain;
+    std::vector<ControlReceipt> answers;
+    answers.reserve(g_answers.size());
+    for (const auto& [key, answer] : g_answers) answers.push_back(answer);
+    const size_t count = (std::min)(kAnswerBudget, answers.size());
+    for (size_t i = 0; i < count; ++i) {
+        auto answer = answers[g_answerCursor++ % answers.size()];
+        TryAnswer(answer, now);
+        if (!context.Current()) return;
+    }
+}
+
+bool Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, uint16_t seq, uint8_t gen, PropSyncResult result,
+            PropSyncRefusal why, coop::net::PropSyncKind kind = coop::net::PropSyncKind::Claim,
+            const Driven* owner = nullptr, bool tombstone = false) {
     coop::net::PropSyncAnswerPayload a{};
     a.eid     = eid;
     a.seq     = seq;
@@ -110,7 +322,17 @@ void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, uint16_t seq, uin
     a.result  = static_cast<uint8_t>(result);
     a.refusal = static_cast<uint8_t>(why);
     a.kind    = static_cast<uint8_t>(kind);
-    s.SendReliableToSlot(slot, coop::net::ReliableKind::PropSyncAnswer, &a, sizeof(a));
+    if (result == PropSyncResult::Refused)
+        return s.SendReliableToSlot(slot, coop::net::ReliableKind::PropSyncAnswer, &a, sizeof(a));
+    if (!owner || !ValidSlot(slot) || owner->syncer != slot || owner->eid != eid || owner->gen != gen ||
+        owner->claimSeq != seq || &s != g_session) return false;
+    auto answer = std::make_shared<ControlAnswer>(*owner);
+    answer->payload = a; answer->grant = result == PropSyncResult::Granted;
+    answer->tombstone = tombstone && !answer->grant;
+    g_answers[answer->Key()] = answer; // Publish before callbacks; a newer control for this recipient wins.
+    if (g_answerDraining) return false;
+    AnswerDrain drain;
+    return TryAnswer(answer, coop::active_drive::NowMs());
 }
 
 // A refusal: counted, answered, and, for an out-of-reach claim on a prop nothing streams, its pose sent to the
@@ -119,35 +341,45 @@ void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, uint16_t seq, uin
 // MTA's refused push does nothing at all (CUnoccupiedVehicleSync.cpp:490-507), and a flood must not buy rows.
 void Refuse(coop::net::Session& s, const coop::net::PropSyncClaimPayload& p, uint8_t slot, PropSyncRefusal why,
             void* actor = nullptr) {
+    const Sender sender(slot);
+    if (!sender.Current()) return;
+    ue_wrap::CachedObjRef ref, cls;
+    if (actor) { ref.Set(actor); cls.Set(R::ClassOf(actor)); }
     Tally(g_refused[static_cast<unsigned>(why) & 7u], kRefusalName[static_cast<unsigned>(why) & 7u], p.eid, slot);
     Answer(s, slot, p.eid, p.seq, 0, PropSyncResult::Refused, why);
-    if (why == PropSyncRefusal::OutOfReach && !coop::prop_drive_host::FindByEid(p.eid)) {
-        if (!actor) actor = coop::remote_prop::ResolveLiveActorByEid(p.eid);
-        if (actor) coop::prop_drive_host::Coast(actor, "refused claim");
-    }
+    if (why == PropSyncRefusal::OutOfReach && sender.Current() && ref.Get() && cls.Get() &&
+        R::ClassOf(ref.Get()) == cls.Get() && !coop::prop_drive_host::FindByEid(p.eid) &&
+        static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(ref.Get())) == p.eid)
+        coop::prop_drive_host::Coast(ref.Get(), "refused claim");
 }
 
 // The live prop a claim names: an Aprop_C the host minted the element id of (a client-spawned prop is a mirror
 // here and reads another id), of a class the wire carries.
-void* ResolveProp(uint32_t eid) {
-    void* a = coop::remote_prop::ResolveLiveActorByEid(eid);
-    if (!a || !PR::IsDescendantOfProp(a)) return nullptr;
-    if (static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(a)) != eid) return nullptr;
-    if (coop::prop_lifecycle::IsWireSuppressedPropClass(R::ClassNameOf(a))) return nullptr;
+void* ResolveProp(Target& target) {
+    void* a = coop::remote_prop::ResolveLiveActorByEid(target.eid);
+    if (!target.Matches() || !a || !R::IsLive(a)) return nullptr;
+    target.ref.Set(a); target.cls.Set(R::ClassOf(a));
+    if (!target.Current() || !PR::IsDescendantOfProp(a) || !target.Current()) return nullptr;
+    const auto name = R::ClassNameOf(a);
+    if (!target.Current() || coop::prop_lifecycle::IsWireSuppressedPropClass(name)) return nullptr;
     return a;
 }
 
 void RecordHandBack(uint32_t eid, uint8_t slot, uint64_t nowMs) {
-    g_handBack[eid] = HandBack{slot, nowMs};
+    const Sender sender(slot);
+    if (sender.Current()) g_handBack[eid] = HandBack{slot, nowMs, sender.occupant, sender.departure};
 }
 
 // The honest race: the row of the syncer a hand-back just replaced, sent before it knew (the ATV's IsLateSyncer).
 bool IsLateSyncer(uint32_t eid, uint8_t slot, uint64_t nowMs) {
     const auto it = g_handBack.find(eid);
     if (it == g_handBack.end() || it->second.slot != slot) return false;
-    const int rtt = g_session ? g_session->rttMsForSlot(slot) : -1;
+    const HandBack record = it->second;
+    const Sender sender(slot);
+    if (!sender.Current() || record.occupant != sender.occupant || record.departure != sender.departure) return false;
+    const int rtt = sender.context.session->rttMsForSlot(slot);
     const uint64_t window = static_cast<uint64_t>(rtt > 0 ? rtt : 0) + 2 * coop::prop_drive_rules::kClientDriveSendMs;
-    return nowMs - it->second.ms <= window;
+    return sender.Current() && Elapsed(nowMs, record.ms) <= window;
 }
 
 // The End of a row ended by the host: the pose and linear velocity the host trusts, and the released copy's flags. For
@@ -186,7 +418,7 @@ bool ElectedRowPasses(const Driven& row, const coop::net::PropDriveRow& e, uint6
     const float step = std::sqrt(dx * dx + dy * dy + dz * dz);
     const int64_t dtRow = first ? static_cast<int64_t>(e.sendTimeMs)
                                 : static_cast<int64_t>(e.sendTimeMs) - static_cast<int64_t>(row.passSendMs);
-    const int64_t arrival = static_cast<int64_t>(nowMs - (first ? row.startMs : row.passMs));
+    const int64_t arrival = static_cast<int64_t>(Elapsed(nowMs, first ? row.startMs : row.passMs));
     if (!first) {
         if (dtRow - arrival > g_jitMax || g_jitRows == 0) g_jitMax = dtRow - arrival;
         ++g_jitRows;
@@ -195,17 +427,27 @@ bool ElectedRowPasses(const Driven& row, const coop::net::PropDriveRow& e, uint6
 }
 
 // One row from slot `slot`, judged against the row that names it: the sender, the generation, the pace.
-void AdmitRow(const coop::net::PropDriveRow& e, uint8_t slot, uint64_t nowMs) {
+void AdmitRow(const coop::net::PropDriveRow& input, uint8_t slot, uint64_t nowMs) {
+    const auto e = input;
+    const Sender sender(slot);
+    if (!sender.Current() || !EL::Registry::IsAllowedHostAllocatedEid(e.elementId) || !e.ctx ||
+        !coop::net::PropPoseInBounds(e)) return;
+    for (float value : {e.x,e.y,e.z,e.pitch,e.yaw,e.roll}) if (!std::isfinite(value)) return;
     // The developer red arm of the prop syncer drill: the sender test is skipped, so a forged row of the open
     // generation is admitted and the drill's forge arm must fail. Resolved once.
     static const bool s_redNotSyncer =
         coop::config::ResolveEnum(coop::config_registry::rows::prop_syncer_red) == "not_syncer";
-    Driven* row = coop::prop_drive_host::FindByEid(e.elementId);
-    if (!row || (row->syncer != slot && !s_redNotSyncer)) {
+    const Driven* live = coop::prop_drive_host::FindByEid(e.elementId);
+    if (!live || (live->syncer != slot && !s_redNotSyncer)) {
         if (IsLateSyncer(e.elementId, slot, nowMs)) Tally(g_lateSyncer, "late row of a handed-back syncer", e.elementId, slot);
         else                                        Tally(g_notSyncer, "row refused: sender is no syncer", e.elementId, slot);
         return;
     }
+    const Receipt receipt(*live);
+    const auto current = [&] { return sender.Current() && receipt.Current(); };
+    if (!current()) return;
+    Driven owned = receipt.value;
+    Driven* row = &owned;
     // Strict equality, where MTA's CanUpdateSync also accepts a zero stamp from either side (CElement.cpp:1304): gen 0
     // is "none" here, never issued, so a row that names no generation is stale by construction.
     if (e.ctx != row->gen) { Tally(g_staleGen, "row refused: stale generation", e.elementId, slot); return; }
@@ -231,13 +473,13 @@ void AdmitRow(const coop::net::PropDriveRow& e, uint8_t slot, uint64_t nowMs) {
             // A run of failures, or as many again over the flight in any pattern (a forged row between true ones resets
             // the run, never the total); one lost or reordered row is not a cheat.
             if (row->failedRun >= tb::kMaxRefusedRows || row->failedTotal >= 2 * tb::kMaxRefusedRows) {
-                EndClientRow(*row, Ending::RowsUntrusted);
+                if (Save(receipt, owned)) EndClientRow(*coop::prop_drive_host::FindByEid(e.elementId), Ending::RowsUntrusted);
                 return;
             }
         }
     } else if (row->admittedEver) {
         const float dx = r.x - row->admitLoc.X, dy = r.y - row->admitLoc.Y, dz = r.z - row->admitLoc.Z;
-        const float dtMs = static_cast<float>(std::max<uint64_t>(nowMs - row->admitMs, 1));
+        const float dtMs = static_cast<float>(std::max<uint64_t>(Elapsed(nowMs, row->admitMs), 1));
         if (std::sqrt(dx * dx + dy * dy + dz * dz) * 1000.f / dtMs > kSyncerMaxSpeedCmS)
             Tally(g_steps, "row steps faster than a prop moves (admitted)", e.elementId, slot);
     }
@@ -246,15 +488,16 @@ void AdmitRow(const coop::net::PropDriveRow& e, uint8_t slot, uint64_t nowMs) {
     if (row->elected && !row->admittedEver) {   // the first row: where the host copy stood against where the thrower's copy was
         ue_wrap::FVector cur{};
         void* a = row->ref.Get();
-        if (a && E::TryGetActorLocation(a, cur))
+        const bool read = a && E::TryGetActorLocation(a, cur);
+        if (!current()) return;
+        if (read)
             UE_LOGI("[PROP-SYNC] HOST first row eid=%u slot %u: the host copy is %.1f cm from the row, |v|=%.0f cm/s, release-to-row %llu ms",
                     e.elementId, static_cast<unsigned>(slot), std::sqrt((cur.X - r.x) * (cur.X - r.x) + (cur.Y - r.y) * (cur.Y - r.y) + (cur.Z - r.z) * (cur.Z - r.z)),
-                    std::sqrt(r.vel[0] * r.vel[0] + r.vel[1] * r.vel[1] + r.vel[2] * r.vel[2]), static_cast<unsigned long long>(nowMs - row->startMs));
+                    std::sqrt(r.vel[0] * r.vel[0] + r.vel[1] * r.vel[1] + r.vel[2] * r.vel[2]), static_cast<unsigned long long>(Elapsed(nowMs, row->startMs)));
     }
-    if (row->elected) ++g_thrownAdmitted;
     row->admitVel = ue_wrap::FVector{r.vel[0], r.vel[1], r.vel[2]};
     if (row->elected && row->admittedEver) {   // kThrowSilenceMs' instrument: the host's arrival gap between two admitted rows
-        const uint32_t gap = static_cast<uint32_t>(nowMs - row->admitMs);
+        const uint32_t gap = static_cast<uint32_t>(Elapsed(nowMs, row->admitMs));
         if (gap > row->maxGapMs) row->maxGapMs = gap;
     }
     row->admitSendMs = r.sendTimeMs;
@@ -272,7 +515,11 @@ void AdmitRow(const coop::net::PropDriveRow& e, uint8_t slot, uint64_t nowMs) {
     row->nextProbeMs = 0;
     // The pose is the sender's, the key the row's: a forged key must not name another prop at the apply's fallback.
     r.key = row->key;
-    coop::prop_drive_stream::FeedAdmitted(r);
+    coop::prop_drive_stream::FeedAdmitted(r, {receipt.context.session,
+        [receipt] { return receipt.Current(); }, [receipt] { return receipt.Alive(); },
+        receipt.value.ref, receipt.value.cls, receipt.value.episode});
+    if (!current() || !Save(receipt, owned)) return;
+    if (row->elected) ++g_thrownAdmitted;
     if (row->elected) {
         ++g_tv.lastRows;
         g_tv.lastRowMs = nowMs;
@@ -296,33 +543,63 @@ void AdmitRow(const coop::net::PropDriveRow& e, uint8_t slot, uint64_t nowMs) {
 // Diverges from MTA, which has no cap on a syncer's tenure and no first-row deadline (its only take-back is distance,
 // :134-146): a thrown prop has a bounded life, and a lost grant would otherwise wait out the silence rule below.
 void Pass(uint64_t nowMs) {
-    for (Driven& d : coop::prop_drive_host::Rows()) {
-        if (d.dead || d.syncer == 0) continue;
+    const Context context;
+    const auto rows = Snapshot();
+    for (const Receipt& receipt : rows) {
+        if (!context.Current()) return;
+        if (!receipt.Matches()) continue;
+        const Driven& d = receipt.value;
+        const auto end = [&](Ending why) {
+            if (receipt.Matches()) EndClientRow(*coop::prop_drive_host::FindByEid(d.eid), why);
+        };
+        if (!receipt.SourceCurrent()) { end(Ending::SlotLeft); continue; }
+        if (!BoundActor(d)) { end(Ending::Died); continue; }
         // A thrown prop is the host's again when no row was admitted in time, or when its flight outlasts any throw.
         if (d.elected && !d.admittedEver &&
-            nowMs - d.electedMs >= tb::GrantTimeoutMs(g_session ? g_session->rttMsForSlot(d.syncer) : -1)) {
-            EndClientRow(d, Ending::GrantTimeout);
+            Elapsed(nowMs, d.electedMs) >= tb::GrantTimeoutMs(g_session ? g_session->rttMsForSlot(d.syncer) : -1)) {
+            end(Ending::GrantTimeout);
             continue;
         }
-        if (d.elected && nowMs - d.startMs >= tb::kMaxThrowFlightMs) { EndClientRow(d, Ending::FlightBound); continue; }
-        if (nowMs - d.admitMs >= kSyncerSilenceMs) { EndClientRow(d, Ending::Silence); continue; }
+        if (!receipt.Current()) continue;
+        if (d.elected && Elapsed(nowMs, d.startMs) >= tb::kMaxThrowFlightMs) { end(Ending::FlightBound); continue; }
+        if (Elapsed(nowMs, d.admitMs) >= kSyncerSilenceMs) { end(Ending::Silence); continue; }
         void* actor = d.ref.Get();
         coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(d.syncer);
         ue_wrap::FVector at{}, prop{};
         // A puppet or a prop whose place does not read is not out of range: silence and departure cover a gone client.
-        if (!actor || !rp || !rp->TryGetLocation(at) || !E::TryGetActorLocation(actor, prop)) continue;
+        if (!actor || !rp) continue;
+        const bool playerRead = rp->TryGetLocation(at);
+        if (!receipt.Current() || !playerRead) continue;
+        const bool propRead = E::TryGetActorLocation(actor, prop);
+        if (!receipt.Current() || !propRead) continue;
+        bool finite = true;
+        for (float value : {at.X,at.Y,at.Z,prop.X,prop.Y,prop.Z}) finite &= std::isfinite(value);
+        if (!finite) continue;
         const float dx = at.X - prop.X, dy = at.Y - prop.Y, dz = at.Z - prop.Z;
-        if (!(std::sqrt(dx * dx + dy * dy + dz * dz) <= kSyncerDistanceCm)) EndClientRow(d, Ending::Range);
+        if (std::sqrt(dx * dx + dy * dy + dz * dz) > kSyncerDistanceCm) end(Ending::Range);
     }
+    if (!context.Current()) return;
     for (auto it = g_handBack.begin(); it != g_handBack.end();)   // a record outlives any late window (rtt + 50 ms)
-        it = (nowMs - it->second.ms > kSyncerSilenceMs) ? g_handBack.erase(it) : std::next(it);
+        it = (Elapsed(nowMs, it->second.ms) > kSyncerSilenceMs) ? g_handBack.erase(it) : std::next(it);
 }
 
 }  // namespace
 
-void OnClaim(coop::net::Session& s, const coop::net::PropSyncClaimPayload& p, uint8_t slot) {
+void OnRowOpened(uint32_t eid) {
+    coop::prop_end_delivery::Opened(eid);
+    g_offers.erase(eid);
+    g_retiring.erase(eid);
+    for (auto it = g_answers.begin(); it != g_answers.end();)
+        it = (it->second->grant && it->second->owner.eid == eid) ? g_answers.erase(it) : std::next(it);
+}
+
+void OnClaim(coop::net::Session& s, const coop::net::PropSyncClaimPayload& input, uint8_t slot) {
     UE_ASSERT_GAME_THREAD("prop_syncer_host::OnClaim");
-    g_session = &s;
+    const auto p = input;
+    Bind(s);
+    const Sender sender(slot);
+    if (!sender.Current() || !EL::Registry::IsAllowedHostAllocatedEid(p.eid) ||
+        p.key.len > sizeof(p.key.data)) return;
     // The tests, in the order of the design: the sender's tokens go before any other test runs (MTA tests its
     // anti-spam first, per vehicle), and a row on the prop is judged before the reach is measured.
     // The developer red arm of the prop syncer drill: every claim is refused as paced, so the drill's kick arm
@@ -334,31 +611,45 @@ void OnClaim(coop::net::Session& s, const coop::net::PropSyncClaimPayload& p, ui
     if (!s.IsSlotWorldReady(slot)) return Refuse(s, p, slot, PropSyncRefusal::NotReady);
     if (s_redRefuse || !g_claimBuckets[slot].Take(kClaimBudget, coop::active_drive::NowMs()))
         return Refuse(s, p, slot, PropSyncRefusal::Paced);
-    void* actor = ResolveProp(p.eid);
-    if (!actor) return Refuse(s, p, slot, PropSyncRefusal::Unknown);
-    if (coop::prop_drive_host::InAHand(actor)) return Refuse(s, p, slot, PropSyncRefusal::InHand, actor);
     // A host verb or push in flight wins (MTA's persistent syncer); another client's row is not stolen (MTA steals
     // from a non-persistent syncer, :498-501, which would ping-pong two pushers here). The sender's own row is
     // refused the same way: the client never re-claims while it waits or syncs.
     if (const Driven* row = coop::prop_drive_host::FindByEid(p.eid))
-        return Refuse(s, p, slot, row->syncer == 0 ? PropSyncRefusal::HostAuthored : PropSyncRefusal::OtherSyncer, actor);
+        return Refuse(s, p, slot, row->syncer == 0 ? PropSyncRefusal::HostAuthored : PropSyncRefusal::OtherSyncer);
+    Target target(sender, p.eid);
+    void* actor = ResolveProp(target);
+    if (!target.Matches()) return;
+    if (target.ref.Raw() && !target.Current()) return;
+    if (!actor) return Refuse(s, p, slot, PropSyncRefusal::Unknown);
+    const bool held = coop::prop_drive_host::InAHand(actor);
+    if (!target.Current()) return;
+    if (held) return Refuse(s, p, slot, PropSyncRefusal::InHand, actor);
     // MTA tests the dimension here too (CUnoccupiedVehicleSync.cpp:492); VOTV has one level, so the reach stands in for
     // it. A body or a target the helper cannot read (a puppet that is dead, ragdolled or not yet posed) is Unknown, the
     // nearest analogue of a wrong-dimension player, and only a measured distance beyond reach is OutOfReach.
-    switch (EL::IntentTarget::ForClientIntent(s, slot, kReachUU).Authorize(actor).outcome) {
+    const auto outcome = EL::IntentTarget::ForClientIntent(s, slot, kReachUU).Authorize(actor).outcome;
+    if (!target.Current()) return;
+    switch (outcome) {
         case EL::IntentOutcome::Ok:         break;
         case EL::IntentOutcome::OutOfReach: return Refuse(s, p, slot, PropSyncRefusal::OutOfReach, actor);
         default:                            return Refuse(s, p, slot, PropSyncRefusal::Unknown, actor);
     }
-    Driven* row = coop::prop_drive_host::OpenClientRow(actor, slot, "client claim");
+    const auto current = [&] { return target.Current(); };
+    Driven* row = coop::prop_drive_host::OpenClientRow(actor, slot, "client claim", current);
+    if (!sender.Current()) return;
     if (!row) return Refuse(s, p, slot, PropSyncRefusal::Unknown, actor);   // a hand or a class took it since the tests
     row->claimSeq = p.seq;
+    row->ownerGeneration = sender.occupant; row->ownerDeparture = sender.departure;
+    row->revision = coop::prop_drive_host::NewRowRevision();
+    const Receipt receipt(*row);
     ++g_granted;
     UE_LOGI("[PROP-SYNC] HOST granted eid=%u gen=%u to slot %u (reason %u, seq %u) (#%u)", p.eid,
             static_cast<unsigned>(row->gen), static_cast<unsigned>(slot), static_cast<unsigned>(p.reason),
             static_cast<unsigned>(p.seq), g_granted);
     coop::dev::prop_syncer_drill::BeforeGrant(s, slot);   // the load arm's filler goes out ahead of the answer
-    Answer(s, slot, p.eid, p.seq, row->gen, PropSyncResult::Granted, PropSyncRefusal::None);
+    if (!receipt.Current()) return;
+    Answer(s, slot, p.eid, p.seq, receipt.value.gen, PropSyncResult::Granted, PropSyncRefusal::None,
+           coop::net::PropSyncKind::Claim, &receipt.value);
 }
 
 bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float releaseLoc[3], uint64_t releaseMs,
@@ -366,8 +657,18 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
     UE_ASSERT_GAME_THREAD("prop_syncer_host::ElectSyncer");
     static const bool s_noElect = coop::config::ResolveFlag(coop::config_registry::rows::container_throw_no_elect);
     if (s_noElect) return false;   // the throw arms' red: the host keeps its own simulation of the throw
-    if (!g_session || !actor || slot == 0) return false;
+    const Sender sender(slot);
+    if (!sender.Current() || !actor || !R::IsLive(actor) || !releaseLoc) return false;
+    const std::array<float, 3> release{releaseLoc[0], releaseLoc[1], releaseLoc[2]};
+    for (float value : release) if (!std::isfinite(value) || std::fabs(value) > coop::net::kMaxCoord) return false;
+    ue_wrap::CachedObjRef ref, cls; ref.Set(actor); cls.Set(R::ClassOf(actor));
     const uint32_t eid = static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(actor));
+    if (!EL::Registry::IsAllowedHostAllocatedEid(eid)) return false;
+    const auto current = [&] {
+        return sender.Current() && ref.Get() && cls.Get() && R::ClassOf(ref.Get()) == cls.Get() &&
+            static_cast<uint32_t>(coop::prop_element_tracker::GetPropElementIdForActor(ref.Get())) == eid;
+    };
+    if (!current()) return false;
     if (throwSeq == 0) {
         Tally(g_electRefused, "election refused: the request carries no sequence", eid, slot);
         return false;
@@ -383,9 +684,10 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
     // A swing's caller has already judged the struck point against the held weapon's own reach from the eye
     // (coop/player/hit_judge), which a long weapon carries past this hand's reach.
     if (!reachJudged) {
-        const ue_wrap::FVector at{releaseLoc[0], releaseLoc[1], releaseLoc[2]};
-        if (EL::IntentTarget::ForClientIntent(*g_session, slot, kReachUU).AuthorizeSegment(at, at).outcome !=
-            EL::IntentOutcome::Ok) {
+        const ue_wrap::FVector at{release[0], release[1], release[2]};
+        const auto outcome = EL::IntentTarget::ForClientIntent(*sender.context.session, slot, kReachUU).AuthorizeSegment(at, at).outcome;
+        if (!current()) return false;
+        if (outcome != EL::IntentOutcome::Ok) {
             Tally(g_electRefused, "election refused: the release is out of the thrower's reach", eid, slot);
             return false;
         }
@@ -399,14 +701,15 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
         Tally(g_electRefused, "election refused: the slot syncs too many thrown props", eid, slot);
         return false;
     }
-    Driven* row = coop::prop_drive_host::ElectClientRow(actor, slot, "throw");
+    Driven* row = coop::prop_drive_host::ElectClientRow(actor, slot, "throw", current);
+    if (!current()) return false;
     if (!row) {
         Tally(g_electRefused, "election refused: the prop cannot open a row", eid, slot);
         return false;
     }
     row->elected    = true;
     row->throwSeq   = throwSeq;
-    row->startLoc   = ue_wrap::FVector{releaseLoc[0], releaseLoc[1], releaseLoc[2]};
+    row->startLoc   = ue_wrap::FVector{release[0], release[1], release[2]};
     row->startMs    = releaseMs;
     row->electedMs  = coop::active_drive::NowMs();
     row->failedRun  = 0;
@@ -417,6 +720,9 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
     row->passVel    = ue_wrap::FVector{};
     row->maxGapMs   = 0;
     row->claimSeq   = throwSeq;   // the grant, and a Revoked after it, echo the throw
+    row->ownerGeneration = sender.occupant; row->ownerDeparture = sender.departure;
+    row->revision = coop::prop_drive_host::NewRowRevision();
+    const Receipt receipt(*row);
     ++g_tv.elected;
     g_tv.lastEid = row->eid;
     g_tv.lastGen = row->gen;
@@ -425,23 +731,30 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
     g_tv.failedDisplayed = 0;
     UE_LOGI("[PROP-SYNC] HOST ELECT eid=%u gen=%u slot %u throw seq %u (#%u)", row->eid, static_cast<unsigned>(row->gen),
             static_cast<unsigned>(slot), static_cast<unsigned>(throwSeq), ++g_elected);
-    Answer(*g_session, slot, row->eid, throwSeq, row->gen, PropSyncResult::Granted, PropSyncRefusal::None,
-           coop::net::PropSyncKind::Throw);
-    return true;
+    Answer(*sender.context.session, slot, receipt.value.eid, throwSeq, receipt.value.gen, PropSyncResult::Granted, PropSyncRefusal::None,
+           coop::net::PropSyncKind::Throw, &receipt.value);
+    return receipt.Current();
 }
 
 bool ElectFromMark(void* actor) {
     UE_ASSERT_GAME_THREAD("prop_syncer_host::ElectFromMark");
-    if (!g_session || !actor || !coop::prop_throw::HasMarks()) return false;
+    const Context context;
+    if (!context.Current() || !actor || !R::IsLive(actor) || !coop::prop_throw::HasMarks()) return false;
+    ue_wrap::CachedObjRef ref, cls; ref.Set(actor); cls.Set(R::ClassOf(actor));
+    const auto current = [&] { return context.Current() && ref.Get() && cls.Get() && R::ClassOf(ref.Get()) == cls.Get(); };
     coop::prop_throw::Mark m;
-    if (!coop::prop_throw::TakeMark(PR::GetInteractableKeyString(actor), &m)) return false;
+    const auto key = PR::GetInteractableKeyString(actor);
+    if (!current() || !coop::prop_throw::TakeMark(key, &m) || !current()) return false;
     return ElectSyncer(actor, m.slot, m.seq, m.loc, m.ms, /*reachJudged=*/false);
 }
 
 void OnClientEnd(coop::net::Session& s, const coop::net::PropDriveEndPayload& sent, uint8_t slot) {
     coop::net::PropDriveEndPayload p = sent;   // clamped below before it reaches the host's body or any relay
     UE_ASSERT_GAME_THREAD("prop_syncer_host::OnClientEnd");
-    g_session = &s;
+    Bind(s);
+    const Sender sender(slot);
+    if (!sender.Current() || !EL::Registry::IsAllowedHostAllocatedEid(p.eid) || !p.gen) return;
+    if (p._pad[0] || p._pad[1] || (p.physFlags & 0x80)) return;
     const uint64_t nowMs = coop::active_drive::NowMs();
     Driven* row = coop::prop_drive_host::FindByEid(p.eid);
     if (!row || row->syncer != slot) {
@@ -449,6 +762,8 @@ void OnClientEnd(coop::net::Session& s, const coop::net::PropDriveEndPayload& se
         return;
     }
     if (p.gen != row->gen) { Tally(g_endsStale, "End refused: stale generation", p.eid, slot); return; }
+    const Receipt receipt(*row);
+    if (!receipt.Current()) return;
     // The End reaches the host's body: its pose meets the bounds a client's held pose meets (a refused End leaves the
     // row, which the silence pass takes back) and its velocity the throw bounds, clamped, before the host copy or any
     // relay. An End is not a throw input, so its spin meets the body ceiling, not the throw's.
@@ -456,6 +771,8 @@ void OnClientEnd(coop::net::Session& s, const coop::net::PropDriveEndPayload& se
         Tally(g_endsOutOfBounds, "End refused: pose out of bounds", p.eid, slot);
         return;
     }
+    for (float value : {p.x,p.y,p.z,p.pitch,p.yaw,p.roll,p.linVelX,p.linVelY,p.linVelZ,p.angVelX,p.angVelY,p.angVelZ})
+        if (!std::isfinite(value)) return;
     {
         float lin[3] = {p.linVelX, p.linVelY, p.linVelZ};
         float ang[3] = {p.angVelX, p.angVelY, p.angVelZ};
@@ -468,42 +785,77 @@ void OnClientEnd(coop::net::Session& s, const coop::net::PropDriveEndPayload& se
     // The client's rest End is always admitted when syncer, generation and bounds match, admitted pose or not: it
     // carries the client's truth. The host's copy takes it, every other client gets it as received (the syncer
     // itself is skipped, MTA's pSkip: it ended the drive), and the row goes with no Revoked, since the client ended it.
-    coop::prop_drive_stream::ReleaseHost(p);
-    s.SendReliable(coop::net::ReliableKind::PropDriveEnd, &p, sizeof(p), slot);
+    const Retirement retiring(receipt);
+    if (!retiring.Current()) return;
+    coop::prop_drive_stream::ReleaseHost(p, {receipt.context.session,
+        retiring.Guard(), {}, receipt.value.ref, receipt.value.cls, receipt.value.episode});
+    if (!retiring.Current()) return;
+    coop::prop_end_delivery::Receipt delivery;
+    if (!coop::prop_end_delivery::Queue(s, p, receipt.value.ref, receipt.value.cls, slot, retiring.Guard(), &delivery)) return;
+    if (!retiring.Current()) { coop::prop_end_delivery::Cancel(delivery); return; }
     RecordHandBack(p.eid, slot, nowMs);
-    coop::prop_drive_host::EraseRow(*row);
     Tally(g_endsAdmitted, "End admitted (rest)", p.eid, slot);
-    if (row->elected)
+    if (receipt.value.elected)
         UE_LOGI("[PROP-SYNC] HOST thrown eid=%u gen=%u slot %u rested: release-to-End %llu ms, rows admitted %u, jitter (sender dt - arrival dt) max %lld ms over %u rows, maxgap=%u ms",
-                p.eid, static_cast<unsigned>(p.gen), static_cast<unsigned>(slot), static_cast<unsigned long long>(nowMs - row->startMs), g_thrownAdmitted, static_cast<long long>(g_jitMax), g_jitRows,
-                static_cast<unsigned>(row->maxGapMs));
+                p.eid, static_cast<unsigned>(p.gen), static_cast<unsigned>(slot), static_cast<unsigned long long>(Elapsed(nowMs, receipt.value.startMs)), g_thrownAdmitted, static_cast<long long>(g_jitMax), g_jitRows,
+                static_cast<unsigned>(receipt.value.maxGapMs));
 }
 
 void Admit(coop::net::Session& s) {
     UE_ASSERT_GAME_THREAD("prop_syncer_host::Admit");
-    g_session = &s;
+    Bind(s);
+    const Context context;
+    if (g_draining || !context.Current()) return;
+    struct Busy { Busy(){g_draining = true;} ~Busy(){g_draining = false;} } busy;
     const uint64_t nowMs = coop::active_drive::NowMs();
-    for (auto& v : g_take) v.clear();
-    const uint32_t got = s.TakeRemotePropDriveBatches(g_take);   // every origin's merge, under one lock
+    std::vector<coop::net::PropDriveRow> take[coop::net::kMaxPeers];
+    std::vector<Sender> senders;
+    for (uint8_t slot = 0; slot < coop::net::kMaxPeers; ++slot) senders.emplace_back(slot);
+    const uint32_t got = s.TakeRemotePropDriveBatches(take);
+    if (!context.Current()) return;
     for (int slot = 1; slot < coop::net::kMaxPeers; ++slot)
         if (got & (1u << slot))
-            for (const coop::net::PropDriveRow& e : g_take[slot]) AdmitRow(e, static_cast<uint8_t>(slot), nowMs);
+            for (const auto& e : take[slot]) {
+                if (!context.Current()) return;
+                if (!senders[slot].Current()) break;
+                AdmitRow(e, static_cast<uint8_t>(slot), nowMs);
+            }
     if (nowMs >= g_nextPassMs) {
         g_nextPassMs = nowMs + kPassMs;
         Pass(nowMs);
     }
+    if (context.Current()) DrainAnswers(nowMs);
 }
 
 void OnSlotLeft(uint8_t slot) {
     UE_ASSERT_GAME_THREAD("prop_syncer_host::OnSlotLeft");
-    for (Driven& d : coop::prop_drive_host::Rows())
-        if (!d.dead && d.syncer == slot) EndClientRow(d, Ending::SlotLeft);
+    if (!ValidSlot(slot) || !Context{}.Current()) return;
+    ++g_departures[slot];
+    coop::prop_end_delivery::Departed(slot);
+    g_claimBuckets[slot].Reset();
+    const Context context;
+    const auto rows = Snapshot();
+    for (const auto& receipt : rows) {
+        if (!context.Current()) return;
+        if (receipt.value.syncer == slot && receipt.Matches())
+            EndClientRow(*coop::prop_drive_host::FindByEid(receipt.value.eid), Ending::SlotLeft);
+    }
+    if (!context.Current()) return;
     for (auto it = g_handBack.begin(); it != g_handBack.end();)
         it = (it->second.slot == slot) ? g_handBack.erase(it) : std::next(it);
 }
 
-void EndClientRow(Driven& d, Ending why) {
+void EndClientRow(Driven& input, Ending why) {
     UE_ASSERT_GAME_THREAD("prop_syncer_host::EndClientRow");
+    if (static_cast<unsigned>(why) >= static_cast<unsigned>(Ending::kCount) || !input.syncer) return;
+    const Receipt receipt(input);
+    if (!receipt.Matches()) return;
+    const bool sourceCurrent = receipt.SourceCurrent();
+    const bool hostOverride = why == Ending::HostVerb && BoundActor(receipt.value);
+    if (why != Ending::SlotLeft && why != Ending::Died && !hostOverride && !receipt.Current()) return;
+    Driven d = receipt.value;
+    const Retirement retiring(receipt, why == Ending::SlotLeft || (hostOverride && !sourceCurrent));
+    if (!retiring.Owns()) return;
     const uint64_t nowMs = coop::active_drive::NowMs();
     const uint8_t syncer = d.syncer;
     const uint8_t gen = d.gen;
@@ -521,21 +873,29 @@ void EndClientRow(Driven& d, Ending why) {
     // admitted no receiver saw this generation and the copy was never parked, and a dead prop has no copy: no release,
     // no End.
     if (why != Ending::Died && d.admittedEver && actor) {
+        if (!retiring.Current()) return;
         coop::net::PropDriveEndPayload end = EndOf(d, actor);
+        if (!retiring.Current()) return;
         if (d.elected) g_tv.lastTakeBackSpeed = std::sqrt(end.linVelX * end.linVelX + end.linVelY * end.linVelY + end.linVelZ * end.linVelZ);
-        coop::prop_drive_stream::ReleaseHost(end);
+        coop::prop_drive_stream::ReleaseHost(end, {receipt.context.session,
+            retiring.Guard(), {}, receipt.value.ref, receipt.value.cls, receipt.value.episode});
+        if (!retiring.Current()) return;
         // A hand-over sends no End: its new generation's poses supersede this one on every receiver.
         if (!toHost && g_session) {
             end.physFlags = coop::prop_wire_parity::PhysFlagsOf(actor);
-            g_session->SendReliable(coop::net::ReliableKind::PropDriveEnd, &end, sizeof(end));
+            if (!retiring.Current()) return;
+            coop::prop_end_delivery::Receipt delivery;
+            if (!coop::prop_end_delivery::Queue(*g_session, end, d.ref, d.cls, -1, retiring.Guard(), &delivery)) return;
+            if (!retiring.Current()) { coop::prop_end_delivery::Cancel(delivery); return; }
         }
     }
     // (3) the syncer is told, with the generation it ends (before any bump) and the seq of its claim or the sequence of
     // its throw; a slot that left is told nothing.
-    if (why != Ending::SlotLeft && g_session)
+    if (why != Ending::SlotLeft && sourceCurrent && g_session)
         Answer(*g_session, syncer, d.eid, d.claimSeq, gen, PropSyncResult::Revoked, PropSyncRefusal::None,
-               d.elected ? coop::net::PropSyncKind::Throw : coop::net::PropSyncKind::Claim);
-    RecordHandBack(d.eid, syncer, nowMs);
+               d.elected ? coop::net::PropSyncKind::Throw : coop::net::PropSyncKind::Claim, &d, why == Ending::Died);
+    if (!retiring.Owns() || (why != Ending::Died && !retiring.Current())) return;
+    if (sourceCurrent) RecordHandBack(d.eid, syncer, nowMs);
     Tally(g_ended[static_cast<unsigned>(why)], kEndingName[static_cast<unsigned>(why)], d.eid, syncer);
     if (d.elected && toHost) {
         ++g_tv.takeBacks;
@@ -559,7 +919,7 @@ void EndClientRow(Driven& d, Ending why) {
     else if (d.elected && toHost && why != Ending::HostVerb) {
         char label[40];   // a silent thrower's line names how long it was silent
         if (why == Ending::Silence)
-            std::snprintf(label, sizeof(label), "silence %llu ms", static_cast<unsigned long long>(nowMs - d.admitMs));
+            std::snprintf(label, sizeof(label), "silence %llu ms", static_cast<unsigned long long>(Elapsed(nowMs, d.admitMs)));
         else
             std::snprintf(label, sizeof(label), "%s", kEndingName[static_cast<unsigned>(why)]);
         UE_LOGI("[PROP-SYNC] HOST took eid=%u back from slot %u (%s) -- %s, maxgap=%u ms", d.eid, static_cast<unsigned>(syncer),
@@ -571,7 +931,8 @@ void EndClientRow(Driven& d, Ending why) {
     }
     // (4) the row goes, or for a hand-over it becomes the host's: a new generation, nothing sent yet, the stream
     // continuing from the released copy. A verb's claim stays its own; the host's judgement coasts to rest.
-    if (!toHost) { coop::prop_drive_host::EraseRow(d); return; }
+    if (!toHost) return;
+    if (!retiring.Current()) return;
     d.syncer       = 0;
     d.gen          = coop::prop_drive_host::BumpGen(d.eid);
     d.claimed      = why == Ending::HostVerb;
@@ -598,13 +959,31 @@ void EndClientRow(Driven& d, Ending why) {
     d.passMs       = 0;
     d.maxGapMs     = 0;
     d.streamBucket.Reset();
+    d.dead = false;
+    d.ownerGeneration = 0; d.ownerDeparture = 0;
+    d.handoffFrom = receipt.value.revision;
+    d.claimMask = 0; d.claimTokens.fill(0);
+    d.revision = coop::prop_drive_host::NewRowRevision();
+    d.episode = d.revision;
+    auto& rows = coop::prop_drive_host::Rows();
+    const auto old = std::find_if(rows.begin(), rows.end(), [&](const Driven& row) {
+        return row.dead && row.eid == d.eid && row.ref.Raw() == d.ref.Raw();
+    });
+    if (old != rows.end()) *old = d;
+    else rows.push_back(d);
+    OnRowOpened(d.eid);
 }
 
 void OnDisconnect() {
+    coop::prop_end_delivery::Clear();
+    ++g_epoch;
     g_session = nullptr;
     for (int slot = 0; slot < g_claimBuckets.size(); ++slot) g_claimBuckets[slot].Reset();
     g_handBack.clear();
-    for (auto& v : g_take) v.clear();
+    g_offers.clear(); g_retiring.clear();
+    g_answers.clear(); g_answerCursor = 0;
+    g_world = g_serial = 0; g_stops = 0;
+    g_departures.fill(0);
     g_nextPassMs = 0;
     g_granted = g_admitted = g_notSyncer = g_lateSyncer = g_staleGen = g_paced = g_steps = 0;
     g_endsAdmitted = g_endsNotSyncer = g_endsStale = g_endsOutOfBounds = g_endsClamped = 0;

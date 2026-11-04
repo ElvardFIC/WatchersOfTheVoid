@@ -15,7 +15,7 @@ try {
     & $Python agent\tests\blueprint_2127_test.py
     if ($LASTEXITCODE -ne 0) { throw 'Native gun diagnosis validation failed' }
     $cases=@(
-        @{Name='catalog_stride';Suite='radio_wrapper_2127';File='ue_wrap/world/radio_player.cpp';Before='g_stride=R::FindParamSize(R::FindDispatchFunctionCached(cls,L"openLink"),L"data");';After='g_stride=R::StructSize(type);'},
+        @{Name='catalog_stride';Suite='radio_wrapper_2127';File='ue_wrap/world/radio_player.cpp';Before='layout.stride=R::FindParamSize(fn,L"data");';After='layout.stride=R::StructSize(type);'},
         @{Name='orphan_input';Suite='gravity_2124';File='coop/items/gravity_motion.cpp';Before='players::Registry::Get().IsPuppet(R::OuterOf(c.object))';After='false'}
     )
     foreach ($case in $cases) {

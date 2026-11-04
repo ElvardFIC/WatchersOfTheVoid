@@ -25,3 +25,9 @@ Use current build/package scripts and `package/release.json`. Historical test na
 are not version selectors. Run relevant regression tests and qualify a changed
 release before reporting it prepared. Commit, push, publish, install into the game
 or deploy services only on an explicit request.
+
+Owner instruction, 6 November: tests and pre-build checks must finish successfully
+before Release compilation. Do not run a Release preflight or compile in parallel
+with validation. Repository gates, including public prose, must pass even when
+reusing earlier regression evidence. Scoped checks are test-only. Inspect the
+produced DLL/ABI and archive after compilation; these need the built artifacts.

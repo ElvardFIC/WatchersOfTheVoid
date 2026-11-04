@@ -113,6 +113,8 @@ inline Lane LaneForKind(ReliableKind k) {
 // originate on the host and go direct, and the receive edge refuses a client's copy (client_authorship.h);
 // the handshake kinds are point-to-point or host-originated. PropPose rides the unreliable relay.
 constexpr bool IsClientRelayableReliableKind(ReliableKind k) {
+    // EmoteState is owner-authored but retained and validated on the host;
+    // its canonical sequence and current clocks are never blindly relayed.
     switch (k) {
     // DreamScene and PropActionIntent use the default refusal below: their
     // native results are host-authored and are never peer-relayed.

@@ -3,6 +3,7 @@
 #include "ue_wrap/actors/kerfur.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -57,28 +58,38 @@ bool IsKerfurActor(void* actor) {
     return R::IsDescendantOfAny(cls, bases, 1);
 }
 
+bool TryHasSaveKey(void* actor,bool& present,const std::function<bool()>& callerCurrent) {
+    CachedObjRef object,cls;object.Set(actor);
+    if(!object.Get())return false;
+    cls.Set(R::ClassOf(actor));
+    const auto world=world_identity::Generation();
+    const auto current=[&]{return (!callerCurrent||callerCurrent()) && object.Get() && cls.Get() &&
+        world==world_identity::Generation() && R::ClassOf(actor)==cls.Raw();};
+    if(!current())return false;
+    static CachedObjRef memo;
+    static int32_t memoOffset=-1;
+    static bool memoFound=false;
+    static std::wstring memoType;
+    int32_t offset=-1;std::wstring type;bool found=false;
+    if(!memo.Is(cls.Raw())){
+        found=R::PropertyOffsetAndClass(cls.Raw(),L"Key",offset,type);
+        if(!current())return false;
+        memo=cls;
+        memoOffset=offset;memoFound=found;memoType=type;
+    }else{offset=memoOffset;found=memoFound;type=memoType;}
+    if(!found){if(!current())return false;present=false;return true;}
+    const int32_t size=R::StructSize(cls.Raw());
+    if(type!=L"NameProperty" || offset<0 || offset>size || sizeof(R::FName)>static_cast<size_t>(size-offset) || !current())return false;
+    R::FName key{};std::memcpy(&key,static_cast<const uint8_t*>(actor)+offset,sizeof key);
+    if(!key.ComparisonIndex&&!key.Number){present=false;return true;}
+    const auto text=R::ToString(key);
+    if(!current()||text.empty())return false;
+    present=text!=L"None";return true;
+}
+
 bool HasSaveKey(void* actor) {
-    if (!actor || !R::IsLive(actor)) return false;
-    void* cls = R::ClassOf(actor);
-    if (!cls) return false;
-    // 1-entry memo: the host sender iterates same-class NPCs (kerfurs) at the connect edge;
-    // avoid re-walking the FProperty chain for the repeated class. Cold path (per-NPC at
-    // connect), so a single-slot memo is plenty.
-    static void*   sMemoCls = nullptr;
-    static int32_t sMemoOff = -2;
-    int32_t off;
-    if (cls == sMemoCls) {
-        off = sMemoOff;
-    } else {
-        off = R::FindPropertyOffset(cls, L"Key");
-        sMemoCls = cls;
-        sMemoOff = off;
-    }
-    if (off < 0) return false;  // class has no int_save "Key" (host-spawned transient enemy)
-    const R::FName key = *reinterpret_cast<const R::FName*>(
-        reinterpret_cast<const uint8_t*>(actor) + off);
-    const std::wstring w = R::ToString(key);
-    return !(w.empty() || w == L"None");  // a non-None key -> this NPC is a save object
+    bool present=false;
+    return TryHasSaveKey(actor,present)&&present;
 }
 
 bool ReadKerfurState(void* actor, uint8_t& state, bool& spooky, uint8_t& face) {
@@ -142,48 +153,65 @@ bool ReadKill(void* actor) {
     return *reinterpret_cast<const bool*>(reinterpret_cast<const uint8_t*>(actor) + g_offKill);
 }
 
-bool RunActionName(void* kerfurActor, void* playerActor, const wchar_t* name) {
-    if (!IsKerfurActor(kerfurActor) || !name) return false;
-    static void* sActionNameFn = nullptr;
-    if (!sActionNameFn) {
-        if (void* kc = ResolveKerfurClass())
-            sActionNameFn = R::FindFunction(kc, L"actionName");  // case-insensitive (engine FName)
-    }
-    if (!sActionNameFn) {
-        static bool sWarned = false;
-        if (!sWarned) { sWarned = true;
-            UE_LOGW("kerfur: actionName unresolved -- cannot run menu verb on host"); }
-        return false;
-    }
-    ue_wrap::ParamFrame f(sActionNameFn);
-    if (!f.valid()) return false;
-    f.Set<void*>(L"Player", playerActor);
-    const int32_t num = static_cast<int32_t>(std::wcslen(name)) + 1;
-    struct { const wchar_t* data; int32_t n; int32_t m; } fs{name, num, num};
-    f.SetRaw(L"Name", &fs, sizeof(fs));
-    // Hit (FHitResult) is left zeroed -- the State-change verbs do not read it.
-    return ue_wrap::Call(kerfurActor, f);
+bool RunActionName(void* actor,void* player,const wchar_t* name){return RunActionNameWhile(actor,player,name,{},nullptr);}
+bool RunActionNameWhile(void* actor,void* player,const wchar_t* name,const std::function<bool()>& current,bool* dispatched){
+    if(dispatched)*dispatched=false;if(!actor||!name||(current&&!current()))return false;
+    size_t count=0;while(count<64&&name[count])++count;if(count==64)return false;
+    const std::wstring ownedName(name,count);++count;
+    const auto world=world_identity::Generation();void* object=world_identity::CurrentWorld();
+    CachedObjRef who,cls,base,fn,body;who.Set(actor);if(!who.Get())return false;
+    cls.Set(R::ClassOf(actor));base.Set(ue_wrap::object_index::ClassByName(P::name::NpcClass_KerfurOmega));
+    if(player)body.Set(player);
+    const auto fresh=[&]{return world==world_identity::Generation()&&object==world_identity::CurrentWorld()&&
+        who.Get()&&cls.Get()&&base.Get()&&(!player||body.Get())&&(!current||current())&&who.Get()&&cls.Get()&&R::ClassOf(actor)==cls.Raw();};
+    if(!fresh())return false;void* parent=base.Raw();if(!R::IsDescendantOfAny(cls.Raw(),&parent,1)||!fresh())return false;
+    fn.Set(R::FindDispatchFunctionCached(cls.Raw(),L"actionName"));
+    const auto owned=[&]{if(!fresh()||!fn.Get())return false;void* selected=R::FindDispatchFunctionCached(cls.Raw(),L"actionName");return fresh()&&fn.Get()&&selected==fn.Raw();};
+    if(!owned())return false;const auto size=R::FunctionFrameSize(fn.Raw());if(!owned()||size<=0||size>4096)return false;
+    int32_t playerOff=-1,nameOff=-1;std::wstring playerType,nameType;
+    if(!R::PropertyOffsetAndClass(fn.Raw(),L"Player",playerOff,playerType)||!owned()||playerType!=L"ObjectProperty"||
+        !R::PropertyOffsetAndClass(fn.Raw(),L"Name",nameOff,nameType)||!owned()||nameType!=L"StrProperty")return false;
+    const auto psize=R::FindParamSize(fn.Raw(),L"Player");if(!owned()||psize!=sizeof(void*))return false;
+    const auto nsize=R::FindParamSize(fn.Raw(),L"Name");
+    const auto span=[&](int32_t offset,int32_t width){return offset>=0&&offset<=size&&width<=size-offset;};
+    if(!owned()||nsize!=16||!span(playerOff,sizeof(void*))||!span(nameOff,16)||
+        (playerOff<nameOff+16&&nameOff<playerOff+sizeof(void*)))return false;
+    struct Text{const wchar_t* data;int32_t num,max;};Text text{ownedName.c_str(),int32_t(count),int32_t(count)};
+    alignas(16) uint8_t bytes[4096]{};std::memcpy(bytes+playerOff,&player,sizeof player);std::memcpy(bytes+nameOff,&text,sizeof text);
+    if(!owned())return false;if(dispatched)*dispatched=true;
+    const bool ran=R::CallFunction(actor,fn.Raw(),bytes);return owned()&&ran;
 }
 
-bool IsInsertPlayerRead(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out) {
-    // Resolved per class object, and again when the ubergraph function held is no longer that class's live
-    // one: a world that reloads the class brings a new function, possibly at the old class's address.
-    static void*   sCls = nullptr;
-    static void*   sUber = nullptr;
-    static int32_t sUberIdx = -1;
-    static int32_t sOff = -1;
-    void* kc = ue_wrap::object_index::ClassByName(P::name::NpcClass_KerfurOmega);
-    if (!kc) return false;
-    if (kc != sCls || (sUber && (!R::IsLiveByIndex(sUber, sUberIdx) || R::OuterOf(sUber) != kc))) {
-        sCls = kc;
-        sUber = R::FindFunction(kc, L"ExecuteUbergraph_kerfurOmega");
-        sUberIdx = sUber ? R::InternalIndexOf(sUber) : -1;
-        sOff = sUber ? R::FindPropertyOffset(sUber, L"CallFunc_getMainPlayer_AsMain_Player_1") : -1;
-        if (sOff < 0)
-            UE_LOGW("kerfur: the disc insert's player variable did not resolve (ubergraph %p) -- a served "
-                    "Omega's insert reads player 0 while this class lives", sUber);
+bool IsInsertPlayerRead(void* callerFunction,const uint8_t* callerLocals,const uint8_t* out){
+    return IsInsertPlayerReadWhile(callerFunction,callerLocals,out,{});
+}
+bool IsInsertPlayerReadWhile(void* callerFunction,const uint8_t* callerLocals,const uint8_t* out,const std::function<bool()>& current){
+    if(!callerFunction||!callerLocals||!out||(current&&!current()))return false;
+    struct Layout{CachedObjRef cls,fn;int32_t offset=-1,size=0;};static Layout cached;
+    const auto world=world_identity::Generation();void* object=world_identity::CurrentWorld();
+    CachedObjRef caller;caller.Set(callerFunction);if(!caller.Get())return false;
+    const auto fresh=[&]{return caller.Get()&&world==world_identity::Generation()&&object==world_identity::CurrentWorld()&&(!current||current());};
+    void* cls=ue_wrap::object_index::ClassByName(P::name::NpcClass_KerfurOmega);if(!fresh()||!cls)return false;
+    Layout layout=cached;
+    if(!layout.cls.Is(cls)||!layout.fn.Is(callerFunction)){
+        layout={};layout.cls.Set(cls);if(!fresh()||!layout.cls.Get())return false;
+        layout.fn.Set(R::FindFunction(cls,L"ExecuteUbergraph_kerfurOmega"));
+        if(!fresh()||!layout.cls.Get()||!layout.fn.Is(callerFunction)||R::OuterOf(callerFunction)!=cls)return false;
+        layout.size=R::FunctionFrameSize(callerFunction);if(!fresh()||layout.size<=0||layout.size>1024*1024)return false;
+        std::wstring type;
+        if(!R::PropertyOffsetAndClass(callerFunction,L"CallFunc_getMainPlayer_AsMain_Player_1",layout.offset,type)||
+            !fresh()||type!=L"ObjectProperty"||layout.offset<0||layout.offset>layout.size||sizeof(void*)>layout.size-layout.offset)return false;
+        const auto fields=R::EnumerateStructFields(callerFunction);if(!fresh())return false;
+        bool scalar=false;for(const auto& field:fields)if(_wcsicmp(field.name.c_str(),L"CallFunc_getMainPlayer_AsMain_Player_1")==0){
+            scalar=field.offset==layout.offset&&field.size==sizeof(void*);break;
+        }
+        if(!scalar)return false;
     }
-    return sOff >= 0 && callerFunction == sUber && callerLocals && out == callerLocals + sOff;
+    if(!fresh()||!layout.cls.Get()||!layout.fn.Is(callerFunction)||R::OuterOf(callerFunction)!=layout.cls.Raw())return false;
+    void* resolved=R::FindFunction(layout.cls.Raw(),L"ExecuteUbergraph_kerfurOmega");
+    if(!fresh()||!layout.cls.Get()||!layout.fn.Get()||resolved!=callerFunction)return false;
+    cached=layout;
+    return out==callerLocals+layout.offset;
 }
 
 bool ReadHasFloppy(void* actor, bool& has) {

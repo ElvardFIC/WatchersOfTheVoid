@@ -126,6 +126,8 @@ bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std
 // loaded class, full encoding fails, or the hand/save changes during staging.
 // The previous complete slot survives refusal. Game thread.
 bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf);
+bool WriteHeldItemWhile(const std::wstring& name, const wchar_t* classLeaf,
+                        const std::function<bool()>& current);
 
 // The item name in the live save slot's first hold slot, the hand: the name the player's updateHold
 // keys the game's item tables by (list_props, list_weapons). Empty when the hand holds nothing or the

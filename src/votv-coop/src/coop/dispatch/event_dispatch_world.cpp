@@ -28,6 +28,7 @@
 #include "coop/world/desk_short_circuit_sync.h"
 #include "coop/world/madness_sync.h"
 #include "coop/props/dingus_music_sync.h"
+#include "coop/player/emote_sync.h"
 #include "coop/props/watoy_sync.h"
 #include "coop/interactables/grill_hand_sync.h"
 #include "coop/interactables/grill_edits.h"
@@ -203,6 +204,11 @@ bool HandleWorldEvent(net::Session& session,
         if(msg.payloadLen!=sizeof(net::DingusMusicPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
         net::DingusMusicPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
         coop::dingus_music_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::EmoteState: {
+        if(msg.payloadLen!=sizeof(net::EmoteStatePayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::EmoteStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::emote_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
     }
     case net::ReliableKind::MadnessState: {
         if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::MadnessStatePayload))break;

@@ -34,16 +34,17 @@ expected_additions = {
     'DevParityReport': 260, 'DevContainerParity': 261,
     'GeomOctaEvent': 262, 'CoffeeActionIntent': 263,
     'ContainerActRequest': 264, 'ContainerActReply': 265, 'ContainerActCommit': 266,
+    'EmoteState': 267,
 }
 assert {name: value for name, value in actual.items() if name not in published} == expected_additions
 version = int(re.search(r'kProtocolVersion\s*=\s*(\d+);', protocol)[1])
 release = json.loads((root / 'package/release.json').read_text())
-assert version == 2219
+assert version == 2220
 assert release['protocol'] == 2217  # last qualified package; this is an unpackaged development integration
 assert 'uint16_t kind;     // ReliableKind' in protocol
 assert 'sizeof(ReliableHeader) == 8' in protocol
 assert 'kPeerCapacity = 32' in (root / 'src/votv-coop/include/coop/net/peer_limits.h').read_text()
-print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and development protocol 2219; qualified-package metadata retained')
+print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and development protocol {version}; qualified-package metadata retained')
 
 atv=(root/'src/votv-coop/src/coop/interactables/atv_sync.cpp').read_text()
 assert 'coop::atv_steering_sync::Install(session)' in atv

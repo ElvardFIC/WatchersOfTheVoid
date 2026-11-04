@@ -40,7 +40,7 @@ struct Counters {
     uint32_t laser;         // laser lines
     uint32_t mirrorMove;    // mirror ran move lines
     uint64_t lastLaserMs;   // coop::net::NowMs() at the last laser line (0 before the first)
-    uint32_t sendFailed;    // GeomOctaEvents the reliable channel refused (a lost decision)
+    uint32_t sendFailed;    // refused delivery attempts or a full retained-decision queue
     uint32_t keepFailed;    // Aggros that could not be kept for an unsent spawn (no serial, or the table full)
     uint32_t overlapMin;  // [dev] minSphere begin-overlaps the host's Octa took (only while octa_drill=measure|attack)
     uint32_t overlapProp;   // [dev] the same for propAggroSphere
@@ -59,11 +59,12 @@ void OpenVerdictWindow(uint32_t n, void* octa);
 // HOST, after each NPC EntitySpawn send attempt (npc_sync's interceptor, npc_world_enum's enrol, and npc_pose_host's join
 // snapshot, per slot, on a success only): `className` and `classLen` are the spawned class (bytes, no terminator needed),
 // `actor` the spawned actor or null where it does not exist yet (the interceptor sends before the spawn), `sent` whether
-// any peer was sent it. Only the Octa matters. The host sends a GeomOctaEvent only for an Octa whose spawn it has sent,
-// since the event rides Default behind the spawn and the client's mirror is built by it. A kept Aggro (the first aggro runs
+// any peer accepted it. Only the Octa matters. This is the host's enrollment/decision trigger, not a receipt for every
+// recipient. Decision delivery independently admits an idempotent EntitySpawn to that recipient's Default FIFO before
+// its first event; recipient generation and actor/class bind that receipt. A kept Aggro (the first aggro runs
 // inside the spawn's finish, before this) goes out here if its attack still stands, and is dropped when nothing was
-// sent. `slot` is the one peer the send reached (the join snapshot's), -1 for the live sends, which reach every
-// world-ready peer: the kept Aggro goes to that same audience. A snapshot's send of an Octa mid-attack on a target the
+// sent. `slot` is the one peer the send reached (the join snapshot's), -1 for live broadcast attempts: the kept Aggro
+// selects the current connected audience and waits for world-ready admission. A snapshot's send of an Octa mid-attack on a target the
 // wire can name also sends the joiner one Aggro (the join's re-send, logged `join slot=`). Game thread.
 void OnNpcSpawnSent(uint32_t eid, void* actor, const char* className, size_t classLen, bool sent, int slot);
 

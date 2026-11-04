@@ -11,6 +11,7 @@
 // reference/mtasa-blue/Client/mods/deathmatch/logic/CClientEntity.cpp:1183-1195). Game thread, every function.
 
 #pragma once
+#include <functional>
 
 namespace coop::prop_park {
 
@@ -18,10 +19,12 @@ namespace coop::prop_park {
 // actor's root, a clump's), and each Character that wakes is held still. The first park walks the prop for the
 // Characters attached to it; a park of a parked prop, as a re-latch each tick, tests only those.
 void Park(void* actor, void* mesh);
+bool Park(void* actor, void* mesh, const std::function<bool()>& current);
 
 // The receiver gives it back: its body simulates again when `rootSimulates` says so (false leaves it as it is, a
 // stuck or frozen prop), then each hold its park took is given back.
 void Unpark(void* actor, void* mesh, bool rootSimulates);
+bool Unpark(void* actor, void* mesh, bool rootSimulates, const std::function<bool()>& current);
 
 // The session ended: every hold a park still has is given back, and the parks are forgotten.
 void OnDisconnect();

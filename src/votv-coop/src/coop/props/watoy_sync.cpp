@@ -33,7 +33,7 @@ using ue_wrap::CachedObjRef;
 enum Op : uint8_t {WorldState,ActivateWorld,WorldCue,HandState,HandCue};
 struct Targets {std::array<uint16_t,net::kMaxPeers> people{};std::array<uint32_t,net::kMaxPeers> connections{};std::array<uint64_t,net::kMaxPeers> epochs{};};
 struct Source {uint16_t person=0;uint32_t connection=0;uint64_t epoch=0;};
-struct Row {Packet state{};CachedObjRef actor;uint64_t at=0;uint32_t pending=0;bool authorized=false;Targets targets{};Source source{};};
+struct Row {Packet state{};CachedObjRef actor;uint64_t at=0;uint32_t pending=0;bool authorized=false;Targets targets{};Source source{};prop_drive_host::ClaimLease lease{};};
 struct Outbound {Packet state{};uint64_t expires=0;uint32_t pending=0;bool play=false;uint8_t origin=0;bool authorize=false;CachedObjRef ownHand;Targets targets{};Source source{};};
 struct Activation {CachedObjRef actor,cls,function;void* stack=nullptr;uint64_t invocation=0,epoch=0;
     uint32_t generation=0;uint8_t slot=0;Source source{};bool hand=false,active=false,ready=false;};
@@ -142,22 +142,38 @@ void ReconcileOccupants() {
 }
 void SampleWorld(void* actor,uint64_t now) {
     if(!Eligible(actor))return;
-    const auto epoch=g_epoch;CachedObjRef live;live.Set(actor);
-    const auto key=Key(actor);W::State value{};
-    if(key.empty() || !Current(epoch) || !live.Get() || !W::Read(actor,value) || !Current(epoch) || !live.Get())return;
-    if(value.active)prop_drive_host::Claim(actor,"watoy");
-    if(!Current(epoch) || !live.Get())return;
-    auto it=g_worldRows.find(key);if(it==g_worldRows.end() && g_worldRows.size()>=256)return;
-    const auto previous=it==g_worldRows.end()?Row{}:it->second;
-    if(!value.active && previous.state.active && previous.actor.Is(actor))prop_drive_host::Release(actor);
-    if(!Current(epoch) || !live.Get())return;
-    auto& row=g_worldRows[key];
-    if(!row.actor.Is(actor) || Changed(row,value) || now-row.at>=1000) {
-        Packet p{};net::WireKeyFromString(key,p.key);p.sequence=Next(g_sequence);Encode(value,p);
-        row={p,live,now,Mask(),true};
-        Bind(row.targets,row.pending);
+    const auto epoch=g_epoch;CachedObjRef live,cls;live.Set(actor);if(live.Get())cls.Set(R::ClassOf(actor));
+    const auto key=Key(actor);
+    if(key.empty()||!Current(epoch)||!live.Get()||!cls.Get())return;
+    const auto found=g_worldRows.find(key);
+    if(found==g_worldRows.end()&&g_worldRows.size()>=256)return;
+    const Row previous=found==g_worldRows.end()?Row{}:found->second;
+    const auto current=[&]{
+        if(!Current(epoch)||!live.Get()||!cls.Get()||R::ClassOf(actor)!=cls.Raw())return false;
+        const auto it=g_worldRows.find(key);
+        return it==g_worldRows.end()?previous.state.sequence==0:
+            it->second.state.sequence==previous.state.sequence&&it->second.actor.Raw()==previous.actor.Raw();
+    };
+    W::State value{};if(!current()||!W::Read(actor,value)||!current())return;
+    auto lease=previous.actor.Is(actor)?previous.lease:prop_drive_host::ClaimLease{};
+    if(value.active) {
+        auto acquired=prop_drive_host::ClaimOwned(actor,prop_drive_host::ClaimSource::Watoy,"watoy",current);
+        if(!current())return;
+        if(acquired)lease=acquired;
+    } else if(lease) {
+        const bool released=prop_drive_host::ReleaseOwned(lease,current);
+        if(!current())return;
+        if(released||!prop_drive_host::OwnsClaim(lease))lease={};
     }
+    if(!current())return;
+    auto& row=g_worldRows[key];
+    if(!row.actor.Is(actor)||Changed(row,value)||now<row.at||now-row.at>=1000) {
+        Packet p{};net::WireKeyFromString(key,p.key);p.sequence=Next(g_sequence);Encode(value,p);
+        row={p,live,now,Mask(),true};Bind(row.targets,row.pending);
+    }
+    row.lease=lease;
 }
+
 void QueueCueBound(void* actor,bool hand,uint8_t slot,uint32_t generation,const Source& source) {
     if(!Current() || g_out.size()>=64)return;
     const auto epoch=g_epoch;CachedObjRef live,cls;live.Set(actor);if(live.Get())cls.Set(R::ClassOf(actor));

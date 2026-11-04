@@ -228,12 +228,19 @@ public:
     // drop world-mutating kinds to it (IsPreWorldSendableKind in session_lanes.h); the world-ready
     // connect replay rebuilds that state.
     void MarkSlotWorldReady(int peerSlot, bool ready) {
-        if (peerSlot >= 0 && peerSlot < kMaxPeers)
+        if (peerSlot >= 0 && peerSlot < kMaxPeers) {
             slotWorldReady_[peerSlot].store(ready, std::memory_order_release);
+            if (!ready) slotWorldReadyRevision_[peerSlot].fetch_add(1, std::memory_order_acq_rel);
+        }
     }
     bool IsSlotWorldReady(int peerSlot) const {
         return peerSlot >= 0 && peerSlot < kMaxPeers &&
                slotWorldReady_[peerSlot].load(std::memory_order_acquire);
+    }
+    // A reset invalidates world-bound delivery receipts even if ready becomes true between pumps.
+    uint64_t SlotWorldReadyRevision(int peerSlot) const {
+        return peerSlot >= 0 && peerSlot < kMaxPeers ?
+            slotWorldReadyRevision_[peerSlot].load(std::memory_order_acquire) : 0;
     }
     // The net-thread view of the same event: relay-eligible since the ClientWorldReady receipt on
     // exactly this hConn.
@@ -731,6 +738,7 @@ private:
 
     // Per-slot world-ready flags (see MarkSlotWorldReady).
     std::array<std::atomic<bool>, kMaxPeers> slotWorldReady_{};
+    std::array<std::atomic<uint64_t>, kMaxPeers> slotWorldReadyRevision_{};
     // The receive lanes holding the receive loop paused (see SetApplyPause); reset by Start.
     ApplyPauseSet applyPause_;
     // The receive edge's refusals of a kind no client may author (client_authorship.h): the first of each value

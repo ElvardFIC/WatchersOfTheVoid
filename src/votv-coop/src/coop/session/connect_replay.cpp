@@ -245,6 +245,8 @@ void ConnectReplayForSlot(int slot) {
     // before its Complete and a joined client holds the host's codes, a midnight since the capture
     // included; a set not taken whole is retried from the lane's tick and can land after it.
     coop::dish_hashcode_sync::QueueConnectBroadcastForSlot(slot);
+    coop::npc_world_enum::RegisterExistingWorldNpcs(slot);  // pre-existing/level-load NPCs (the save's kerfur) -> the peers already in; the joiner (slot) is skipped, its connect broadcast below sends it and it adopts its twin
+    coop::npc_sync::QueueConnectBroadcastForSlot(slot);  // existing NPCs -> joiner
     coop::prop_snapshot::TriggerForSlot(slot);
     coop::prop_drive_host::OnPeerWorldReady();  // every driven prop's pose again, so the joiner parks the resting ones the delta gate would never send it
     coop::kerfus_lanes::OnPeerWorldReady(slot);  // and every Kerfus's on, charging and energy
@@ -296,8 +298,6 @@ void ConnectReplayForSlot(int slot) {
     coop::drink_spill_sync::SendAllToSlot(slot);
     coop::grime_sync::QueueConnectBroadcastForSlot(slot);  // surface grime process (adopt=1)
     coop::trash_pile_sync::QueueConnectBroadcastForSlot(slot);  // pile counters (adopt=1) + depleted-key replay
-    coop::npc_world_enum::RegisterExistingWorldNpcs(slot);  // pre-existing/level-load NPCs (the save's kerfur) -> the peers already in; the joiner (slot) is skipped, its connect broadcast below sends it and it adopts its twin
-    coop::npc_sync::QueueConnectBroadcastForSlot(slot);  // existing NPCs -> joiner
     coop::world_actor_sync::QueueConnectBroadcastForSlot(slot);  // existing event WorldActors -> joiner
     coop::balance_sync::SendCurrentToSlot(slot);  // host's current balance
     coop::credit_intent::SendChestsToSlot(slot);  // every treasure chest's key, lid and gold

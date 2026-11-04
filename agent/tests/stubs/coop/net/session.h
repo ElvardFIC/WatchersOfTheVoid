@@ -8,6 +8,7 @@
 #include <vector>
 #include <functional>
 #include <utility>
+#include <array>
 namespace coop::net {
 struct Config;
 inline constexpr uint8_t kMaxPeers=kPeerCapacity;
@@ -35,6 +36,12 @@ public:
     bool connected() const { return linked; }
     bool running() const { return linked; }
     bool IsSlotWorldReady(int)const{return ready;}
+    uint64_t stops=0;
+    std::array<uint32_t,kMaxPeers> generations=[] {std::array<uint32_t,kMaxPeers> a{};a.fill(1);return a;}();
+    std::array<bool,kMaxPeers> online=[] {std::array<bool,kMaxPeers> a{};a.fill(true);return a;}();
+    uint64_t StopCount()const{return stops;}
+    uint32_t peerGenerationForSlot(int slot)const{return generations.at(slot);}
+    bool IsSlotConnected(int slot)const{return linked && online.at(slot);}
     Role role() const { return mode; }
     std::vector<ServicePanelPayload> panels;
     std::vector<PowerGridPayload> grids;

@@ -7,10 +7,23 @@ the public version for each continuation. Keep internal build/protocol identity
 separate, and change it only when required/explicitly requested, not per batch.
 Name every planned fix and every completed fix individually. Earlier 2162
 labels predate this instruction; retain their evidence as historical evidence.
-Current source integration targets upstream `4fbf1acf0`, with development protocol
-2219. The retained 2163 archive and release.json still identify b2217.
-The 4 November development verification passes 132 groups and Release inspection;
-its source stamp and gameplay limits are recorded in TESTLOG.md.
+Owner instruction, 6 November: finish tests and repository gates before Release
+compilation; no parallel/preflight Release build. Any failed check blocks the
+build, including full public-prose and native-function gates when reusing earlier
+regressions. check_current -CheckGroups is test-only; -ChecksOnly runs the full
+pre-build stage without a Release build. DLL/ABI and archive checks follow the
+build because they inspect its artifacts.
+Current source integration targets upstream `4fbf1acf0`. Earlier joint tower, radio and
+optional EmoteWheel source, including native tower wrappers, physics-call and child-release guards,
+prop-drive lifetime, failed-marker cleanup, swinger/cord and Vulkan context guards,
+passed 142 offline groups across the full run and scoped recheck, the stable-source guard
+and Release/ABI inspection at development protocol 2220. Exact source/build
+evidence and the separate failing prose gate are in TESTLOG. UI01-UI09 changes
+follow that build; their current verification and open implementation are recorded
+separately in TESTLOG and WORK. The earlier DLL does not qualify those changes.
+The retained 2163 archive and release.json still identify b2217.
+The earlier 4 November b2219 verification passed 134 groups and Release inspection;
+its historical source stamp and gameplay limits are recorded in TESTLOG.md.
 
 Before starting every new package version, clean the workspace with
 `powershell -NoProfile -ExecutionPolicy Bypass -File package/cleanup_current.ps1 -WhatIf`,

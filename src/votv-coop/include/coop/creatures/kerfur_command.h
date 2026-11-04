@@ -1,6 +1,7 @@
 // Host-authoritative kerfur radial commands. Both roles cancel the local verb;
 // the host stages the requesting player's puppet and held item before native replay.
-// Failed commands keep the previous operator; disconnect, host takeover and kill
+// Undispatched commands restore the captured operator; uncertain native attempts
+// are consumed. Disconnect, host takeover and kill
 // transitions clear that assignment. Consumed held items are retired on their
 // owner's carry path. turn_off belongs to kerfur_convert.
 // Engine access goes through ue_wrap on the game thread. See docs/npcs-and-kerfur.md.

@@ -27,8 +27,8 @@ namespace coop::swinger_join_pose {
 // True when the joiner send covers the lid under `laneKey`: a portable `mv_` key that fits the wire key.
 bool SendsRestPose(const std::wstring& laneKey);
 
-// HOST: send `peerSlot` the place of every open lid the container lane indexes. A lid without a portable key is
-// skipped (the receiver finds a lid by that key alone); one line per call says how many went and were skipped.
+// HOST: queue the indexed lids for this slot generation. Tick retries unreadable poses and refused sends,
+// reading the current pose each time. A new request replaces this recipient's old snapshot.
 void QueueConnectBroadcastForSlot(coop::net::Session* session, int peerSlot);
 
 // CLIENT: a rest pose arrived (validated at the dispatch edge). Applied now when the lid resolves and reads open,
@@ -39,8 +39,8 @@ void OnReliable(const coop::net::SwingerRestPosePayload& p);
 // newer than the connect snapshot, so a pose still parked for it is dropped. No-op when none is parked.
 void Forget(const std::wstring& key);
 
-// Retries the parked poses once per container-index pass, and drops one by the lane's own rule for its parked
-// states. Free when nothing is parked.
+// Drains bounded host join work, waiting for world-ready recipients and pacing retries. Also retries received
+// poses once per container-index pass, with the container lane's settling rule and deadline.
 void Tick();
 
 // Session end: forgets every parked pose.

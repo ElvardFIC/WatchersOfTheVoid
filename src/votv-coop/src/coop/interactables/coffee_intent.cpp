@@ -141,6 +141,7 @@ bool Execute(coop::net::Session& s, const coop::net::CoffeeActionIntentPayload& 
     if (!sender.Current(g_session.load())) return true;
     const std::wstring key = coop::net::StringFromWireKey(p.key);
     void* device = key.empty() ? nullptr : coop::prop_key_index::Find(key);
+    if (!sender.Current(g_session.load())) return true;
     ue_wrap::CachedObjRef deviceRef, bodyRef;
     deviceRef.Set(device); bodyRef.Set(BodyFor(slot));
     const auto current = [&] { return sender.Current(g_session.load()) && deviceRef.Get(); };
@@ -179,8 +180,9 @@ bool Execute(coop::net::Session& s, const coop::net::CoffeeActionIntentPayload& 
     const auto owns = [&] {
         if (!current() || !bodyRef.Get() || !bodyRef.Is(BodyFor(slot))) return false;
         const auto actual = ue_wrap::prop::GetKeyString(device);
-        return current() && bodyRef.Get() && bodyRef.Is(BodyFor(slot)) && actual == key &&
-            coop::prop_key_index::Find(key) == device;
+        if (!current() || !bodyRef.Get() || !bodyRef.Is(BodyFor(slot)) || actual != key) return false;
+        void* indexed = coop::prop_key_index::Find(key);
+        return current() && bodyRef.Get() && bodyRef.Is(BodyFor(slot)) && indexed == device;
     };
     if (!owns()) return true;
     const bool ran = ue_wrap::appliance::CallActionWhile(device, bodyRef.Get(), CF::kBrewAction, owns);
@@ -203,8 +205,8 @@ sg::Verdict OnPressPre(const sg::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running() || s->role() != coop::net::Role::Client || !call.object) return sg::Verdict::Run;
     const auto scope = g_scope;
-    ue_wrap::CachedObjRef actor; actor.Set(call.object);
-    const auto current = [&] { return scope.Current(g_session.load()) && actor.Get(); };
+    ue_wrap::CachedObjRef actor, function; actor.Set(call.object); function.Set(call.function);
+    const auto current = [&] { return scope.Current(g_session.load()) && actor.Get() && function.Get(); };
     if (!call.function || !call.locals) return sg::Verdict::Cancel;
     // The coffee drill's red arm: the press runs its own body here, as before the lane. Resolved once.
     static const bool s_redNoIntent =
@@ -216,11 +218,11 @@ sg::Verdict OnPressPre(const sg::Call& call) {
     if (wi < 0) return sg::Verdict::Run;
     const int32_t off = g_action[wi].Of(call.function);
     const auto frame = R::FunctionFrameSize(call.function);
-    if (!current() || off < 0 || off >= frame) {
+    if (!current()) return sg::Verdict::Cancel;
+    if (off < 0 || off >= frame) {
         if (!g_actionSaid) {
             g_actionSaid = true;
-            UE_LOGW("[COFFEE-INTENT] the press's action parameter did not resolve -- a coffee press runs here "
-                    "alone (said once)");
+            UE_LOGW("[COFFEE-INTENT] the press's action parameter did not resolve; press refused (said once)");
         }
         return sg::Verdict::Cancel;
     }

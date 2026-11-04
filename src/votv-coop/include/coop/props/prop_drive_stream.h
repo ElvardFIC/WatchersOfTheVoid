@@ -15,6 +15,8 @@
 // prop here is in nobody's hand, and when a hand takes it that stream wins.
 
 #pragma once
+#include "ue_wrap/core/cached_obj_ref.h"
+#include <functional>
 #include "ue_wrap/core/types.h"
 
 #include "ue_wrap/core/types.h"
@@ -40,11 +42,22 @@ void TickApplyAndDrive(coop::net::Session& s);
 // is prop_syncer_host's; this is the same apply the client runs on the host's batch.
 void FeedAdmitted(const coop::net::PropDriveRow& e);
 
+// The immediate receipt and the episode's longer lifetime are owned callbacks.
+// Native application must name this actor/class; a frame revision is not a lifetime.
+struct Source {
+    coop::net::Session* session = nullptr;
+    std::function<bool()> current, lifetime;
+    ue_wrap::CachedObjRef actor, cls;
+    uint64_t episode = 0;
+};
+void FeedAdmitted(const coop::net::PropDriveRow& e, const Source& source);
+
 // HOST, game thread: the end of a client-authored drive on the host's copy of `end.eid`: unparks it,
 // places it at the End's pose, restores its physics from the End's flags and gives it the velocity.
 // A copy a hand holds is yielded to the hand; a prop never parked takes the End as a receiver that never
 // saw the generation.
 void ReleaseHost(const coop::net::PropDriveEndPayload& end);
+void ReleaseHost(const coop::net::PropDriveEndPayload& end, const Source& source);
 
 // CLIENT, game thread: the host closed a prop's stream. Validated at the router.
 void OnEnd(const coop::net::PropDriveEndPayload& p);

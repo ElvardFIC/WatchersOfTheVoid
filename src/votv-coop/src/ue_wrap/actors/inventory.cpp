@@ -195,8 +195,14 @@ std::wstring ReadHeldItemName() {
 }
 
 bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf) {
+    return WriteHeldItemWhile(name,classLeaf,{});
+}
+
+bool WriteHeldItemWhile(const std::wstring& name, const wchar_t* classLeaf,
+                        const std::function<bool()>& owner) {
+    if(owner&&!owner())return false;
     void* save = ResolveSaveSlot();
-    if (!save) return false;
+    if (!save || (owner&&!owner())) return false;
     SR::Arr hd{};if(!SR::TryReadArr(save,kOff_hold,hd))return false;
     if (!hd.data || hd.num < 1) return false;
     const auto serial=++g_handWriteSerial;
@@ -204,9 +210,11 @@ bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf) {
     CachedObjRef target;target.Set(save);
     std::array<uint8_t,16> header{};std::memcpy(header.data(),static_cast<uint8_t*>(save)+kOff_hold,header.size());
     std::array<uint8_t,kEquipStride> image{};std::memcpy(image.data(),hd.data,image.size());
-    const auto current=[&]{return serial==g_handWriteSerial && world==world_identity::Generation() && target.Get()==save &&
-        ResolveSaveSlot()==save && !std::memcmp(header.data(),static_cast<uint8_t*>(save)+kOff_hold,header.size()) &&
-        !std::memcmp(image.data(),hd.data,image.size());};
+    const auto current=[&]{
+        if((owner&&!owner())||serial!=g_handWriteSerial||world!=world_identity::Generation()||target.Get()!=save)return false;
+        if(ResolveSaveSlot()!=save||(owner&&!owner())||serial!=g_handWriteSerial||world!=world_identity::Generation()||target.Get()!=save)return false;
+        return !std::memcmp(header.data(),static_cast<uint8_t*>(save)+kOff_hold,header.size())&&
+            !std::memcmp(image.data(),hd.data,image.size());};
     const std::wstring cls=classLeaf?classLeaf:L"";
     const std::wstring itemName=name;
     if(!cls.empty() && !R::FindClass(cls.c_str()))return false;

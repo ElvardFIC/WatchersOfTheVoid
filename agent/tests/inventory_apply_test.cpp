@@ -82,7 +82,9 @@ int32_t FindPropertyOffset(void* cls,const wchar_t* name) {
 }
 bool FindBoolProperty(void* cls,const wchar_t* n,int32_t& off,uint8_t& mask){off=FindPropertyOffset(cls,n);mask=4;return test::boolReady&&off>=0;}
 void* FindClass(const wchar_t* n){return test::classesReady&&!wcscmp(n,L"prop_sample_C")?&test::objects[20]:nullptr;}
+#ifndef HANDTAKEN_NATIVE
 void* FindFunction(void*,const wchar_t*){std::abort();}
+#endif
 void* FindDispatchFunction(void*,const wchar_t*,void**){std::abort();}
 #ifndef CONTAINER_APPLY_HARNESS
 void* FindDispatchFunctionCached(void*,const wchar_t* n){if(!wcscmp(n,L"recalculateNames"))test::Callback(test::onResolve);return &test::objects[!wcscmp(n,L"updateVolumesAndMass")?26:27];}
@@ -124,13 +126,18 @@ namespace ue_wrap::component_calls {bool CallParamless(void*,void* fn){if(fn==&t
 #endif
 namespace ue_wrap::building_material {bool RefreshHeldMaterialRecord(void*,save_record::SaveRecord&){std::abort();}}
 namespace ue_wrap {
+#ifndef HANDTAKEN_NATIVE
 ParamFrame::ParamFrame(void* fn):fn_(fn){}
+#endif
 int32_t ParamFrame::OffsetOf(const wchar_t*)const{std::abort();}
+#ifndef HANDTAKEN_NATIVE
 bool Call(void*,ParamFrame&){std::abort();}
+#endif
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}void* WorldOf(void*){return nullptr;}}
 namespace ue_wrap::world_singleton {void* Gamemode(){return &test::objects[0];}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+#ifndef INVENTORY_APPLY_NO_MAIN
 int main() {
     using namespace test;Reset();const auto rich=Rich();
     CHECK(I::ApplyToSaveObject(Save(),rich));const int count=allocations;auto record=Item();
@@ -207,3 +214,5 @@ int main() {
     Reset();
     return 0;
 }
+
+#endif

@@ -23,14 +23,15 @@ class Session;
 
 namespace coop::coffee_state {
 
-// Registers the two bodies' name watches and, once, the record gates. The per-tick retry pump
-// (coop/interactables/verb_lanes), so a watch the gate refused is registered again on a later tick. Game thread.
+// Registers watches and record gates once, including a final watch refusal.
+// Replacing the installed session/world discards its notes and publication debt. Game thread.
 void Install(coop::net::Session* session);
 
-// Settles the watches and says once when both are live. Game thread, once per pump tick.
+// Settles watches and retries bounded, actor/key/session-owned publication debt.
+// Game thread, once per pump tick.
 void Tick();
 
-// The session ended: the counters, with one summary line.
+// Disable callbacks immediately and clear notes, debt and diagnostics.
 void OnDisconnect();
 
 // What the coffee drill reads of a client: how many of its own runs of the hit handler were cancelled this

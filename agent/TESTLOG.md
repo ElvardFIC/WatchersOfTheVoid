@@ -1,3667 +1,590 @@
-# Git ancestry audit (4 November 2026)
-
-The owner asked why the branch still shows 436 commits behind upstream.
-Confirmed at HEAD `2131fa9cc`: `git rev-list --left-right --count
-HEAD...upstream/main` returns 632/436; the merge base is still `ad5315611`.
-HEAD's parents are two fork commits, `6604633bf` and `f9ad5ef9c`, so the recent
-fork merge did not record upstream `4fbf1acf0` as an ancestor. GitHub's live
-upstream main still points to that tip. The earlier work transferred/adapted
-source files, rather than completing a Git history merge; calling it complete
-synchronization was too broad. Semantic review also remains open in WORK.
-
-Of 2149 upstream C++/header/include/CMake paths outside third_party, 1752 match
-HEAD exactly, 373 differ and 24 upstream paths are absent. Differences include
-fork adaptations; absent paths include alternate cord implementation/drills and
-upstream credits. File/path counts do not prove semantic equivalence or a lost
-feature. They do establish that 436 is not a count of absent source patches.
-A genuine merge-tree preview reports 80 conflicted paths. The preview changes
-neither the working tree nor index. No history marker or merge commit was created.
-Evidence: build/sync-2164/ancestry-audit-20261104.json. Track the remaining actual
-history integration as UP8 in the existing WORK/TODO documents.
-
-# 2164 cleanup and source synchronization (4 November 2026)
-
-Development target remains **0.9.2164**, protocol **2219**. The retained release
-is **0.9.2163 / b2217**; release.json and its qualified archive/DLL are unchanged.
-The source transfer reaches upstream `4fbf1acf0e0ec7d14350132cd3de01d6a86aa552`,
-rechecked through GitHub on 4 November. The provenance inventory accounts for
-436 upstream graph commits: 306 from the earlier source integration and 130
-newly transferred commits. This is source integration, without an ancestry merge.
-
-Completed repairs and maintenance, individually:
-
-1. Remove generated/obsolete artifacts after a reviewed cleanup preview:
-   2687 files, 1209518305 bytes (1153.5 MiB) in the initial pass. Preserve active
-   dependencies, unique source/research/crash evidence and the qualified archive/DLL.
-2. Restrict research cleanup to generated extensions, preserving research sources.
-3. Preserve active CMake build directories in subsequent cleanup passes.
-4. Remove 28 unused fixed-version build/check/pack/verify/qualification scripts;
-   keep the current parameterized package workflow.
-5. Remove the retired container_write_policy header/implementation, superseded
-   by host container acts.
-6. Remove the five approved orphan coordinate-tower/hit-intent source files;
-   devices/coord_tower, fuse_tower_kind and player/hit_intent remain their owners.
-7. Remove the unused container_throw_no_velocity configuration row.
-8. Remove the unused container_throw_scale configuration row.
-9. Remove the unused pr64_coin_local_credit_red configuration row.
-10. Import upstream host container request/reply/commit, escrow and reservations.
-11. Import container overlap judgment and arming while retaining native extraction
-    publication and its exact takeObj fingerprint.
-12. Retain checked container record/class readiness before any live mutation.
-13. Retain actor/store/header/sender/session/world identity checks across callbacks.
-14. Complete container application before redraw/derived callbacks, without a
-    partial live commit; retain newer reentrant input.
-15. Park over-capacity host birth records instead of losing the added records.
-16. Retire only the captured parked revision after successful application.
-17. Preserve exact-recipient seed debt, readiness retries and sender/recipient
-    generation checks in the split container publisher.
-18. Make new host container write helpers validate class/record/store identities.
-19. Preserve packed personal-container flags and correct split inventory indices.
-20. Balance nested native takeObj scopes and retain a nonconsuming recent-take window.
-21. Import native throw sequence/election and damage bounds, separately from PvP nonce.
-22. Retain native launch velocity, placement request identity and food restoration.
-23. Import velocity/time-bearing PropDriveRow while retaining heartbeat, generation,
-    serial and local/remote hand ownership guards.
-24. Import snapshot bracket position waits while preserving local held actors.
-25. Keep published reliable IDs; HitIntent retains 242, new container acts use
-    264/265/266 and reliable kinds remain 16-bit.
-26. Preserve PropRelease/PropDropIntent fork fields at 94/214 bytes and reject old
-    protocol headers through the actual parser.
-27. Keep the native glowstick prelude, food mutation guard and owned coin admission.
-28. Split engine source registration and include all new owned translation units;
-    build verification now audits all three CMake source lists and duplicates.
-29. Adapt Ghezra `97f1f6072`: disable body shadows on both puppet meshes through
-    checked, serial-aware native dispatch.
-30. Adapt Dafirka `d52f22cfc`: cache name-watch lookup and reuse settled dead watches.
-31. Adapt Dafirka `61874dfdf`: settle deer destruction-watch registration once.
-32. Adapt Dafirka `979c95e8c`: settle centipede destruction-watch registration once.
-33. Adapt Dafirka `4a945e3a7`: settle mannequin destruction-watch registration once.
-34. Adapt Dafirka `15fa7c39a`: preserve serverbox delivery state on same-session Install.
-35. Adapt the reflection part of Dafirka `593b7900c`: cache CDOs with class identity,
-    object serial and names; retain the fork's callback-safe console checks.
-36. Exercise the integrated container production codec/state/decision selftests:
-    320 checks plus slot-31 lifecycle coverage.
-37. Migrate container apply/seed fixtures to the integrated owners, retaining
-    readiness, exact-recipient, revision, callback and lifetime assertions.
-38. Add production name-watch and CDO cache fixtures, including 100000 dead
-    re-ensures, 10000 cache hits, slot reuse and retryable misses.
-39. Adapt portable upstream balance, rapid-record and coin CI drills to the
-    retained native/session contracts; Windows outputs now stay under build/.
-40. Update adjacent regression doubles and extraction paths without skipping
-    the existing glowstick, placement, food, physics or native-contract checks.
-41. Recheck 50 known reachable fork heads; account for all 41 additional Ghezra
-    commits through `33d98330c`. Arigalit now matches integrated upstream;
-    Dafirka and the other 47 reachable heads are unchanged.
-42. Adapt Ghezra `25b3d247b`: permit full-disc save bodies above 32 KiB within
-    the blob capacity, preserving decoder/rate/park bounds.
-43. Adapt its slot half: reserve outer-header space, retain canonical splitting
-    and refuse over-capacity data. Both new size regressions fail before the fix.
-44. Resolve the repeated merge of the original `f9ad5ef9c` input against the
-    integrated `6604633bf` tree: 80 unmerged paths, preserving the 2164 side.
-45. Remove the automatically merged obsolete PropPoseSnapshot overload from
-    session.h; PropDriveRow remains the active declaration.
-46. Restore outbound PvP throw nonce minting, both wire bytes and local NoteThrow;
-    keep the native throw sequence separate and require a valid local peer slot.
-47. Restore the outbound Kerfur transfer marker and suppress throw/coast for
-    that edge; consume the marker once, including unrelated/trash release edges.
-48. Bind the deferred Kerfur marker to object serial/world through CachedObjRef,
-    so a recycled address does not mark a successor actor as robot-held.
-49. Remove duplicate prop_drive_host and chrono includes from local_streams.cpp.
-50. Add the production release-edge fixture to check_current. It first fails on
-    the missing nonce; checks include transfer, next release, address reuse,
-    dead actor, slot 31/32, velocity, trash suppression and both network roles.
-51. Reconcile WORK/TODO with completed wire/build/fixture work; remove the stale
-    supplemental-test and 2126/service-panel repair entries already verified.
-52. Record unresolved semantic/gameplay work and new exact fork candidates in
-    the existing documents; do not mark stack jitter, native parity or adapter
-    coverage complete from offline tests.
-53. Correct the unused-declaration analyzer's reach through private headers;
-    ATV companion calls must not be mistaken for unused APIs.
-54. Resolve simple local macro includes and undef in that analyzer; profile
-    join calls inside player_join_apply.inc must retain their actual owners.
-55. Add positive and negative include-reach regressions, including shared-header
-    context isolation. Both new positive cases fail before the fix; all eight
-    tests pass after it. Keep baseline values unchanged.
-56. Preserve the previous cleanup run in the existing inventory before recording
-    another run, retaining the exact earlier removal evidence.
-57. Restore InstallInventory in the active session pump, so retained native
-    extraction birth publication and retry draining actually run. The new
-    source/native contract fails with the missing call and passes after wiring;
-    the existing production-controller/lifetime suite remains active.
-
-Verification before the interrupted Git merge: **131/131 groups**, stable-source
-guard, Release and ABI/source inspection pass under
-build/sync-2164/qualified-final. DLL b2219 SHA-256:
-`2bf7225a968bc931fec6f2376c91cd5ff39e881f6c9bacb324db97ce7a92c3dc`.
-This qualifies that earlier source stamp, not the later sender/full-disc fixes.
-An intermediate 132-group run under build/sync-2164/final-20261104 saw the newly
-added include-reach regressions before their implementation (131 passed, one
-failed); the isolated eight-case recheck passes after repair. Its source stamp
-was then superseded by the extraction-pump wiring fix. The final stable-source
-132-group run is recorded under build/sync-2164/stable-20261104: **132/132 PASS**,
-stable-source guard and Release/ABI/source inspection PASS, 1232 source entries.
-Final DLL SHA-256:
-`ee8574eab93b325cb5e9f9587bec3e6a652a7c539f99a4a1c1588bc63c67761b`.
-Production snapshot SHA-256:
-`c4757486b6903fb6a0ed32d2a206c8be1d63632f997506f50b5bf4230c365304`.
-After this run, reviewed cleanup removes another 880 regenerated test/cache files
-(652.0 MiB), retaining the final development DLL, logs and the qualified package.
-The earlier 2687-file run remains in cleanup-inventory.json.previousRuns.
-
-Focused PASS: production release edge; full-disc record and event-slot fixtures;
-all four prop-drive must-fail controls; all five container-apply controls and six
-glowstick controls. The three imported CI drills pass (11 balance, 10 rapid-record,
-12 coin checks). Server `cargo test --locked --offline` passes 132 tests.
-Fresh fact-row gate: 624 rows in 198 files. Registry: 371 rows plus five font roles,
-including rejection controls. Earlier peer connection, MinHook absence, GC pin,
-atlas, master contact, data-path, workflow-expression and public-leak gates pass.
-
-The full public-prose gate remains above its baseline. The original pre-transfer
-HEAD was already red; the merged tree also has added stale source citations and
-other prose findings. Do not call CI fully green or raise the baseline to hide
-these. Evidence: build/sync-2164/public-prose-head.json and the current prose log.
-The final prose report has 14 counters above baseline. The include-reach repair
-and extraction-pump wiring reduce the declaration counter from 27 to 19; the
-remaining hits require individual review, not automatic deletion. For example,
-the unchecked WriteSaveRecord wrapper remains an intentional fault-control
-boundary. Source census finds 1232 owned CPP files, all listed once and present.
-Final gate evidence: build/sync-2164/public-prose-complete-20261104.log.
-
-No new package, game installation, commit, push or publication was performed by
-this work. The user's intervening Git merge now has no unresolved paths; its
-merge metadata remains pending a commit. Two-player native physics, rendered/audio
-parity, container/throw handoffs and Vulkan teardown still need real gameplay.
-UP2/UP4/UP5/UP6 and the implementation backlog remain open with their constraints.
-
-# Remote glowstick grab repair (31 October 2026)
-
-UG1 implementation completed. Cooked prop_glowstick_C.playerGrabbed_pre enters
-its graph at 1044 and calls only releaseGlowstick. That body's exact sequence is
-BreakConstraint, hook detachment, sticked=false, stick=false and tick disable;
-it does not invoke prop_C.playerGrabbed_pre. All eleven cooked variants inherit
-the prelude/release without overriding them. The receiver previously invoked
-the prop_C body and could park a glowstick while its native constraint remained.
-
-Completed changes, individually:
-
-1. Route remote glowstick grabs through the exact declaring releaseGlowstick
-   body, including its inherited variants. Ordinary props retain the base body;
-   wall-attachable props retain component unstick.
-2. Bind native-prelude admission to actor serial, hold generation and world.
-   An applied versioned hold runs once, including repeated drive-start attempts.
-3. Reserve admission before native dispatch to reject recursive receiver entry.
-4. Retry only a definite non-dispatch (class/function/frame not ready). An
-   attempted failed dispatch remains consumed, including unversioned packets.
-5. Refuse to park or drive while the prelude is incomplete; a possibly attached
-   body must not fight the remote transform. Failure diagnostics are latched.
-6. Cancel setup after native callbacks destroy/replace the actor, switch world,
-   reset the slot or install a successor hold. Check liveness before mesh access.
-7. Validate cached UFunction serials independently of their classes and reset
-   negative function lookup state when the declaring class is replaced.
-8. Add the production-wrapper/admission/native-contract suite to check_current,
-   with six must-fail controls for exact owner, function serial, repeat, reentry,
-   world retirement and uncertain dispatch.
-
-PASS run_glowstick_grab.ps1 -FaultControls: both C++ fixtures, complete cooked
-contract and all six controls. The maintained main list now contains 129 groups;
-this does not mean all 129 were rerun for this change. Focused current checks and
-the development build are recorded under build/glowstick-grab-check/verification.
-PASS all seven focused groups: glowstick grab, prop-drive lifetime, coin/hold
-arbitration, fork review, item batch, upstream integration and upstream refresh.
-Release/ABI verification passes with 883 source entries and DLL SHA-256
-`78854376471aa5bf1de6ad0d4820c43df8c9f9d499ab2f05fbf98b2e6bfb91c3`.
-Fact-row, public-prose and GC-pin gates also pass. `git diff --check` is clean.
-The previous audit's 128-group result remains evidence for its earlier source
-stamp, not the changed implementation.
-
-- [ ] In-game acceptance: host/client pickup of attached glowsticks and all
-  variants, repeated pickup/drop, simultaneous grabs, late join and reconnect;
-  confirm constraint/hook release and ordinary/wall-attachable prop behavior.
-The broader stack-jitter report remains open. No package version was changed,
-and no game installation, commit, push or publication was performed.
-
-# Integration error audit (30 October 2026)
-
-Continued the existing upstream integration and the requested WORK/TODO code
-audit. This is development verification, not a new package. The previous merge,
-its b2218 protocol change and the 2164 development directory predated these
-repairs. The last qualified package remains 0.9.2163 / b2217 in release.json.
-No game installation or multiplayer acceptance was performed.
-
-Completed production repairs, individually:
-
-1. Allow the owned bind-wait replay to apply the exact pending PropDriveEnd;
-   its closed generation had incorrectly rejected its own replay.
-2. Validate the cached actor serial before same-generation pose application.
-3. Validate that serial before returning physics during drive replacement.
-4. Validate that serial before applying a host-side end.
-5. Restore angular-only release motion; keep all-zero final motion asleep.
-6. Revoke the client syncer before the non-component crowbar unstick fallback.
-7. Remove the unused cord_drill config row and its obsolete include file.
-8. Remove the unused cord_pos_drill config row with that file.
-9. Remove the unused container_retry_red config row.
-
-Completed regression/tooling repairs, individually:
-
-10. Make the drive fixture select Client/Host explicitly and model missing
-    registry bindings independently of object-array address reuse.
-11. Add the maintained prop-drive runner with four must-fail fault controls;
-    include it and the 2124/2126 suites in check_current.
-12. Use production 32-peer capacity in the shared Session double.
-13. Use production peer capacity in the shared players Registry double.
-14. Update shared save callback signatures and provide a trapping Kick boundary.
-15. Keep run_item_batch include arguments as an array even for one include.
-16. Correct garden batch inspection to use the actual captured chunk member.
-17. Check admitted whole batches during profile-join world retirement.
-18. Check admitted whole batches during profile-receive cancellation.
-19. Preserve the shared-screen partial-refusal assertion as one admitted chunk.
-20. Supply the actor save-key boundary required by both cord fixtures.
-21. Restore Rufus config declarations and its current typed diagnostic row.
-22. Repair 2124 fixture linking and generated-control include paths.
-23. Update gravity fixture reflection/resolution/interceptor boundaries.
-24. Add service-panel coverage for valid slot 31 and invalid slot 32.
-25. Repair generated-control include paths in 2126, 2127, 2128 and 2129.
-26. Update the lightswitch fixture's class, parameter frame and typed hooks.
-27. Update save-receive audit callbacks and verify host authorship at the
-    production Session policy boundary; retain CRC/raw/compressed/refusal tests.
-28. Add explicit save-audit boundaries for the integrated lifecycle hooks.
-29. Point the native key-reader assertion at prop_keys.cpp.
-30. Resolve generated drop-source includes in run_2132.
-31. Add trapping drone-wrapper boundaries for unrelated integrated methods.
-32. Check lift join and world-ready wiring in their actual split source files.
-33. Replace obsolete lift Apply/Mirror/Release fixtures with the maintained
-    native-replay suite; retain run_2134 as a clearly documented alias.
-34. Carry seven applicable expiry/lifetime/parameter/flag fault controls into
-    run_2136; all 17 controls reject their mutants.
-35. Repair fire cancellation and subclass-call mutation anchors in run_2137.
-36. Supply integrated hand-pose, world identity, roster and gun-visual boundaries.
-37. Give the hand fixture an explicit current local player during reset.
-38. Remove duplicate boundary definitions from the including hand-generation test.
-39. Update the player-state Registry/vitals interfaces, typed guard registration
-    and explicit unexercised dependencies; repair generated include paths.
-40. Add trapping adjacent reflection/gun/offset boundaries to the fire wrapper.
-41. Check revive's actual readable zero-burning-time success condition while
-    retaining extinguish-before-health-before-dead-clear ordering.
-42. Extract hold arbitration from remote_prop_drive.h/.cpp after the source split.
-43. Match the coin/hold arbitration fixture's drive array to peer capacity.
-
-Verification:
-
-- Full check_current run: 125/128 passed initially. The failures were duplicate
-  hand-fixture definitions and the two obsolete arbitration extraction paths.
-  After repairs, all three focused rechecks passed against the SAME production
-  source stamp and DLL. Thus all 128 current groups have passing results across
-  the two runs; this is not a fresh single-run release qualification.
-- The 12 supplemental entry points pass after repairs. They represent 11
-  distinct suites because run_2134 delegates to run_2136. This supersedes all
-  supplemental fixture failures listed in the historical reconciliation below.
-- Eight source gates pass: registry, peer connection, MinHook absence, GC pins,
-  atlas regime, master contact, fact rows and data paths. Registry: 348 rows plus
-  five font roles, including rejection controls. Fact rows: 615 in 190 files.
-- Server `cargo test --locked --offline`: 118 library, 6 master, 7 signaling and
-  1 connection-cost tests pass (132 total), with no failed tests.
-- Release development build and ABI/source verification pass: 883 source entries,
-  product identity 0.9.0n b2218. DLL SHA-256:
-  `1e25864c09633f0d76cb10abd5410795cd28343caf8ce4769236f70d3ab46946`.
-- Four prop-drive removal controls fail at their intended assertions. Existing
-  2124, 2126, player-state/fire and restored supplemental mutation controls pass.
-- At the final continuation, Git reported a clean merged checkout with no
-  unmerged index entries. Documentation conflict resolution is complete; no
-  commit/push was issued by this audit. WORK UP1/UP7 move to this completed log.
-
-Evidence: `build/work-todo-audit/verification.json` and its original logs,
-`build/work-todo-audit/recheck/verification.json`, supplemental logs/results,
-`build/work-todo-audit/recheck/audit-summary.json`, and
-`build/work-todo-audit/server-tests.log`. Original failed-run evidence is retained.
-The summary explicitly distinguishes combined verification from packaging.
-
-The client stack-jitter report is NOT closed by these repairs. Remaining
-event/entity/resource/mod adapters and UP2–UP6 stay open in WORK/TODO. Offline
-fixtures cannot establish native PhysX contacts, rendered parity, Vulkan device
-replacement or a real two-player session. No claim of 75 completed fixes is made.
-
-# TODO/WORK reconciliation (29 October 2026)
-
-The owner's pasted WORK selection exposed an empty Shared items and resources
-section in TODO. Copied its eight unfinished console/item/resource entries into
-that section with their existing constraints. All fifteen selected entity entries
-were already present in TODO and were not duplicated. All entries remain unchecked;
-this is tracking reconciliation, without implementation or gameplay verification.
-
-# Planned-gap review (29 October 2026)
-
-Read live VOTV-MP/Multivoid status and Known limits in props, devices, signals,
-vehicles, events-and-weather, base-computer, deployables and players; read its
-16 returned open issues and the live gxrxrt/WatchersOfTheVoid agent/TODO.md.
-Open issue/PR searches across the other 46 repositories from the existing
-build/fork-review-20261028 inventory returned no entries. This reuses that
-inventory; it is not a fresh fork enumeration or an all-branch code audit.
-Empty issue searches do not establish that a fork has no unpublished plans.
-
-Compared candidate limits with current local production controllers and the
-implementation backlog. Added UG1–UG8 to TODO with source links and recorded
-their local boundaries in WORK. Known limits are not upstream commitments;
-issue #49 is an open request, with local runtime reproduction still required.
-The fork's remaining event/entity/resource implementations already overlap
-WORK; its gameplay acceptance, optional features and publication tasks were
-not added as new implementation defects.
-
-Excluded stale upstream gaps already covered locally: upgrade_sync levels,
-ATV modules/steering/honk/condition adapters, coingun E-press/commit paths,
-shared SAT output, garden hose actions, prop-knock propagation and receiver
-hold arbitration. Existing client-physics and event/entity/resource gaps retain
-their current backlog owners. In-progress upstream integration may supersede
-individual candidates and must be reconciled before implementing them.
-
-Documentation-only review: no production code, version, build, package or game
-installation changed by this task. No gameplay result or regression pass is
-claimed. Pre-existing merge conflicts and concurrent integration edits remain
-outside this review.
-
-# Joined-client prop physics report (29 October 2026)
-
-Owner forwards a user's report: their friend's hosted game appears to work for
-the host, but the joining client sees widespread object jitter. Objects resting
-on boxes, desks and workbenches vibrate, launch away or clip through the support.
-The reporter asks whether a setting fixes it. Exact mod/game versions, other
-mods, latency/loss and whether the host sees the resulting displacement are
-unknown. This is a user report, not a locally reproduced or resolved defect.
-
-Source inspection: current config_registry_rows.inc contains network rate and
-diagnostic impairment controls, but no dedicated user-facing stack-physics fix.
-Ordinary Aprop_C poses in active_drive.h snap to the latest transform; the
-prop_drive_stream route parks simulation during drive and restores it at the
-end. These are investigation leads, not evidence of the reported root cause.
-No production change or runtime check accompanies this report.
-
-- [ ] Capture matching host/client versions, mod lists, latency/loss and logs;
-  determine whether the host also sees objects move after the client's jitter.
-- [ ] Reproduce resting single objects and stacks on boxes, desks and workbenches;
-  compare both roles before/after pickup/drop and a late join, tracing drive/park/
-  end transitions and native simulation state.
-
-# Tracking cleanup (29 October 2026)
-
-Owner requests implementation-only TODO and WORK. Both now contain unfinished
-code/tooling work; completed reports and game-only follow-ups are removed from
-WORK. The development target is 0.9.2164; the last qualified package remains
-0.9.2163 / b2217. No release metadata, production code or package changed.
-Historical references below to completed items or checks in TODO/WORK describe
-those documents before this cleanup; current implementation scope is in the
-cleaned documents. This edit does not close any game report or add test evidence.
-
-Game-only follow-ups retained from WORK (all pending):
-
-- [ ] Remote flashlight beam/mode/battery, clicks and immediate-join state on
-  matching host/client DLLs; replacement, readiness and native drift behavior.
-- [ ] Ragdoll reports 5/50: C-key/faint/fall entry and recovery, standing/crouched,
-  repeated use, slopes and stock/selected/custom rigs on every role. Include
-  reference-pose transfer and native physics-to-render takeover.
-- [ ] PC loading reports 54/55: boot, input, handoff, repeated power cycles,
-  entering/leaving during boot, power loss/restoration and join/reconnect.
-- [ ] Switches, doors, transformer repair, lamp/ambient presentation and remote
-  drone contents immediately after joining; simultaneous users and replacement.
-- [ ] Real 2–32-player admission/full/reuse, selector layout/input and group load;
-  matching capacity on the deployed master. No master deployment is recorded.
-- [ ] Tutorial chapters, host/client joins and native Solar/Sandbox behavior;
-  icon generation/quick-slot recovery after empty or stale cache files.
-- [ ] Host/player-body prop contacts, blast motion, pickup/handoff and late joins;
-  preserve the current motion lanes 188/191 (upstream ExplosionSpawn177 conflicts
-  with KitchenState177).
-- [ ] Companion ATV garage creation, late-loaded saved rigs, no third body,
-  steering/honk, driver/carrier/seat handoff, save/reload and reconnect.
-- [ ] Seated body/head/light alignment, chair angles, tilted supports, banked
-  vehicles, IK restoration, custom rigs and 32-player presentation load.
-- [ ] Sleep unanimity, awake/joining/dreaming vetoes, paced wake input and
-  replacement/reconnect; personal nightmares and rewards. Per-mattress capacity
-  remains an optional deferred suggestion; existing packets name bed classes.
-- [ ] Inventory/profile and world-container join/rejoin, held/container UI,
-  ejection/extraction, concurrent use and native volume/mass/name recovery.
-- [ ] Food/MRE/native package outputs, repair/material/resource transitions and
-  grill use across peers, including refusal, handoff, disconnect and save/reload.
-- [ ] Console input, simultaneous use, clear/history/busy state and native world
-  command effects; laptop/shared-screen inherited-state handoff and slow UI.
-- [ ] Held/world toy sounds, watoy cues/physics, native reflection schemas and
-  audio phase/timing; hand readiness, body/world replacement and joins.
-- [ ] Sponge/window foam and original-dab presentation, cleaning and stock;
-  bleeding/stain layout, stopping, cleaning, late joins and save parity.
-- [ ] Event outcomes/repeats, simultaneous triggers, frequency changes, loading,
-  late join/reconnect and teardown; personal dream/ending consequences, calendar
-  gates, shared sky phases and blank-email Ariral appearance/warp-arrow report.
-- [ ] Wisp grab/release/tear animation and limb/blood effects; other entity
-  actions/effects and native schemas. Actor admission alone does not close them.
-- [ ] Main-menu branding after restart, manager archive startup and combined
-  upstream adaptations. Existing fork/mod scenarios remain listed below.
-- [ ] Bench58: reproduce the host rifle disappearing after placement; capture
-  class/key and destruction caller/timing with VOTVCOOP_PROP_BIRTH_KEY_PROBE=1.
-  prop_rifle_C remains a candidate, not a confirmed cause.
-- [ ] Token52: identify the original UI and observe credit/spend/refusal/join;
-  shared saveSlot.Points is still a hypothesis.
-- [ ] Trowel: capture an actual key/stock mismatch through hand/slot/drop.
-  Existing native graphs preserve non-None keys; do not invent a repair from
-  the unconfirmed report.
-- [ ] Native VM stack overflow: confirm the initiating caller of recursive
-  lib_C.end; Untitled_1.CustomEvent's borders guard remains a candidate.
-  Evidence: build/requested-events-native/crash-analysis-20261024.md.
-
-Supplemental fixture failures remain failures, not game defects or passes:
-run_2124 (four/32 seats), run_2126/run_2129 (generated-control includes),
-run_2127 (gravity linkage), run_2128 (lightswitch internals), run_2129_audit
-(save callback signatures), run_2131 (Registry API), run_2132 (source assertion),
-run_2134 (lift API), run_2135 (drone dependencies), run_2136 (pump assertion),
-run_2137 (cancellation anchor), run_2138/run_2175 (hand dependencies).
-Historical inventory: build/audit-supplemental-final/results.json and runner logs;
-newer qualification sections supersede older results where explicitly recorded.
-The fork review separately exposed run_2126's obsolete ServicePanel fixture.
-Last WORK prose counters: documents 85/82, src.comment_doc_row 155/0,
-src.files_not_swept 84/0; fact rows passed 565 rows / 181 files. These are retained
-historical findings, not gates rerun by this documentation edit.
-# Release 0.9.2163 qualified offline (28 October 2026)
-
-Owner requests a 2163 release build. Cleanup preview and execution completed
-before the public-version bump: 735 targets / 1120 generated files / 817.8 MiB,
-preserving the 2162 archive, active DLL/build, dependencies and unique evidence.
-The existing cleanup-inventory.json contains retained hashes and exact targets.
-Protocol remains 2217; the public package/menu label moves to 0.9.2163.
-PASS package/build_current.ps1, without result reuse: 124/124 current validation
-groups, fresh Release/ABI checks, unchanged production/release inputs, production
-menu/browser formatter showing Watchers of the Void 0.9.2163, and a 32-member
-manager archive with matching manifest, loader marker, branding/models and DLL.
-Rejection controls refuse failed/incomplete/focused suites, stale UI labels and
-mismatched DLL bytes; the finished archive/report are restored and reverified.
-
-Archive: dist/ElvardFIC-WatchersOfTheVoid-0.9.2163.zip.
-DLL SHA-256: 5d1e5de9db22a3a3bcc3f82d3c3854a8bfdebe768ee96f827a5204f6c3078a8e.
-Checksums: dist/SHA256SUMS-current.txt.
-Qualification: build/qualification-current/verification.json (FullRegression=true).
-Archive evidence: build/package-current/verification.json.
-TwoPlayerGameplayVerified=false; archiveStartupVerified=false. This is the last
-qualified offline package; no installation, publication, commit or push occurred.
-
-# Fork adaptations (28 October 2026)
-
-Public inventory refreshed: 3 direct forks, 44 returned upstream forks, 46
-other repositories after deduplication and 45 reachable default heads. Evidence
-and pinned hashes are in build/fork-review-20261028. Native evidence confirms
-generator_C exports all eight watched verbs; arirSlapper_C inherits
-npc_arirFollower_C and slapperSummoner_C calls the deferred actor spawn with
-that exact output class. The latter has a source-specific output filter.
-
-PASS run_fork_review: actual power-grid registration/live/settled calls reject
-any wrong class owner; host local/remote-body contacts use bounded/deduplicated
-prop coasting and retain static/frozen/held/hand/dead/world/serial/role guards.
-Laptop and shared-screen production controllers release a persistently refused
-inheritance only after three readable-UI failures for the same lease. Loading
-widgets and observers retain the seed, lease changes reset the counter, and
-readiness-read callbacks retiring the world cannot publish old state. Existing
-chunks, holder/sender checks, failed sends, final-release, reentry, teardown and
-native wrapper checks also pass. Native entity routing evidence passes.
-
-PASS check_current with run_fork_review, run_entity_sync,
-entity_sync_native_test, run_balance, run_game_modes, run_profile_join,
-run_wisp_animation and reliablekind_gate: 8/8 groups, fresh Release and stable
-production inputs. Evidence:
-build/fork-review-20261028/qualification/verification.json. DLL SHA-256:
-fa11814754e34dd72615352f443bf97c36a778094622812103eb06b20a259e78.
-FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false.
-All six public direct-fork branches were resolved; their additional heads add
-no commits beyond the already reviewed default heads/local history.
-
-The historical full run_2126 runner also ran its normal power/native checks,
-but its generated mutation harness first missed the existing tests include
-directory; a temporary include-path retry exposed a separate obsolete
-ServicePanel ack-capacity fixture. Those unrelated mutation cases are not
-reported as passing. run_fork_review directly executes the current power
-fixture plus the affected current suites; no production guard or assertion
-was weakened to make it pass.
-
-- [ ] Two-peer transformer repair, switches and door remain host-authoritative.
-- [ ] Host/player puppet body collisions move one shared prop, including late
-  observers; no double stream when the item is held or handed off.
-- [ ] Opening the ariral chest produces one visible follower on every peer.
-  Its attacks, carried/stolen item and audio/effects remain separate backlog.
-- [ ] Hand over the laptop with different-length dynamic lists/carts, repeated
-  refused inherited applies and slow-loading widgets; verify input, exit and
-  world/disconnect recovery on both peers.
-
-# Requested third-party mod compatibility (28 October 2026)
-
-Static audit completed for eleven downloaded, SHA-256-recorded Thunderstore
-archives. Exact versions and findings are in the retained archive manifests and inspection.json files. Local read-only inspection
-found only the base game PAK at the installed Paks root; no r2modmanPlus-local
-profile was found at the checked standard AppData path. This does not exclude
-a portable manager/profile elsewhere. No two-player run or install was made.
-Owner then confirmed the requested mods are not installed. The archive findings
-are a pre-install audit; no active duplicate Multivoid installation is alleged.
-PASS audit_requested_mods.py --offline: all eleven archive manifests match
-their resolved/pinned package names and versions; reports retain
-runtime_verified=false and reproduce the three concrete dependency/AV/network
-findings. Empty findings on another package means no automated finding, not
-a compatibility verdict.
-
-Confirmed blockers: EmoteWheel 1.0.1 has empty net.broadcast/net.poll functions;
-VEmu 1.1.0 explicitly excludes SmartTV AV output. Female Skin's original
-Multivoid dependency needs profile resolution inspection. Fusion's older target
-description is a compatibility risk to check, not proof of a failure on 0.9.0n.
-Extracted Jeep_C parent is ATV_C; female mesh export/native skeleton and texture
-paths match the existing loader. Other cooked assets using unsupported
-compression were not silently treated as decoded/verified.
-
-The requested mod set remains UNQUALIFIED. Required acceptance on matching
-host/client profiles (including a late join and reconnect for each):
-
-- [ ] EmoteWheel 1.0.1: see/hear another player's selected variant/start/loop/stop;
-  interrupt on movement/death/ragdoll/body replacement and retain held items.
-- [ ] Fusion 0.8108.3: verify one current merged table output on both peers,
-  all six dependants' rows/classes, no stale patch, and launch paths with spaces.
-- [ ] VEmu 1.1.0: share physical props/attachments, cartridge changes and control
-  ownership, then establish intended emulator frame/audio/state behavior.
-- [ ] Female Skin 1.0.0: verify one active multiplayer DLL, lowpoly_girl on both
-  peers, reconnect, material/animation/ragdoll and stock fallback if asset absent.
-- [ ] JeepMod 0.11.1: drive/seat handoff, keys/trunk, same container contents,
-  upgrades/decals/fuel/damage and save/rejoin without duplicate vehicle/inventory.
-- [ ] FireTower 1.0.4: same tower/door placement and collision, remote open/close,
-  late join, save/load and no duplicate ModActor-spawned scenery.
-- [ ] PhotographyPlus 0.10.3: daily task/bestiary/photo submission, remote camera,
-  exactly one reward, personal progress, and save/rejoin without repeated rewards.
-- [ ] unreal_shimloader 1.1.7: managed VFS and manual loader lanes separately;
-  no duplicate multiplayer DLL, all expected PAKs and native modules loaded.
-- [ ] SmartTV 0.9.6: remote toggle/source/mode/play/pause/seek/late join; personal
-  devices/OBS remain local. VEmu AV requires an upstream or explicit adapter.
-- [ ] BuyableJetpacks 1.0.0: store row, single delivery, equip/fuel/flight/drop,
-  remote view and save/rejoin with the same remaining resource.
-- [ ] BuyableShovels 1.0.0: store row, single delivery, equip/dig/hit/drop,
-  shared outcomes and save/rejoin without duplicate effects.
-
-# Entity continuation: wisp lifetime (28 October 2026)
-
-PASS run_wisp_animation -FaultControls against actual controller/wrapper bodies:
-pending tears retain observed victim/wisp identities through metadata waits;
-replacement/recycling/death/world change and peer departure cancel old work.
-Mesh-tick refusal retries before montage playback. Queue reservation prevents
-native callback recursion and preserves newer requests after teardown.
-
-Native grab/release fixtures stop movement, attachment, visibility, detachment
-and flag writes when their lease retires; refused movement parameters cannot
-attach the pawn. In-progress capture cleanup, older-to-newer capture replacement,
-source-wisp disappearance/recycling, 100 ms backoff and full expiry retirement
-pass. Final release-time death/world changes and a newer grab inside the last
-vitals read cannot admit the consumed kill. Four deliberate guard removals
-fail at their intended assertions. All four production wisp units compile.
-
-PASS check_current: run_wisp_animation, run_entity_sync, entity_sync_native_test,
-player_reports_native_test, run_game_modes, run_profile_join and reliablekind_gate;
-fresh Release and source-stability checks pass. Evidence:
-build/entity-lifetime-20261028/verification.json. FullRegression=false;
-TwoPlayerGameplayVerified=false, Packaged=false. Existing Grayboar/Kavotia,
-spawn-source/orientation, mode/icon and profile contracts remain passing.
-Requalified after EN9-EN12 host/spatial/relay changes: the same seven groups
-and fresh Release pass with stable production sources; DLL SHA-256
-1e4cce4e2ad08aaf35a90a394a7622a12b7e6610e3fa0b8cedd11ed1d0d30d13.
-These checks do not load or qualify the eleven third-party mods.
-
-- [ ] Verify capture/tear/kill and early source destruction with two real peers.
-- [ ] Verify disconnect, dead/replaced body, respawn, world change and mesh/
-  AnimInstance readiness during the grab window; check movement/camera recovery.
-- [ ] Verify that the host's committed kill remains the existing fallback when
-  a client cannot materialize its wisp mirror.
-
-Host production drain/relay fixtures additionally cover original source/victim
-serials, world retirement, finite spatial queries, admitted send/ready-owner
-requirements, peer generation changes, reentrant successor work and committed
-send-time deadlines. Host callbacks cannot destroy a newly recycled source or
-extend the deadline while a local tear waits for playback.
-
-Only EN1-EN12 in WORK are implemented here. The remaining Entity categories and
-exact unknown mappings are still implementation backlog; these offline tests
-do not establish their behavior or rendered multiplayer parity.
-
-# Tutorial join correction (28 October 2026)
-
-Owner follow-up: white circles affect all inventory item icons; the joining
-Tutorial client crashes after character appearance.
-
-PASS run_game_modes including run_item_icons: actual production cache helper
-and extracted PrepareForWorld/refresh bodies reject empty `.vimg` files and
-null texture arrays, preserve nonempty/unrelated/nested files, retain engine
-array allocation/capacity and retry an open concurrent writer. Tutorial skips
-cleanup/refresh; callback owner/mode changes refuse stale work. Matching counts
-alone cannot publish null textures as ready. Failed/incomplete refreshes retry,
-successful refreshes settle, and stale renderer callbacks cannot latch a new
-world. Both save/fresh boot wiring and cooked count-only cache admission pass.
-
-Read-only local observation: 2471/2471 item `.vimg` files have size zero. The
-installed cache was not changed during this task; the corrected DLL repairs
-it on a subsequent mod-driven non-Tutorial load. No installation is claimed.
-Fresh Release build passes with cache admission and refresh changes.
-
-PASS run_profile_join -FaultControls: actual production callback retains native
-Tutorial placement with missing/valid profiles, across repeated pawn placement
-consumption and a newer Tutorial request arriving inside an older callback.
-Story/Infinite/Custom/Sandbox/Halloween/Ambient/Solar and invalid-mode fallback
-keep their existing placement. Seven existing injected lifetime/revision/send
-controls fail at their intended assertions. Production controller compilation
-passes. Release DLL build passes, including changed world_boot and net_pump.
-PASS run_game_modes: existing mode/save/native contracts plus host-mode request
-wiring on both join paths and absence of a Tutorial appearance teleport.
-
-Read-only inspection of the 28 October local crash contexts found
-EXCEPTION_STACK_OVERFLOW in crashes B7D06444... (09:25:55) and E90A44A5...
-(09:26:33). The latter has 11,939 chained FFrames, 11,937 on one node; evidence:
-build/tutorial-crash-20261028.txt. Consistent with lib.end recursion, not proof
-of the exact triggering guard or a successful post-fix session.
-
-- [ ] Join a newly created Tutorial with two real peers, with and without a
-  returning profile; check native placement and absence of fatal errors.
-- [ ] Repeat Tutorial pawn appearance, then quit/rejoin a normal campaign;
-  verify ordinary profile/KPP placement still works.
-- [ ] With the updated DLL, open inventory in each supported non-Tutorial mode;
-  verify item textures regenerate and remain correct after Tutorial -> campaign.
-- [ ] Verify Tutorial retains its native icon presentation; check quick slots
-  after delayed texture publication and after a failed refresh.
-
-# Event routes and generators (28 October 2026)
-
-EV1-EV5 in WORK implement scoped corrections within the three selected Events
-entries; they do not complete all categories, tree/server effects or map routes.
-
-PASS run_event_slots -CompileSources -FaultControls against the actual production
-slot channel. Cover protected-row consumption with refused/partial writes,
-refresh debt after fields match, empty/equal states, eight-slot rotating drains,
-new canonical arrival inside reads/writes, nested-drain refusal, scope teardown,
-world/serial/actor replacement, chunk admission on a new world, laptop occupancy
-generation and suppression of stale local claims. Per-device host sequencing
-rejects older and duplicate completed blobs before/after application, preserves
-other devices' independent sequences and handles wrap through zero. Six injected
-controls (sequence, retry, presentation debt, revision, claim and reentry) reach
-their intended assertions. Evidence: build/event-slot-check/final.log.
-
-PASS run_2165 -CompileSources: actual calendar hold/restore retains the exact
-class/field/array/session/world, including a worldless save object. Stale class,
-field relocation, resolver reentry, object recycling, session replacement and
-old-world restore cases refuse. Existing client load-window suppression, host
-native schedules, and native initialization/solo recovery remain intact.
-
-PASS expanded event_rate fixture: bp7 ten-second baseline scales on host and
-client; settings edits and native re-arms do not compound. NewBlueprint7's own
-effect cadence is unchanged. A nested newer native re-arm wins over the older
-read and restores its own baseline on teardown. The fresh cooked contract
-confirms mode/camera/navigation/distance gates, full signed-int roll, NewVar_6
-initialization, chase, native delay and personal pause/quit branches.
-
-PASS final check_current against stable production source: all 12 selected
-registered groups, including the nested event-slot fixture, and fresh Release
-b2217 / 854 production entries. BuildUpToDate=true; FullRegression=false (the
-complete 123-group suite was not repeated for this change). PASS separate ABI
-gate and injected violating-PE control. Evidence:
-build/events-final-20261028/verification.json and abi.log. DLL SHA256:
-d50d1e400412ee8dcd5d4238ff072613b2ce891fc5899549e102157313ebe309.
-Production snapshot SHA256:
-754e427b0d38c514734387357d041dffe3dd3d1e033275bf7e3f8562014e494d.
-The earlier focused run in build/events-20261028 predates EV5 and is superseded.
-No live
-game/peer run or package archive is claimed; tree visibility/motion/lifetime,
-protected-server sound/delegate/per-recipient delivery, the other category
-adapters and level-script routes remain open implementation.
-
-# Requested backlog continuation (28 October 2026)
-
-Implemented C1-C6 named in WORK. PASS run_watoy with CompileSources and
-FaultControls: exact native parameter lists/sizes/spans, overlap/duplicates/extra
-inputs, BP locals on parameterless activation, function serial/dispatch changes,
-stale completion/candidate cleanup, capture identity before client requests and
-after callbacks, pre-dispatch retry and consumption of uncertain activation.
-New schema/function/uncertain-activation removal controls reach assertions.
-Existing 32-peer eight-presentation/64-send and lifetime controls still pass.
-Evidence: build/watoy-check/continuation-final.log.
-
-PASS run_2157 with CompileSources and FaultControls: held-toy capture rejects
-duplicate/overlapping/mismatched spans and missing/input-output flags; existing
-ownership, fair work limits and removal controls remain effective. Evidence:
-build/hand-toy-continuation.log.
-
-PASS run_2145 with FaultControls, run_flashlight_join and run_flashlight_native:
-same-component remote-light drift (visibility, intensity, cones, NaN/read refusal),
-stable-state dedupe, off correction, setter refusal/retry, newer-payload and
-departure during read. Existing exact native frames, reader metadata, join and
-sender ownership regressions pass. These are offline fixtures; the reported
-rendered remote-light failure is not closed.
-
-PASS run_stow_2157: production class restoration helper handles 4096 indexed
-misses with the array-walk double forbidden, null names, late class readiness and
-an explicit resolver. PASS run_save_record with CompileSources/FaultControls:
-incomplete merged encoding does not reach loadData; the same pending input can
-retry, and prior retirement/ownership controls still fail when removed.
-
-Full-suite initial run found an obsolete inventory class-index double returning
-the container class for every unknown name. Updated its named item lookup while
-preserving class-unready refusal. PASS run_inventory_apply with FaultControls
-after correction. The extra stale-derived-state control also exposed a missing
-fixture case: invalidate the world while resolving recalculateNames, before the
-first dispatch. Added that case; the mutation is now rejected without changing
-production derivation behavior. Evidence:
-build/inventory-apply-check/continuation-final.log. Initial failure remains in
-build/requested-backlog-20261028/logs/run_inventory_apply.log.
-
-The initial complete run executed 123 registered groups: 119 passed; inventory
-had the double mismatch above, and nonentity/cooking/grill-hand scalar fixtures
-needed the newly referenced class-index boundary linked. Added refusing doubles
-to the scalar fixtures; these paths do not perform class restoration. The four
-affected groups then pass through check_current's focused rerun and Release
-verification against the same production snapshot/DLL. Original failed results
-remain unchanged. Final coverage is 123/123 across the complete run plus focused
-reruns, not a claim that the initial gate passed. Consolidated evidence:
-build/requested-backlog-20261028/final-validation.json; focused evidence:
-build/requested-backlog-rerun-20261028/verification.json.
-
-PASS fresh Release b2217, 854 source entries, BuildUpToDate=true, import/export
-identity checks and separate abi_gate with injected violating-PE control.
-DLL SHA256: 9d10a0aafaed4a2bc75a6f948c6833060842dba3a0c69e90ac7bd1ffc7dde185.
-Production snapshot SHA256:
-c9e36b73037c28346ede54fe708ba6e6db65ab63ad66ef75277e3ab4a44b0309.
-No rendered host/client run, package archive, installation or publication is
-part of these results. Event/resource/foam/model and remaining native schemas
-remain implementation backlog; this is not completion of all requested systems.
-
-# Fork license attribution (27 October 2026)
-
-PASS L1: compare LICENSE against git HEAD; removing only the new scoped
-ElvardFIC copyright line reproduces the previous MIT license exactly.
-GitHub main update 52469cb49e6e1f9d2a9645949f21af932fb7e924 changes LICENSE only.
-Readback matches expected blob 44242446a3cbe12ba825173ac51241c07272ca68.
-No production code, dependency license, model-asset notice or package changed.
-
-# 0.9.2162 delivery — fresh offline qualification (27 October 2026)
-
-Owner requested build 2162 and continuation. Final package:
-dist/ElvardFIC-WatchersOfTheVoid-0.9.2162.zip, 15,389,755 bytes, 32 members.
-Game target 0.9.0n; internal DLL/network identity remains b2217 / protocol 2217.
-
-PASS package/build_current.ps1 with no qualification reuse: all 123 registered
-groups, fresh Release, unchanged source snapshot, DLL identity/import/export
-checks, production 0.9.2162 menu label, ZIP layout/models/branding/manifest and
-qualified DLL. Package rejection controls refuse incomplete/failed suites,
-stale UI labels and mismatched DLL bytes. FullRegression=true and
-BuildUpToDate=true. Final evidence: build/qualification-current/verification.json,
-source-before.json and build/package-current/verification.json.
-
-DLL SHA256: 0f393882a8848517e7c8e98bb625166b432baf91c1172584322e03072ac65bd2.
-ZIP SHA256: d9e9fc91448b71a6f1a40a6ffdb0f4536c0b33d594d68d508d52aa0949c569e4.
-Production snapshot SHA256:
-3d6e69d43221ea46c44ced9e5a92bc9390249cea29270808e4a4c14fbd3ce173.
-
-PASS focused checks for P1-P10 in WORK: production flashlight reader extraction
-uses relocated fields/packed flags and preserves unresolved outputs; controller
-covers crank light, on/off pawn replacement, retry and departure. Held-toy capture
-rejects wrong dispatch/input spans and foreign users. Watoy copied/independent
-View cleanup and original hand/occupant/connection retirement pass. Real 32-seat
-fixtures cover eight native presentations per drain, 64 state send attempts,
-fair refused state retries and ready activation behind eight missing actors.
-Window tests cover native first-dab material/size, both held/thrown draw sites,
-ownership changes during scalar reads and refusal-preserving FIFO. Existing
-held-toy/watoy/window fault controls reached their intended assertions.
-Supplemental run_2164 also passes. Native binary symbol evidence confirms the
-ragdoll blending setter/parameter exists in the installed executable; the native
-fixture checks explicit blend/tick setup before readiness.
-
-An initial complete qualification was superseded by P10. The final source above
-was given another complete fresh run; the initial record is retained under
-build/priority-regressions/2162-initial-qualification.json.
-
-Current-package manager startup and rendered host/client gameplay were not run.
-The owner's flashlight/T-pose reports are not closed by these offline results.
-Complete event routes, remaining native watoy schemas and broader thrown-sponge
-foam/resource ownership remain open in TODO. No game installation or publication.
-
-# 2162 hosting game-mode selection (27 October 2026)
-
-Owner explicitly requests Tutorial, Story Mode, Infinite Mode, Ambience Mode,
-Sandbox Mode and Solar Mode. Implement named G1-G3, then remove the completed
-implementation entries from TODO; validation remains in this document and WORK.
-
-PASS run_game_modes: actual new-save map and mode-application helpers plus the
-shared six-choice UI model, with native/reflection boundaries doubled. Check
-ordinals 2/0/1/6/4/7, default Story, invalid hidden/unknown selection refusal,
-per-mode mainMap, write/readback retry, existing-save mode ownership and retired
-save/class identity around FName construction. Source wiring covers both menus,
-session recap, captured new-game boot mode, Tutorial map travel/world recognition
-and the existing client mode-transfer byte. Cooked primary assets confirm the
-mode ordinals, tutorial3 first-level call, native mainMap creation and prefixes.
-
-PASS expanded run_host_players: actual hosting controllers for all six modes,
-all 31 player limits, new/existing slots, direct/brokered, listed/hidden and master
-failure branches. Invalid new-game mode refuses before queue/announcement. Its
-local server library suite also passes 118 tests. PASS run_upstream_integration,
-run_save_record, sync_native_contract and reliablekind_gate. These six registered
-groups pass in build/game-mode-feature-final/verification.json, with stable
-production source and Release b2217 / 854 production C++ entries.
-FullRegression=false: this is a focused feature qualification, not all 123 groups.
-
-PASS separate run_2164 sky regression (build/game-modes-check/sky.log),
-l10n_pot --check (443 entries) and abi_gate with its injected rejection control
-(build/game-modes-check/abi.log). Fresh DLL SHA256:
-efadfe9a41ff076c77378e2acba8f2e4e6c7161fa097dc900830e901e8d2c7c6.
-
-An earlier attempted focused run named the unregistered run_2164 group and
-stopped before building; its partial evidence remains in build/game-mode-feature.
-The final registered run completed successfully, and run_2164 was executed
-separately. No ignored failure is counted as a passing group.
-
-Native and fallback hosting select the same mode, settings show the captured
-choice, existing saves retain their own mode, and native widget pointers retire
-with the menu. Tutorial and its chapter worlds count as gameplay; new Tutorial
-starts at /Game/maps/tutorial3. Sandbox uses the main map. No additional Sandbox
-map picker, wire format change, protocol/public-version bump, archive, install,
-commit or publication. Rendered menus and real-peer gameplay for these modes
-remain unperformed acceptance; no fix to the prior flashlight/T-pose reports is
-claimed by this feature.
-
-# 2162 native flashlight audit repairs (27 October 2026)
-
-Owner removes all validation/acceptance tasks from TODO while the requested
-75-task work is ongoing. Replace the superseded B01-B75 selection with an
-implementation-only backlog: 38 entries before these three repairs, 35 remaining.
-Keep validation here/in WORK; do not claim 75 tasks completed.
-
-Implemented A10: refuse each native light setter when ParamFrame writes fail.
-Implemented A11: apply ItemActivate inside the existing admitted game-thread
-inbox drain, removing the extra task that could survive session/occupant turnover.
-Implemented A12: reject resolved Player id/sender-slot mismatch and malformed
-null/length/slot boundaries before reading or applying ItemActivate.
-
-PASS new run_flashlight_native: extracted actual setter/dispatcher bodies, real
-ParamFrame/call.cpp, reflection/native/registry boundaries doubled. Exact setter
-bytes, missing/overflowing fields, negative/zero frames, dead/null targets and
-native refusal; immediate apply/no posted work, correct host/relayed origins,
-Player spoofing, self echo, invalid slots/lengths and pre-pose retention.
-PASS related run_flashlight_join, run_flashlight_click, run_2145 and
-reliablekind_gate. PASS check_current's focused five-group run, stable production
-source and Release/loader import/export verification. Evidence:
-build/flashlight-audit-fixes/verification.json (FullRegression=false), logs/,
-build.log. Register the new native group for future full qualification.
-DLL SHA256: 35924fa834fb0e5af38e153dc36aa62c13fe22fdcf3393497f30972314aea056.
-
-No full 122-group rerun, archive, game install, publication or version/protocol
-change. Remote-light visibility and the reported T-pose remain unclosed gameplay
-defects; these three code repairs do not prove their original cause fixed.
-
-# 2162 offline audit (27 October 2026)
-
-Owner reports: flashlight visible only locally on every peer; falling produces a
-T-pose on all players. These reports remain OPEN: no rendered host/client
-reproduction or verified gameplay repair was performed.
-
-Baseline build/audit-current: run_sat_console_callbacks and run_flashlight_join
-fail to compile. Review b9a087de9's entire delta: it adds duplicate SAT-console
-blocks (60 lines) and duplicate flashlight fixture definitions (one line).
-Remove exactly those additions. Compare pre-merge contents: identical. The only
-remaining difference from that TU's last-qualified file hash is LF/CRLF.
-
-PASS package/check_current.ps1 -EvidenceDirectory build/audit-current-fixed:
-121/121 registered groups, stable production source SHA256
-caeeb4982b06fcfd1205ee9fc50f800791042e820761a16fd128af92c4d5c200,
-Release b2217, 854 production entries, loader exports and static runtime imports.
-PASS abi_gate.py main.dll --drill (including the injected rejection control).
-PASS verify_package_label.py: production formatter still 0.9.2161.
-DLL SHA256: 03fe830ac55f758c65b8554e9840ae9c6113b19590f66567157d06983a3b8062.
-
-PASS 132 server tests via portable Rust/MSVC, cargo test --locked --offline
---manifest-path server/Cargo.toml (118 library + 6 identity + 7 lobby + 1 cost).
-PASS master-contact, workflow-expression, reliable-kind, fact-row, data-path,
-plural-vector, peer-connection, registry, GC-pin, MinHook, atlas and captured
-fingerprint checks. Initial l10n_pot check FAIL: stale template/pseudolocale.
-Regenerate from current call sites; recheck PASS (443 entries).
-
-Run all 37 scripts absent from the main runner's direct list as well. Initial
-supplemental result: 18 pass / 19 fail. Repair legacy toolchain, Python and
-research paths and run with the portable build environment: final 23 pass /
-14 fail. Per-runner causes are retained in the tracking-cleanup entry above and
-build/audit-supplemental-final/results.json; preserve failures without weakening
-assertions. Some supplemental scripts are already transitively covered by the
-main suite, so these counts are script runs, not independent unique test groups.
-
-Inventory: 140 regression scripts, all 1089 production/development source units
-listed and present, no unlisted .cpp. Compare all 2142 last-qualified snapshot
-inputs: exact matches except the repaired SAT-console's line endings.
-Evidence: build/audit-gates/inventory.json, abi.log, package-label.log,
-server-tests.log, results.json and logs. The original results.json retains the
-initial failing l10n gate; the regenerated template subsequently passed.
-
-Static review also finds unchecked native flashlight frame setters, unbound
-deferred ItemActivate delivery and missing payload-EID versus sender-slot
-validation. These are OPEN code findings, not verified fixes for the owner's
-constant missing-light report. Ragdoll configuration resets to reference pose
-before physics takeover; rendered transfer remains OPEN. TODO A8–A13 track the
-remaining work. No new archive, install, commit, push or publication.
-
-# 2161 package preparation (27 October 2026)
-
-Owner explicitly requested the 2161 build. PASS package/build_current.ps1:
-complete fresh offline suite **121/121 groups**, Release/ABI with 854 source entries,
-all 2142 source-snapshot inputs, source stability and the production 0.9.2161 label.
-Public/internal/protocol identities remain 0.9.2161 / b2217 / 2217.
-
-First full run: 120/121 passed; run_upstream_integration had a stale assertion for
-15 protocol additions. Replace it with the exact 16 name/ID mapping, including
-already-implemented LlamaState 253, while retaining all 226 published 2214 values.
-The corrected test passes and the entire fresh 121-group suite was rerun before
-packaging. No production code or DLL changed during this test maintenance.
-Audit: build/package-current/full-suite-retry.json.
-
-PASS manager archive validation: **32 members**, manifest/dependency/loader layout,
-activation marker, 256x256 icon, bundled models, current docs and byte-identical
-qualified DLL. PASS all five rejection controls: failed group, stale label,
-wrong DLL, incomplete suite and focused-only suite. The qualification file is
-restored after controls and the finished archive passes VerifyOnly again.
-
-Archive: dist/ElvardFIC-WatchersOfTheVoid-0.9.2161.zip, **15,384,506 bytes**.
-ZIP SHA256:
-`8e176d4970adb1056d6c3b7f09758eb8a26ab3b05f3677d7fd2b4d38835d0d0f`.
-DLL SHA256:
-`67f3e3c4d5a22a23b628aebcc277c7b9d005ad66fbbc35306a0f2b88773fb9a4`.
-Production snapshot SHA256 remains:
-`cec5a938df70e3246765de9d9b235114bf3cb8a273613b14bdb6927ce3128413`.
-Checksums: dist/SHA256SUMS-current.txt. Build evidence:
-build/qualification-current/verification.json and source-before.json. Archive
-evidence: build/package-current/verification.json and rejection-controls.json.
-
-FullRegression=true, fullOfflineGroupCount=121, offlineTestPackage=true.
-archiveStartupVerified=false, nativeGameplayVerified=false,
-TwoPlayerGameplayVerified=false. This is a packaged offline test build; existing
-rendered multiplayer, event/save/physics and other TODO acceptance remain open.
-No game launch/installation, version bump, commit, push or publication.
-
-# Earlier 2161 TODO Console/events — 75 llama marker/event/Begin fixes (27 October 2026)
-
-Keep public 0.9.2161 / b2217 / protocol 2217. All 75 new implementation items are
-listed individually in TODO. Extend existing PlacedSave instead of adding a
-parallel marker wire or new reliable kind. Canonical client visuals now remain
-separate from native h/event ownership; recover suppressed Begin initialization
-through the isolated native timer entry. Whole gameplay acceptance remains open.
-
-PASS run_llama_marker: 25 numbered groups, including 19 actual marker wrapper/
-record/real-ParamFrame cases and six actual existing PlacedSave/chunk/wire cases.
-Engine, save codec and native key-registry boundaries are doubled. Verify exact
-llamaSoul/actor_save ancestry, source/class/world/slot ownership, full native keys,
-native getKey generation/registration, occupied-key refusal, getData/loadData
-function/record spans, strict empty extra groups, finite quaternion/position/scale,
-failed output preservation, callback retirement, exact output class and returned
-actor, explicit transform application/readback, native key readback and keyed
-saved-body adoption. Reject client marker Create/Remove/resource verbs while
-keeping host publication/refresh, late census and native actor preservation at
-disconnect/rejoin. Cleanup owns only failed bodies created by the wrapper.
-Four marker/PlacedSave production TUs compile. PASS old garden/2163 regression
-fixtures after adding narrow marker boundary doubles; previous families remain.
-
-PASS run_llama_events: 25 numbered actual native-wrapper/controller/ParamFrame
-cases. Verify canonical Apply leaves native h unchanged while retaining light/
-audio, client-only census and Prepare gating before presentation, current GM/
-class/world/source identity, typed counter/array/bool fields, bounded sender
-storage, multiplicity and count consistency, unchanged unrelated order/storage,
-matching-contribution subtraction and masked h clear. Revalidate the complete
-snapshot after the last callback; the final ledger commit has no native/reflection
-callbacks. Refuse unavailable metadata without partial mutation and retry; never
-debit an absent sender or replay lib.setEvent to compensate. Weak exact-source
-guards retain their own script-gate hold after same-world disconnect, cancel a
-measured false call only when absence is confirmed, allow new true/registered
-false calls, and retire after source/world replacement. The lane-owned event
-snapshot list now includes prop_llama_C. Four relevant production TUs compile;
-the existing native llama fixture adopts the new presentation/native-h contract.
-
-PASS run_llama_begin_restore: 25 numbered actual native-wrapper/controller/
-ParamFrame cases. Capture original-true Begin, zero timer/typed TimerHandle,
-current source/Sphere/class/world and actual byte collision. Reserve invocation
-ownership before queries, commit only admitted initialization, cancel refused
-PRE and confirm only exact POST. Preserve the oldest Sphere baseline; wait for
-active stacks and defer restoration while any live client authority remains.
-Restore only the observed disabled collision, respect external nonzero changes
-and replacement timers, and invoke graph108 once without base1146. Native h must
-be false and yumpskare true before rearm. Read back the actual handle/activity;
-consume uncertain creation without replay. Bound records, retry safe preparation
-refusals and retire source/world replacement. A host-admitted jump explicitly
-consumes delayed Begin recovery, including source-matched in-flight cancellation.
-Both new production TUs compile separately.
-
-Root integration checks refused Prepare restores the parked flag without base
-init, event-accounting refusal retains canonical state for retry, current role
-installation around native callbacks, exact PRE/POST/cancel association and host
-jump consumption. PASS all 75 new `PASS llama lifecycle N` IDs exactly once and
-the previous 175 numbered llama groups. Engine/registry/transport/clock boundaries
-remain doubled; the production wrappers/controllers and ParamFrame are real.
-
-PASS expanded cooked llama contract: isolated108 delegate/timer/store/pop-flow,
-no base/effect replay, marker actor_save inheritance, native getData shape,
-key-only loadData/getKey/skipSave, int_save save enumeration and additive native
-setEvent counter/sender operations. Contracts consume seven current cooked asset
-pairs. Reliablekind gate still passes 242 kinds and all 18 rejection controls.
-
-PASS current qualification: **50 selected groups**, Release/ABI with **854 source
-entries**, and production menu/browser label Watchers of the Void 0.9.2161.
-All runner exit codes are zero. Evidence: build/qualification-current/
-verification.json, source-before.json and llama-lifecycle-verification.json.
-Current DLL SHA256:
-`67f3e3c4d5a22a23b628aebcc277c7b9d005ad66fbbc35306a0f2b88773fb9a4`.
-Production snapshot SHA256:
-`cec5a938df70e3246765de9d9b235114bf3cb8a273613b14bdb6927ce3128413`.
-The source-before snapshot contains 2142 inputs. Supplemental evidence records
-the numbered cases and current source/test/cooked input hashes.
-FullRegression=false, TwoPlayerGameplayVerified=false,
-LiveNativeSchemasVerified=false, EnemyAiVerified=false, Packaged=false.
-
-Open: rendered native marker save/reload/adoption, same-world teardown, event/
-audio/physics timing and rearm. No host activeEvents contribution is synthesized
-on clients. The absent-sender guard does not distinguish the causal age of an
-old/new latent continuation on the same actor; unknown metadata retains original
-native execution. Missing POST permits collision cleanup only; uncertain graph
-admission is consumed once and a new native timer starts its native 0.5-second
-interval. Collision-only cleanup may also await graph/KSL metadata; callback-side
-collision-only changes can outlive the initial captured value. Refused cleanup
-needs later Install/Tick and has no independent idle SP retry pump. Previously
-admitted native effects cannot be rolled back. Full regression/package and the
-wider Console/events category remain open. No game launch, archive, installation,
-version bump, commit, push or publication.
-
-# Earlier 2161 TODO Console/events — 75 llama timer/delivery/completion fixes (27 October 2026)
-
-Keep public 0.9.2161 / b2217 / protocol 2217. All 75 new implementation items are
-individually recorded in TODO. Continue the remaining llama follow-ups without
-a new network kind, package or release identity. Implementation remains separate
-from rendered two-player acceptance and the wider Console/events category.
-
-PASS run_llama_timers: 25 new numbered actual native-wrapper/controller/ParamFrame
-groups. Check pre-existing and late client timers, original paused-state refusal,
-current llama/world/hand eligibility, actor/class/field/inner-type/handle identity,
-existence/active/paused queries, exact nonoverlapping native parameter spans,
-pause without rearming or clearing, native phase preservation, post-pause
-confirmation, uncertain dispatch ownership and retained cleanup. Exercise nested
-acquisition/cleanup, bounded capacity, session/role/start/world replacement,
-source-only restoration, replacement/stopped handle refusal and immediate cleanup
-after a disconnect interrupts Pause. Inject current-predicate retirement before
-pause/resume/publication; recheck exact handles after callbacks. Temporary
-metadata unavailability retains ownership rather than becoming false retirement.
-The typed KSL CDO cache avoids repeated global object scans and refreshes after
-its class incarnation changes. Both new production TUs compile separately.
-
-PASS run_llama: its previous 27 groups and 25 new delivery/Begin groups. Preserve
-live cue and original timestamp through heartbeat, quiet recipient intent and
-delivered-pulse history, including nested same-pulse heartbeat during transport
-admission without acknowledging newer debt. Clamp same-pulse local expiry;
-consume quiet snapshots; keep sequence/heard tombstones after state expiry.
-Check rollback before receipt, saturated expiry and elapsed client polling,
-canonical tracker rebinding and callback-side canonical/announced ownership,
-recipient person/connection/readiness/debt rechecks immediately before send,
-rotating source/recipient scheduling and refused-send fanout limits. Restore
-temporary Begin flags after lost invocation/POST, teardown, canceled PRE,
-function-token retirement and native refusal. Nested owners retain the oldest
-baseline until every active stack finishes. Refuse new Begin admission at 128
-restore records; at most 32 existing captures can subsequently retire into debt.
-Integrate native timer Install/Tick/OnDisconnect and local jump motion queue;
-newer session installation survives callback-side teardown reentrancy.
-
-PASS run_llama_trigger: its previous 73 groups plus 25 launch/motion groups.
-Separate target admission from source-owned completion after timer consumption;
-target disconnect, movement or body replacement no longer strands that launch.
-Refuse retired sources, recheck source position after rotation and execute the
-native tail once after an uncertain velocity attempt while source ownership is
-valid. Tail ownership no longer depends on the old velocity-function binding.
-Queue remote and local motion, confirm Coast with IsDriven, retry late element
-enrollment every 100 ms with a 10-second local lifetime, bound pending rows, retire
-source/key/class/session/world debt, and yield to player hand/Kerfur ownership.
-Reserve before Coast callbacks and preserve newer requeued debt by revision.
-Unarmed/failed capture rows release capacity; only unspent idle records may be
-evicted under pressure. Both trigger production TUs compile independently.
-
-The three logs contain each new `PASS llama recovery N` ID 1..75 exactly once,
-along with the previous 100 llama groups. Native/engine/reflection/registry/
-transport/object-slot and clock boundaries are doubled; selectors, wrappers,
-controllers and ParamFrame are actual production code. Existing cooked llama,
-Rufus, chair, Madness, entity, console and synchronization contracts pass, as
-does reliablekind_gate with 242 kinds and all 18 rejection controls. No rendered
-schema/physics/audio/save/transport-pipeline proof is implied.
-
-PASS current qualification: **42 selected groups**, Release/ABI with **849 source
-entries**, and production menu/browser label Watchers of the Void 0.9.2161.
-All runner exit codes are zero. Evidence: build/qualification-current/
-verification.json, source-before.json and llama-recovery-verification.json.
-Current DLL SHA256:
-`2cf4a93765e8a6bb654adad8b5480de2b91b112860e8d55362066fc4586ba7b9`.
-Production snapshot SHA256:
-`189fe323d43c2f108bee3090d67a610bb22b9e7660fbe04b8760c5a1c649c601`.
-The source-before snapshot contains 2132 inputs; supplemental evidence records
-new numbered cases, current source/test and directly consumed cooked input hashes.
-FullRegression=false, TwoPlayerGameplayVerified=false,
-LiveNativeSchemasVerified=false, EnemyAiVerified=false, Packaged=false.
-
-Open acceptance: rendered same-world disconnect/rejoin and timer phase, heartbeat
-audio/quiet joins, physical motion after late enrollment and source-owned tail
-completion. Marker/save/event-count lifecycle and restoration of never-created
-Begin timers/Sphere collision remain separate gaps. An external second pause on
-the identical already-paused handle has no distinguishable causal token. Refused
-cleanup remains for later Install/Tick; idle single-player has no independent
-retry pump. Ordering/heard tombstones hold 256 keys and may evict oldest expired
-records; this is not a universal temporal key-incarnation solution. Already
-admitted native effects cannot be rolled back, and an uncertain one-shot impulse
-is not repeated. No game launch, archive, install, version bump, commit, push or
-publication. Full regression/package and the wider Console/events category remain open.
-
-# Earlier 2161 TODO Console/events — 75 remote-player llama trigger fixes (27 October 2026)
-
-Keep public 0.9.2161 / b2217 / protocol 2217. Owner now requests 75 concrete fixes
-per continuation; AGENTS, agent/README and TODO match. All 75 items are individually
-recorded in TODO. This continues remote-player selection in the existing llama
-subtask; no new wire kind or release identity.
-
-PASS run_llama_trigger: 39 actual native-wrapper/real-ParamFrame groups plus 34
-actual selector/lifetime groups at 32 slots. PASS run_llama: its 25 previous
-controller/native groups plus two new actual-state-controller integration groups.
-The combined logs contain every new trigger item ID 1 through 75 exactly once.
-Engine/reflection/registry/transport/object-slot and clock boundaries are doubled;
-the selectors and wrappers are actual production code, not a model of their logic.
-
-Exercise host/session/slot world and transport readiness, registered alive/posed
-non-ragdoll targets, exact overlap membership, unrelated Pawns/local slot, finite
-body/eye positions, 600 cm eye/body bound, nearest visible target and stable ties,
-unknown/blocked LOS, target movement/replacement, person/connection/body/class
-retirement and hand ownership. Confirm native camera-zero fallback is allowed
-only when the host's local body is actually in the overlap. Check typed current
-components/fields, eight-byte active timer, float radius, actual centers and Audio
-origin, simulation, native function identity and exact parameter spans. Preserve
-outputs after failed reads and free engine overlap arrays after success/refusal;
-validate shape and deduplicate without discarding players behind unrelated Pawns.
-
-Check native cross axes, rotator/velocity finiteness and degeneracy, multiplier
-three, vertical +100, rotation refusal, full preflight, moved source points,
-callback function retirement, timer/physics rechecks, captured handle clear and
-replacement protection, replacement velocity/None and tail 212. Check admitted
-uncertain clear/push completion, no repeated impulse, preparation retry/new timer,
-nested entry suppression, spent native delegates, source record cap/pruning,
-session/start/world retirement and 500 ms/rollback timing. Integration cases
-exercise existing LlamaState to once-only client effects, local jump coasting and
-source revalidation after the coast callback. Six llama-related production TUs
-compile in the two runners; full Release linking also passes.
-
-PASS expanded llama_native_contract_test against current cooked assets: native
-timer clear, cross-product axes/rotation, zero camera offset, velocity *3/+100,
-None/add=false, graph tail 212, SphereRadius overlap and Pawn query byte 2, plus
-the existing base/latent/light/audio/event/console/marker contracts. These cooked
-checks do not verify live native parameter schemas or rendered gameplay.
-PASS reliablekind_gate: 242 kinds, 214 family-routed, 21 event_feed cases, seven
-net-thread terminals, zero duplicate claims; all 18 rejection controls fired.
-
-PASS current qualification: **41 selected groups**, Release/ABI with **847 source
-entries** and the production menu/browser label Watchers of the Void 0.9.2161.
-All runner exit codes are zero. Evidence: build/qualification-current/
-verification.json, source-before.json and llama-trigger-verification.json.
-Current DLL SHA256:
-`4b699ceaf5d64082cc5acff7db8665ce50fc97042d2d79b65c999ed1d5d29613`.
-Production snapshot SHA256:
-`eafb0c480a8caf750a60dbf881b2752d78e6277d30b350eba1cea97acc20b1dc`.
-The source-before snapshot contains 2128 inputs. Supplemental evidence records
-the actual new item IDs, source/test hashes and eight directly consumed cooked
-input hashes. FullRegression=false, TwoPlayerGameplayVerified=false,
-LiveNativeSchemasVerified=false, EnemyAiVerified=false, Packaged=false.
-
-Rendered local/remote trigger choice, direction, physical coasting transport,
-audio/light timing, held props, join/reconnect and save/reload remain open. The
-existing prop lane still requires enrolled/expressed actors; the fixtures double
-its Coast boundary and do not prove full enrollment/transport/physics behavior.
-Marker/save/event-count lifecycle and restoration of pre-session timers remain
-open. Native effects already admitted cannot be rolled back: retirement or an
-uncertain result can leave partial effects, and that timer's one-shot is consumed.
-The wider Console/events category and full regression/package remain open. No
-game launch, archive, install, version bump, commit, push or publication.
-
-# Earlier 2161 TODO Console/events — llama jump/light/audio (26 October 2026)
-
-Keep public 0.9.2161 / b2217 / protocol 2217. Follow llama in the open Console/
-events category with the 25 named TODO/WORK items. Add LlamaState kind 253 within
-the current development format; require matching DLLs.
-
-PASS run_llama.ps1: 17 actual-controller groups at 32 peer capacity and eight
-actual-native-wrapper/real-ParamFrame groups cover all 25 numbered items. Exercise
-host state, client graph refusal, preserved base init/temporary flag restoration,
-key/hand/world eligibility, exact invocation/frame/params, nested PRE reservation,
-bounded rows, restart/running/role/link/host-connection retirement, independent
-world pointer/generation/readiness, nested newer reads and failed-read cleanup,
-malformed/unowned packets, recipient identity/connection/departure, slot 31/invalid
-32, world/lane retry, owned send bytes/same-person requeue, actor/component/world
-readiness, sequence/pulse wrap, same-pulse nested receipt and once-only cues.
-Check expired/quiet join/rollback debt, expiry during native preparation and
-per-recipient remaining lifetime after a stalled earlier send. Native cases cover
-EntryPoint spans/types, typed light/audio, h/yumpskare masks, callback retirement,
-visibility/Activate parameters and missing/replaced function bindings, failed
-output preservation, bounded/deduplicated collection, quiet light-only replay and
-admitted sound consumption after uncertain completion. Engine/reflection/transport/
-clock/object-slot boundaries are doubled. Four production TUs compile separately.
-
-PASS llama_native_contract_test against current assets: prop ancestry, native
-base BeginPlay and conditional timer, exact jump/check/destroy entries, local
-camera/physics path, Activate(false), h/light transitions, 3-second continuation,
-event bookkeeping, typed component templates and console/llamaSoul dependencies.
-Confirm explicit Audio.bAutoActivate=false and PointLight.bVisible=false defaults;
-fresh native components do not defeat a quiet join seed before the first state.
-PASS reliablekind_gate after the new route: 242 kinds, 214 family-routed, 21
-event_feed cases, seven net-thread terminal, no duplicate receiver claims.
-
-PASS current qualification: all 40 selected groups and Release/ABI with 845 source
-entries. Production menu/browser formatter remains Watchers of the Void 0.9.2161.
-Evidence: build/qualification-current/verification.json, source-before.json and
-llama-verification.json. Current runner output is logs/run_llama.log within that
-directory; final extra cooked-default checks are build/llama-native-contract-latest.log.
-Current DLL SHA256:
-`ccfecb8016c7ce24052e29658b5fc56f51454459be4fe29d1cb44d34981304f4`.
-Production snapshot SHA256:
-`0360a8ae0a30f561fcd294f0ea10f9f9d6c755388cd493b9276748af092b7d3a`.
-Refresh the 2124-entry source-before snapshot; record sixteen source/test hashes
-and six directly consumed cooked-asset hashes. fact_rows_gate also passes with
-565 rows in 181 files. FullRegression=false, TwoPlayerGameplayVerified=false,
-EnemyAiVerified=false, Packaged=false.
-Rendered host/client prop motion, sound/light, join/reconnect, hand and save/reload
-acceptance remain open. The marker/save/event-count lifecycle, remote-player trigger
-selection (native host camera/player zero remains) and restoration of pre-session
-timers are not completed here. Cue bounds are local send/receive/native
-admission bounds; they do not prove synchronized audio timing or maximum reliable
-transport delay. FullRegression=false, TwoPlayerGameplayVerified=false,
-EnemyAiVerified=false, Packaged=false. No game launch, archive, installation,
-version bump, commit or push.
-
-# Earlier 2161 TODO Console/events — Rufus/thiccfus birth/pose (26 October 2026)
-
-Keep public 0.9.2161 / b2217 / protocol 2217. The 25 named items in TODO/WORK
-cover the first unresolved Console/events family, scoped to birth/pose and mirror
-authority; gameplay/effects and rendered acceptance remain separate.
-
-PASS run_rufus.ps1: 25 numbered groups include the actual Rufus wrapper and actual
-core/call.cpp, private birth/lifetime helpers and extracted production deferred
-catch/drain/enroll/adoption bodies. Exercise first-load root/derived ancestry and
-plush exclusion; exact console source/outputs; slot/class reuse; session serial,
-generation/pointer/running/role changes; host-alone admission; duplicate debt;
-all nine non-finite pose/scale fields and world retirement during native reads;
-actual mesh yaw; marked BeginPlay/Tick/AI/latent/damage/child refusal; untouched
-unmarked behavior; unavailable registration/watch/mark/world; failed adoption;
-checked KeepRelative attachment, all seven malformed/missing parameters/returns,
-retired function/actor/mesh/arm/anim dependencies; native refusal/uncertain completion;
-typed pawn binding and AnimBP recovery; unchanged failed yaw reads; pitch/roll and
-rotation-write failure. Seven changed/new production TUs compile independently.
-Registry/transport/object slots/script-gate dispatch and engine boundaries are fake.
-
-PASS existing run_entity_sync, including actual NPC orientation and new stationary
-Rufus presentation retry, Grayboar/Kavotia/prop fixtures and fifteen production TUs.
-PASS rufus_native_contract_test against current assets: Character inheritance,
-console BeginDeferred(self) routes, exact native BeginPlay/Tick/Destroyed/damage
-stubs, unsafe AI/HUD/player movement/explosion/children, Mesh/SpringArm attachment
-and animation owner/velocity dependencies. Source checks also confirm guard
-preflight before BeginDeferred/Finish and adoption binding. These source-order
-checks do not run the full engine spawn/transport pipeline.
-PASS fact_rows_gate: 565 registered rows in 181 files. Rufus uses the existing
-class-scoped name-watch API, readiness checked before birth; no live census claim.
-
-PASS current combined qualification: 37 selected groups, Release/ABI with 843
-source entries, and production menu/browser formatter Watchers of the Void 0.9.2161.
-Evidence: build/qualification-current/verification.json, source-before.json and
-rufus-verification.json. Final runner output is logs/run_rufus.log in that evidence
-directory; combined output is build/qualification-current-latest.log.
-Current DLL SHA256:
-`df40742ddcde7ba231b95130725b2220c164409c300f5b134caf6102eaf5ebe9`.
-Production snapshot SHA256:
-`563eaafff7af527e1f755f601be90671e59404d51556d90daf71aa92deeabd40`.
-Refresh the 2120-entry source-before snapshot and record twenty source/test hashes
-and ten directly consumed cooked-asset hashes. FullRegression=false,
-TwoPlayerGameplayVerified=false, EnemyAiVerified=false, Packaged=false.
-Rendered multiplayer birth/pose/animation/yaw, join/rejoin/destruction, cross-player
-targeting/grab outcomes, sound/HUD/event state, corpse mesh/loot and damage/explosion
-feedback remain unverified/open. Marking cannot reverse earlier native effects.
-Native scale reads still use the helper's unit-scale fallback on a failed dispatch.
-EnemyAiVerified=false, FullRegression=false, TwoPlayerGameplayVerified=false,
-Packaged=false. No game launch, archive, installation, version bump, commit or push.
-
-# Earlier 2161 TODO Console/events — Maxwell native playback (26 October 2026)
-
-Keep public 0.9.2161 / internal b2217 / protocol 2217. Follow the open Maxwell
-phase/recovery subtask, with the 25 exact implementation items in TODO and WORK.
-
-PASS run_maxwell_native.ps1: 25 groups include the actual native wrapper and
-actual core/call.cpp. Fake typed object slots/classes/dispatch functions, native
-queries and callbacks cover bounded/null collection; pointer/generation/readiness
-retirement; indexed dedup; actor/audio class identity; component binding; packed
-isUsed layout; coherent state; invalid pitch and unchanged failed output; Sound/
-SoundWave identity; coherent duration/loop/rate; query function/return replacement;
-owned input and malformed state; volume/pitch/Play exact parameters and retired
-function preparation; seek clock changes; Stop/touch/ToggleActive preparation and
-completion; squeak admission; nested newer Playback state. Include positive retry,
-unchanged heartbeat and real ParamFrame metadata-cache incarnation behavior.
-The changed production TU also compiles independently. Existing run_toy_music
-phase/lifetime/controller/wrapper regression and four production TUs passed before
-the new suite; the combined current run below rechecks the final sources.
-
-An initial combined run refused qualification when final EOF/BOM formatting
-changed the production hash; rerun the aggregate against stable final sources.
-PASS final stable aggregate: all 33 selected groups, Release/ABI with 842 source
-entries, and production menu/browser formatter Watchers of the Void 0.9.2161.
-Evidence: build/qualification-current/verification.json, source-before.json and
-maxwell-native-verification.json. Current DLL SHA256:
-`3cae262f4d872e5fd2eeb12e393466930c052d5ea935f1918e3d15f12dbb45e3`.
-Production snapshot SHA256:
-`3a33d208a2049b3adc2895c03c13a1a13f4fa78851a1e609150737f12bde5954`.
-Refresh the 2116-entry source-before snapshot; record hashes for eight source/test
-inputs and 24 relevant cooked asset files. Final focused output, including the
-additional qwak/plush positive case, is build/maxwell-native-latest.log; combined
-output is build/qualification-current-latest.log and the qualification logs folder.
-FullRegression=false, TwoPlayerGameplayVerified=false, EnemyAiVerified=false,
-Packaged=false. The formatter required loading the local MSVC environment before
-its successful run; no game UI was rendered.
-The cooked sync-native contract already covers touch -> ToggleActive order,
-native isUsed/deactivation, plush Alt/qwak and five wave duration/loop overrides;
-recheck it against current local assets. These fixtures double engine/reflection/
-transport/clock boundaries. Rendered host/client music phase, sample-exact timing,
-live schemas, late joins, restarts and world reload remain unverified. Optional
-phase uses only a known looping SoundWave, preserving ordinary playback otherwise.
-Native effects already admitted cannot be rolled back. Rufus/thiccfus, llama,
-grunts/variant AI/damage/effects, the broader Console/events category, original
-garage acceptance, full regression and packaging remain open. No game launch,
-archive, install, version change, commit or push.
-
-# Earlier 2161 TODO Console/events — Madness recovery (26 October 2026)
-
-Follow Remaining implementation's first open category, specifically the named
-Madness playback-recovery subtask. Keep 0.9.2161 / internal b2217 / protocol 2217.
-The 25 implemented boundaries are listed at the top of TODO/current WORK; the
-broader Rufus/thiccfus/llama/grunts/variant-effects category remains open.
-
-PASS run_madness_recovery.ps1: twelve real-controller groups at 32-slot capacity
-and thirteen real-wrapper plus actual ParamFrame groups. Cover same-pointer start
-serial, running/role/world retirement, clock rollback, malformed host snapshots,
-source/class replacement, paused age, person/connection retirement, retained
-world/lane readiness, departure, per-recipient owned bytes, same-person requeue,
-old-event cleanup refusal, current master lineage/field retirement, HUD binding
-replacement, known-null music fields, query-function/return failure, typed widget/
-audio returns, viewport retry/no repeated show, stopped/dead audio recovery,
-no unchanged music restart, query/native pre-allocation failure, original seek,
-world/context retirement during preparation or completion, missing factory return
-slots without allocation, typed uncertain completion adoption, matching text/count
-and packet ownership, retired/foreign cleanup, nested Apply/Clear and refused
-Stop/Remove retry. Reflection/object slots, engine, transport and clocks are doubled.
-Both changed production TUs compile.
-
-PASS legacy run_2154 including canonical console output/clear/history/execute-once,
-old Madness controller cases and the new actual wrapper fixture. Replace its
-old raw-function/string boundary fake with typed UObject/function slots and real
-core/call.cpp; preserve seek/no-restart/stopped/dead/query/viewport behavior.
-PASS madness_native_contract_test.py against current local assets: native HUD
-creation/removal, count/text, addCount -> master.killed and spawnGrunt's deferred
-prop_grunt creation plus killcount linkage. No game enemy route is replayed.
-
-PASS current Release/ABI (842 source entries), 28 selected validation groups and
-the production public-label formatter (Watchers of the Void 0.9.2161). Evidence:
-build/qualification-current/verification.json, source-before.json and
-madness-recovery-verification.json. Focused output: build/madness-recovery-latest.log;
-legacy console/Madness: build/madness-legacy-latest.log; cooked contract is also a
-selected current group. Current DLL SHA256:
-`06af722a2b61a644b0bb2593650b7bbafa4c4fa81360064a2c69091fc87baf6b`.
-Production source snapshot SHA256:
-`861ea9c5685dd985de8235ab3f12b837914ff9c58cf60b16f58a5f40bfbb13b5`.
-Refresh the 2116-entry source-before snapshot and independently match final
-production/DLL hashes. FullRegression=false, TwoPlayerGameplayVerified=false,
-EnemyAiVerified=false, Packaged=false.
-
-Rendered host/client music/HUD/score, late join/reconnect, pause/resume, new-event readiness,
-exact sample timing and live reflection schemas remain unverified. Native effects
-with unknown results cannot be rolled back; final controller teardown cannot retry
-refused cleanup after its owner is gone. Enemy AI/damage/effects, the broader TODO
-category, original garage report, full regression and package remain open. No game
-launch, archive, install, version bump, commit or push.
-
-# Earlier 2161 host companion lifecycle: 25 fixes (26 October 2026)
-
-Keep public 0.9.2161 / internal b2217 / protocol 2217. The next 25 named items
-are listed in TODO/current WORK. The original owner's one-ATV-for-everyone report
-is still unreproduced; these are verified code fixes, not a proven live root cause.
-
-PASS run_atv_companion.ps1: 25 groups include the actual private production
-atv_companion.h with real CachedObjRef and AtvEntry, doubling engine/count/save/
-transport and clock inputs. Cover world/session/start/role/running/connection
-retirement, reused minted/source slots, all six non-finite source fields, small
-motion and three-axis rotation stillness, zero/rollback clocks, unknown/changed
-counts, drive/carry release, source movement during parking or the final recount,
-scoped search reset, a persisted coop-key source, bounded saved-body waiting,
-nested minting, foreign class/world returns, third-body retry recovery, repeated
-destroy refusal, protected foreign/missing index rows, malformed/mismatched save
-keys and actor retirement, existing seat/syncer/clock preservation, protected key
-targets with newest callback-updated entry preservation, and refused spawn-send
-retry. Compile the production atv_sync.cpp against the extracted lifecycle.
-
-PASS current Release/ABI (842 source entries), 25 selected validation groups and
-the production 0.9.2161 public-label formatter. Current combined evidence:
-build/qualification-current/verification.json and source-before.json; focused
-lifecycle evidence: atv-companion-verification.json and build/atv-companion-latest.log.
-Current DLL SHA256:
-`a5a5539cafded51e174df687db5d02772db318c56999c2519989b314e3079bee`.
-Production source snapshot SHA256:
-`4fd7600975f5d1b8675aaa34929ec777f4bebc6a0a57b0140fcce167226f781e`.
-Refresh the 2116-entry source-before snapshot and independently match source/DLL.
-
-The first combined run passed 24 groups and found run_session_reports's obsolete
-extractor for TrySpawnCompanion inside atv_sync.cpp. Replace its duplicated old
-ATV model with delegation to the actual lifecycle runner; retain its real console
-classifier, personal-rest and cooked native-contract checks. Rerun only this
-failed group through check_current into build/session-report-recheck. Require
-identical production snapshot, DLL SHA256 and protocol before substituting its
-passing result in the combined 25-group report. Keep the original failure log;
-verification.json.FocusedRecheck records it and pins the successful recheck.
-
-This fixture does not execute the outer host hit-guard readiness gate, real garage
-traces, live UE spawning or native save files. Those dependencies retain their
-existing focused checks. Rendered host/client garage creation, late save replay,
-two complete rigs, no third body, reconnect and save/reload remain open. Native
-occupied save-key reservation remains unchanged; stale records are not overwritten.
-Failed disconnect cleanup is not retried after teardown. Accepted native effects
-cannot be rolled back. Full regression/package remain open. No game launch,
-archive, install, public/internal version change, commit or push.
-
-# Earlier 2161 seat presentation: 25 fixes (26 October 2026)
-
-Owner explicitly changes continuation size to 25; update AGENTS/README/TODO.
-Public version remains 0.9.2161, internal build/protocol 2217. The complete 25-item
-implementation list is at the top of TODO and is explained in current WORK.
-
-PASS 25 new groups in run_seat_presentation: twelve controller groups and thirteen
-native/view groups. Include the actual seat controller and ue_wrap sit wrapper;
-include real core/call.cpp; extract production RemotePlayer RefreshSeatView/
-RefreshView, SetComponentWorldRotation and IsSitting bodies unchanged. Exercise
-the real body-yaw state helper. Reflection/object slots, engine, transport and
-clock boundaries are doubled. Four changed production TUs compile.
-
-Cases cover deferred first-pose/target reads, rejected far/huge anchors, changed
-chair world during key lookup, local seat/pawn replacement during occupancy reads,
-scope restore and nested session install, AnimBP replacement, adjacent bool-bit
-preservation, missing setter parameters/function replacement/preparation retirement,
-non-finite and oversized model dimensions, source/base/parent replacement, full
-roll/yaw/pitch parent transforms including vertical forward motion, refused clear
-retry, nested fresh shifts, partial two-mesh writes without cumulative drift,
-32 bodies and restoration, small/wrapped seated yaw, final head/probe placement,
-world-space flashlight aim after tilt, missing rotation metadata without raw
-writes, all rig/seat/class/world/person/link/slot/pawn retirement cases, six invalid
-driver-pose fields, failed component/ATV rotation reads, bad fallback forward
-vectors, refused first/second writes and chair-to-ATV placement priority.
-
-The 25 compiled removal controls each exercise their numbered group and require
-its runtime assertion. Prior chair groups/controls are rerun, retaining rotation,
-heartbeat, OFF, late lookup, transitions and scope/packet/reentry coverage.
-
-PASS current Release/ABI (842 source entries), 24 selected validation groups and
-the production public-label formatter (Watchers of the Void 0.9.2161). Combined
-evidence: build/qualification-current/verification.json and source-before.json.
-Focused evidence: seat-presentation-verification.json,
-build/seat-presentation-latest.log and build/seat-presentation-check/fault-*.log.
-Current DLL SHA256:
-`9da3365bb15934b5c61c7cd1c05fc9357c6026f123ac488dd98e4c72edbc2217`.
-Production source snapshot SHA256:
-`143ab482e8214466aca20e92855cf5745ac40cc9600eab0a6acd0a3b24c63ba1`.
-Refresh the 2115-entry source-before snapshot and independently match final
-source/DLL hashes to qualification. Selected related groups cover previous chair,
-player/session reports, laptop, ragdoll retry/skin, flashlight, lighting, console
-and ATV checks. FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false.
-
-Rendered host/client/custom-model seat alignment, head/flashlight, banked ATV,
-standing/IK restoration, joins/reconnect/moving chairs and 32-player load remain
-open. Live schemas/native completion are not established by doubles. Relative
-location's zero-on-failure API cannot distinguish failure from authored zero.
-Accepted native effects cannot be rolled back. Original one-ATV-for-everyone,
-full regression and package qualification remain open. No game launch, archive,
-install, commit, push or public/internal version change.
-
-# Earlier 2161 seated player/chair rotation continuation (26 October 2026)
-
-Keep public 0.9.2161 / internal b2217 / protocol 2217. Ten named TODO/WORK fixes:
-small-motion updates, all chair axes, shared shortest-arc interpolation, OFF
-cancellation, admission before body placement, pending chair lookup, scope/peer
-retirement, coherent owned samples, state transitions and send-completion ownership.
-
-PASS run_chair_sync.ps1 -FaultControls: ten groups and ten compiled removal
-controls reaching their named runtime assertions. Include the actual sit_pose.cpp
-unchanged for positive runs and extract the real RemotePlayer::IsSitting body
-into the fixture's class. Test at 32 slots, including slot 31 and rejected slot 32.
-Cases cover 1 cm/0.5 degree thresholds, 50 ms pacing, fresh refused-send retry,
-pitch/roll-only changes, yaw 179 -> -179, heartbeat, shared halfway/rebased
-body/chair interpolation, OFF without chair writes, denied reach/local occupancy/
-foreign class, packet mutation during authorization, nested departure, missing
-chair/puppet recovery, world pointer/generation/session serial/role/running/link
-changes, roster/transport replacement, reused chair serial, three-second expiry,
-failed reads, NaN/Inf, overlong/non-ASCII/None keys, source/key retirement during
-capture, stand/laptop/sleep/ragdoll/death release, departure during native apply,
-and disconnect/session/pawn/seat/class changes during send. Nested Tick sends once.
-Production sit_pose.cpp, remote_player.cpp and net_pump.cpp compile.
-
-PASS chair_native_contract_test.py against current-assets: sitBox passes its
-parent chair to mainPlayer::sit; the player retains sittingOn, attaches to it and
-clears sittingOn on unsit. This establishes cooked dependencies, not measured
-live reflection offsets or rendered pose quality. The legacy chair fixture now
-shares the current fixture, and run_2144 delegates chair verification to the new
-runner. Both chair runtime/native runners are in check_current.
-
-PASS current Release/ABI (842 source entries), 23 selected validation groups and
-the production public-label formatter (Watchers of the Void 0.9.2161). Combined
-qualification: build/qualification-current/verification.json and source-before.json.
-Focused source/asset/control evidence: chair-sync-verification.json,
-build/chair-sync-latest.log and build/chair-sync-check/*.log. Current DLL SHA256:
-`bdcfe990da48b15286a640c90aa8671c8ab076e891ac20b972489ed4291b55a8`.
-Production source snapshot SHA256:
-`0c5807c32029061bfba5fea148cd20f86ef15b16c574303980a53f8b38ee62ee`.
-Refresh the 2115-entry source-before snapshot and independently match final
-source/DLL hashes to qualification. The selected groups include player/session
-reports, ragdoll retry/skin, laptop UI and previous console/flashlight/lighting/ATV
-regressions; this is not a full regression or packaged release.
-
-Controller tests double
-reflection, object slots, engine, transport and clock boundaries. Rendered
-host/client spins, chair/body/mesh/head/flashlight alignment, moving chairs,
-late join/reconnect and stand/laptop/sleep/ragdoll/ATV-seat acceptance remain open.
-Host reach before the sender has a posed puppet can wait for the one-second
-heartbeat. Native effects or sends already accepted cannot be rolled back.
-The original one-ATV-for-everyone report, full regression and package qualification
-remain open. No game launch, archive, install, version change, commit or push.
-
-# Earlier 2161 ATV spawn/placement continuation (26 October 2026)
-
-Keep public 0.9.2161 / internal b2217 / protocol 2217. Ten named TODO/WORK fixes:
-finite spawn pose, refreshed native service tuple, frozen class/key/pose and class
-offset, original world/context fence, validated begin-return type, deferred actor
-finish lifetime, incarnation-scoped cleanup, teleport lifetime, failed-placement
-refusal and source identity/pose through parking queries.
-
-PASS run_atv_spawn_lifetime.ps1 -FaultControls: nine spawn groups plus the current
-parking fixture (ten groups) and ten compiled source-removal controls, each reaching
-its named runtime assertion. Extract the actual TeleportRig, keyed SpawnMirror and
-FindCompanionLocation bodies unchanged for positive runs. Reflection, object slots,
-world/context, ParamFrame and native dispatch are doubled; the production ATV TU
-also compiles. Cases cover NaN/Inf on all six pose fields, replaced native CDO/class/
-function bindings, class serial/key-offset changes during name conversion, copied
-caller inputs, original world/context retirement, foreign begin returns without
-key writes/destruction, deferred body serial/class retirement before/after finish,
-safe cleanup versus replacement preservation, teleport preparation/completion
-retirement, failed teleport publication, trace-source retirement and six changed
-source-pose axes. Failed parking leaves the caller's output unchanged.
-
-PASS run_atv_recovery and run_2149 during focused verification: begin/finish
-argument failure and return/cleanup coverage, install/impulse recovery, current
-mount gates, supported opposite bay, walls, pits, unknown traces, tilt and bad yaw.
-The spawn fixture now models actual object slot/class/world identities; placement
-adds callback boundaries and configurable extracted-source includes for controls.
-
-PASS current Release/ABI (842 source entries), 17 selected validation groups and
-the production 0.9.2161 public-label formatter. Current combined evidence:
-build/qualification-current/verification.json, source-before.json and
-atv-spawn-lifetime-verification.json; focused control output:
-build/atv-spawn-lifetime-latest.log and build/atv-spawn-lifetime-check/*.log.
-DLL SHA256:
-`1ca482af4d7581011e6dfee47ce522e7f5dcfdfdce6d8f7b60609dd66bba4032`.
-Production source snapshot SHA256:
-`a1a4eea36c6ff562b3418e63150915baf0719a396a8812829172745758b9e801`.
-Refresh the 2115-entry source-before snapshot and independently match the final
-DLL/source hashes to qualification. World tests separate generation retirement
-from pointer replacement, including the same world pointer with a new generation.
-
-The original owner's garage failure (one ATV for everyone) remains unreproduced.
-Live reflection schemas, real garage geometry, complete wheel placement and
-host/client join/reconnect/reload/riding/save acceptance remain open. An unreadable
-deferred return cannot be safely identified for cleanup. Already dispatched native
-effects cannot be undone. Full regression/package remain open. No game launch,
-archive, installation, commit, push or version change.
-
-# Earlier 2161 lamp/ambient/switch-audio continuation (26 October 2026)
-
-Public version stays 0.9.2161; internal build/protocol stay 2217. Ten individually
-named fixes are in TODO/WORK: lamp preparation ownership, ambient preparation
-ownership, exact ambient component binding, sound metadata/callee currency,
-bounded sound parameters, owned audio packet, attenuation recovery, finite audio
-and location values, source/resource currency, and construction/replay reentry.
-
-PASS run_light_presentation.ps1 -FaultControls: ten new real-wrapper/ParamFrame
-groups and ten compiled controls that reach their named assertions. Cases include
-actor/class/function/world replacement during lamp/ambient frame preparation,
-component replacement during read/preparation/completion, unchanged failed-read
-output, sound function serial and binding replacement, old callee exclusion,
-metadata/hook retry, negative/truncated cue/volume/pitch frames, null callback
-parameters, packet mutation during location lookup, attenuation serial/class/
-readiness recovery, invalid multipliers and all three position axes, source/cue/
-function/world retirement, recursive construction and nested switch-scope restore.
-The native-hook layer exposes the exact callee only while its callback runs;
-the real native_result_2126 fixture verifies PRE/POST identity and cleanup, plus
-its existing one-byte guard-page, void/pointer return and override checks.
-
-PASS previous run_lightswitch_native.ps1 -FaultControls: ten earlier lighting
-groups and ten controls. Adapt its use-lifetime control anchor to the new sound
-readiness check. The shared fixture now models lamp/ambient metadata, sound
-resources/callee, engine reentry and packet mutation; actual wrapper/ParamFrame
-remain included. PASS lamp/ambient and cooking regressions, retaining existing
-provenance, local sound filtering and nested replay coverage. Active legacy
-fixtures now expose sound frame size and the native callee; metadata-unavailable
-visual replay waits, while attenuation-unavailable visual replay runs muted.
-
-PASS current Release/ABI, 16 selected validation groups and the production 2161
-public-label formatter. Combined qualification is recorded in
-build/qualification-current/verification.json and source-before.json. DLL SHA256:
-`85f9b30948db251f8790c5be177039b9ca121fb9bc74f5b988cba246086d0b62`.
-Additional source/control evidence:
-light-presentation-verification.json, build/light-presentation-check/verification.log
-and per-control logs. This is code-boundary evidence with reflection/engine
-fakes, plus the real native thunk; rendered audio/light completion, live game
-reflection schemas and inner engine audio-wrapper preparation are not established.
-Already dispatched native effects cannot be rolled back. Full regression/package
-and the original garage-companion reproduction remain open. No game launch,
-archive, installation, commit, push or version change.
-
-# Earlier 2161 native lighting continuation (26 October 2026)
-
-Keep public 0.9.2161 / internal b2217 / protocol 2217. Ten implemented TODO/WORK
-items: root metadata recovery, switch metadata recovery, removal of root and
-switch fallback offsets, root/switch/breaker bool masks, bounded linked-root
-lookup, checked group verbs and switch replay lifetime.
-
-PASS run_lightswitch_native.ps1 -FaultControls: ten runtime groups, ten compiled
-removal controls reaching their named assertions, and production-header wrapper
-compilation. The fixture includes the actual lightswitch.cpp and core/call.cpp;
-only reflection, world, object slots and native dispatch boundaries are doubled.
-Cases cover missing runTrigger/use and late fields, live old class/function
-bindings replaced or serial-reused, field failure/recovery, unrelated bool bits,
-dead/foreign objects, malformed array counts/capacities, linked actor/header
-replacement, missing owner/index/active parameters, actor/class/function/world
-retirement during frame preparation, layout replacement with old functions still
-alive, sound-preparation retirement and native completion after a world change.
-The first linked group and absolute runTrigger indices 1/2 retain their behavior.
-
-PASS run_2177: lamp/ambient phases, masks, lifetime, native presentation, initial
-watch recovery and stopped-session guards. PASS run_cooking includes active
-wrappers_2129 sound/nested replay tests; update that fixture to resolve switch
-metadata through EnsureSwitchResolved rather than inject the removed raw cache.
-Its cooking provenance coverage is retained. Current cooked local assets confirm
-runTrigger(owner,index), setActive(active), switch use(), separate isActive/active/A
-names and inherited Key/objects on triggerBase. Name/bytecode checks establish
-dependencies, not a live reflected-offset or rendered-game measurement.
-
-PASS combined Release/ABI, 15 selected current groups and the production 2161
-public-label formatter. Qualification: build/qualification-current/verification.json
-and source-before.json. Current DLL SHA256:
-`30c5a6c1ed0b3cf07e68ca5bcadd320e69e9c8a8b0367d121280c603fcb18e86`.
-Additional source/control/asset evidence: lightswitch-native-verification.json.
-Rendered host/client switches, breaker/live-state separation, flicker, joins and
-world reload remain open, as do the original garage companion reproduction, full
-regression and package qualification. Native call completion cannot roll back an
-already dispatched side effect. Replay sound hook parameter/resource lifetime
-and remaining lamp/ambient preparation boundaries are outside these ten fixes.
-No game launch, archive, installation, commit, push or version bump.
-
-# Earlier 2161 flashlight join-delivery continuation (26 October 2026)
-
-Ten named fixes in TODO/WORK close the previous targeted replay retry gap. Public
-version remains 0.9.2161; internal build/protocol remain 2217. Local seeds and host
-cached relays now retain refusal debt, retry fresh local state, carry OFF, bind
-recipient/author identity, own packet bytes, preserve newer work through older
-completion, share a rotating 64-send-attempt budget and validate active session,
-role and recipient readiness. Connect hooks enqueue; one Tick drain sends.
-
-PASS run_flashlight_join.ps1 -FaultControls: ten groups and ten compiled removal
-controls, each reaching its named assertion. The real production item_activate.cpp
-is included unchanged with engine/transport/registry boundaries doubled; compile
-the fixture at 32-slot capacity. Cases cover local and host-relay refusal retry,
-missing component recovery, fresh intensity/mode/battery-empty samples, local and
-relay OFF, recipient person/connection replacement including during sampling,
-author replacement/departure/link loss before generation clearing, owned cache
-bytes during nested mutation, nested queue/Tick and ordinary publication, one
-64-attempt budget, link/lane/world readiness, host/client allowed targets, zero
-client-host generation, and session/world/serial/role/running/link retirement.
-The stress test retains 961 debts through refused sends and drains every distinct
-recipient/origin pair exactly once after acceptance resumes, at most 64 per tick.
-
-PASS prior run_2145.ps1 -FaultControls: flashlight state/lifetime scenarios and six
-compiled controls, plus existing cord and hand-tool fixtures. Its queue check now
-requires targeted replay to leave normal publication dedup unchanged. Production
-item-activation TU compiles. Register run_flashlight_join in check_current.
-PASS combined Release/ABI, production public-label formatter and 12 selected
-current groups, including the earlier console/light/ATV audit groups. Recorded
-in build/qualification-current/verification.json with a refreshed source snapshot.
-Current DLL SHA256:
-`6f332fffd1a7b2c1d0f2f71077092f49fe39f108e71d6a953e038edefc1879c3`.
-Extra evidence: flashlight-join-verification.json, run_flashlight_join.log, the ten
-per-control logs in build/flashlight-join-check and the prior-state control log.
-
-This establishes the named controller boundaries with fakes, not rendered light
-or real GNS throughput. Unknown recipient identities are refused; they are not
-adopted later without a new valid enqueue. Pre/post identity checks are not an
-atomic net-thread admission lock, and already accepted transport cannot be
-retracted. FullRegression=false; TwoPlayerGameplayVerified=false. No game launch,
-archive, installation, commit, push or version bump. OPEN: rendered host/client
-late join, reconnect, mode/battery/OFF, slot reuse and backpressure; earlier garage
-companion reproduction, full regression and package qualification remain open.
-
-# Earlier 2161 ATV/light/console audit (26 October 2026)
-
-Owner report: only one ATV spawns for everyone; the second previously appeared
-beside the original in the garage. Also audit flashlight, console and light sync.
-Public version remains 0.9.2161; internal build/protocol remain 2217.
-
-Implemented ten fixes listed in TODO/WORK: retryable hit-guard installation and
-its per-pump controller call, bounded impulse writes, independent verb retry,
-initial light-group watch recovery, running-session light gating, checked begin
-spawn, checked finish/result cleanup, checked teleport parameters and finite yaw.
-The original permanent hit-guard refusal prevents Tick from reaching companion
-creation. This is a demonstrated code blocker, not a reproduced diagnosis of the
-owner's particular game/save. Current cooked ATV contains all seven exact hit
-delegate names used by the guard.
-
-Additional confirmed audit repair: the merged console native wrapper contained
-duplicate definitions/statements and an unmatched duplicate panel loop, causing
-compilation failure. Remove those duplicates and retain its lifetime guards.
-The flashlight fixture also had duplicate engine definitions and a duplicate
-lifetime run. The 2149 runner referred to deleted SenderMaySpeakFor and
-AcceptIncomingOccupancy; update it to current mount/carrier/stamped-seat queries
-and correct grabbing_actor sampling. It no longer claims the removed model's
-authority/seat-race coverage. Repair two console mutation anchors so both
-preparation and completion checks are removed by their named control.
-
-PASS `package/check_current.ps1` with 11 selected groups:
-run_session_reports, run_sat_console_delivery, run_sat_console_callbacks,
-run_flashlight_click, run_2145, run_2149, run_2177, run_atv_recovery,
-run_atv_steering, sync_native_contract, sat_console_native_contract_test.
-PASS combined current Release/ABI (842 source entries) and production public-label
-formatter. DLL SHA256:
-`ddfe4fb119c8988ba081fe8f26fdee4ab9bb9ead4a0e0011f84e516f79ac1664`.
-
-Additional PASS: console 23 compiled removal controls plus 21 controller callbacks,
-14 delivery cases, actual input/metadata wrapper and ten native-operation groups;
-flashlight state six compiled controls; remote click ten controls and both TUs.
-The ATV recovery fixture includes production hit_guard.cpp and unchanged Install/
-EnsureHonkWatch bodies. It exercises delayed metadata, temporary interceptor
-capacity, invalid/truncated/exact-fit frames, throttle/idempotence, independent
-verb retry and owned/mirror/offline impulse writes. Spawn tests use unchanged
-TeleportRig/SpawnMirror with doubled reflected-call preparation: all five begin
-argument failures, finish arguments/missing/null/wrong return, orphan cleanup,
-teleport argument failures and successful creation. Placement tests cover opposite
-bay selection, walls, pits, unavailable traces, tilt and NaN/infinite yaw. These
-boundary fakes do not establish real garage geometry or complete UE metadata
-ownership. Lamp/ambient tests cover recovery and stopped-session guards; native
-asset checks distinguish lamp flicker presentation from the group's active flag.
-
-Evidence: `build/qualification-current/verification.json`, `source-before.json`,
-`audit-extra.json` and logs. FullRegression=false; TwoPlayerGameplayVerified=false.
-Native-wrapper source and fixture hashes and extra control logs are retained.
-No archive, installation, game launch, commit, push or version bump.
-OPEN: rendered two-ATV garage spawn on host/clients, reconnect/no-third and saved
-second-ATV positions; flashlight modes/battery/late joins, group/lamp/ambient
-flicker and console concurrent authors/clear/history/reconnect. Refused targeted
-flashlight join replay still lacks retry debt. Full regression and package
-qualification remain unperformed.
-
-# Earlier 2161 console-only continuation — ten native-operation fixes (26 October 2026)
-
-The user assigned console work to this session and left flashlight work to the
-other session. This continuation does not edit item_activate.cpp. Public/internal
-identities remain 0.9.2161 / b2217 / protocol 2217.
-
-Ten individually named TODO/WORK fixes cover live layout bindings, atlas identity,
-factory/context/result ownership, init/dish lifetime, superseded command fields,
-writeToLog preparation, text-box class, two-field clear preparation, bounded and
-transactional argument reads, and bounded panel enumeration. Old classes/functions/
-CDOs that remain alive no longer keep an obsolete layout binding latched forever.
-
-PASS run_sat_console_callbacks.ps1 -FaultControls: 21 controller scenarios, the
-existing actual ParamFrame/FText/FString input/metadata tests, ten new native-operation
-groups and 23 compiled removal controls (nine controller, four earlier wrapper,
-ten new native controls). PASS run_sat_console_delivery.ps1: 14 scenarios.
-PASS production-header compilation of both controller and native wrapper.
-PASS sat_console_native_contract_test.py against current cooked 0.9.0n assets:
-enterCommand's clr resets consoleLine and logText; writeToLog uses consoleLine.
-The cooked proof includes both asset hashes.
-
-Console-only evidence and tested source hashes:
-`build/sat-console-callbacks-check/console-verification.json`.
-Logs: console-focused.log, console-delivery.log, console-native-contract.log and
-console-native-compile.log in that directory. Native wrapper source SHA256:
-`60bba74cca4a66799153b60976d8701da039a5a5dd0c8b103c6b3ba0070c4006`.
-No shared DLL/qualification-current report was overwritten by this continuation.
-No combined Release build, full regression/package qualification, native game
-startup/rendered acceptance, installation, commit or publication was performed.
-Complete reflected schemas, caller session predicates inside every helper,
-atomic rollback and uncertain-native-call retry/admission remain open boundaries.
-Earlier shared Release evidence below describes its earlier source snapshot.
-
-# Earlier 2161 continuation — console metadata and flashlight lifetime fixes (26 October 2026)
-
-Four implemented changes: delayed-resolution retry, clean partial layouts, live
-metadata dependencies and bounded/validated FString reads. Versions stay 2161/b2217.
-
-PASS run_sat_console_callbacks.ps1 -FaultControls: 21 controller scenarios, the actual
-ParamFrame/FText/FString input wrapper and four new wrapper regression groups:
-recovery after eight incomplete attempts; missing enter/write metadata cannot reuse
-old offsets; class/function serial replacement invalidates and re-resolves the cache;
-and malformed capacity/count/null storage/termination/oversized output is rejected.
-All thirteen compiled removal controls fail their expected runtime assertions: nine
-existing controller controls plus metadata-retry, partial-layout, metadata-currency
-and string-capacity. Control logs: build/sat-console-callbacks-check/mutants/.
-PASS production-header compile of ue_wrap/desk/sat_console.cpp to
-build/sat-console-callbacks-check/native_wrapper_production.obj.
-
-The earlier interrupted run_2145 compile exposed conflicting Seat/Scope edits. The
-owner clarified no other writer is active and authorised reconciliation. That temporary
-state is superseded by the final single SessionScope/PublishState implementation.
-
-PASS six flashlight scenarios in run_2145: session/world/role/link/pointer retirement;
-roster person and transport replacement retiring pending/cache state; rejection of local,
-foreign and wrong-slot actors; owned packet across a mutating native getter; source
-retirement before visibility and within the final binding getter; and stale publication
-completion, including nested different state, return to the previously admitted state
-and identical-state recursion. Late old transport completion invalidates the signature;
-the next publication sends the current intensity again. Six separately compiled removal
-controls each fail the selected scenario's assertion. Logs: build/flashlight-state-check/.
-The debug toggle now samples/publishes entirely on the game thread, using PublishState.
-
-PASS five selected current groups: run_2145, run_flashlight_click,
-run_sat_console_callbacks, run_sat_console_delivery and sync_native_contract. Final
-Release/ABI and production version formatter pass, 0.9.2161 / b2217 / protocol 2217.
-Evidence: build/qualification-current/verification.json, source-start.sha256 and logs/.
-The earlier source-before.json is a historical packaging snapshot; it was not refreshed
-by this focused check and is not the current source manifest.
-DLL SHA256: `408037f478d3939dce20642b3398d6356b17941a2bd8f2d0cbc91e695ebd4fe8`.
-FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false. This evidence
-supersedes the preceding snapshot's hash. Rendered gameplay, archive and installation
-remain unperformed. Refused targeted host late-join cache relays still have no retry queue.
-
-# Earlier 2161 continuation — flashlight and console priorities (26 October 2026)
-
-Public 0.9.2161, internal b2217/protocol 2217 unchanged. Ten individually named
-changes and remaining gameplay scope are in TODO/WORK. The owner report has no
-reproduced rendered stimulus yet; do not equate offline guards with full acceptance.
-
-PASS run_2145: existing battery-empty/unequip/send retry/deferred setter tests plus
-exact local publisher, pawn serial replacement during sampling, non-finite sample,
-invalid incoming cone/intensity, superseding state before cone dispatch, nested
-echo restoration and unchanged-state publication on pawn reincarnation.
-PASS run_sat_console_callbacks: 21 scenarios, including new exact POST mismatch,
-owned body across vector reallocation/erasure, oversized shared command preserving
-input, unreadable/oversized/invalid-type output on both roles. Nine existing compiled
-removal controls still fail their intended runtime assertions. Production controller
-and actual ParamFrame/FText/FString input wrapper compile/pass.
-PASS run_sat_console_delivery: 14 existing queue/history/busy/source/recipient
-scenarios. PASS ten flashlight-click groups and both production TUs.
-
-PASS current check_current.ps1 with five selected groups: run_2145,
-run_flashlight_click, run_sat_console_callbacks, run_sat_console_delivery and
-sync_native_contract. Release/ABI and version formatter pass. Current evidence:
-`build/qualification-current/verification.json`, source-before.json and logs/.
-DLL SHA256: `18cea268033e48548bad5a2707458e5a1d2260e1383c5714c30f1a3de670d301`.
-FullRegression=false. No native game startup/rendered acceptance, new archive,
-profile installation, commit/push or publication. Previous snapshot statements below
-are historical; the current focused evidence supersedes their DLL hashes.
-
-# Earlier 2161 continuation — remote flashlight clicks (26 October 2026)
-
-Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes:
-slot bounds; exact remote-body routing; puppet/class/world lifetime; scoped
-deduplication; retryable preparation; sound and attenuation incarnation caches;
-per-slot reentry ownership; finite position; and refusal of unattenuated fallback.
-The one-third attenuation configuration and the local player's native click remain.
-Preparation failure leaves the transition available on a subsequent apply. A native
-attempt commits once before dispatch; the void wrapper does not prove audibility.
-
-PASS ten new 32-slot groups, ten separately compiled removal controls and two
-production-TU compiles (click controller and item activation). Tests use the real
-roster PerSlotState and CachedObjRef with native resource/location/playback fakes.
-They cover same-state recursion, nested different states, cancellation back to
-the previously admitted state, roster replacement and recursive attenuation creation.
-Evidence: `build/flashlight-click-check/final-focused.log` and `fault_*.log`.
-The new runner is included in `package/check_current.ps1` for future full runs.
-
-PASS **3/3 selected related groups**: run_flashlight_click, run_2145 and
-sync_native_contract. Release/ABI and the production formatter pass:
-**Watchers of the Void 0.9.2161**. Current evidence:
-`build/qualification-current/verification.json`, `source-before.json` and
-`build/qualification-current-run.log`. FullRegression remains false.
-DLL SHA256:
-`d663f3b9f752711a6adca219c31fcddf47c78a6d740a2317cfba9c832f04c110`.
-No game startup, rendered multiplayer, full regression, new archive, commit or
-publication was performed. Rendered toggle/mode-change/join acceptance, full
-regression/package qualification and the native audio wrapper's internal reflected
-metadata/admission lifetime remain open. Current evidence supersedes the preceding
-focused snapshot contents; prior group counts describe their earlier snapshots.
-
-# Earlier 2161 continuation — held-toy audio (26 October 2026)
-
-Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes:
-full session scope; sender and recipient occupancy; frozen pre-native hand/action
-identity; exact bounded PRE/POST; queue admission before dedup/rate charge; owned
-incoming packet; shared 64-send budget; strict callback expiry/clock retirement;
-and exact recipient completion preserving fresh join debt.
-
-PASS legacy held-toy/world-toy/contact fixtures, ten new 32-seat lifetime groups,
-ten compiled removal controls and seven production-TU compiles. Evidence:
-`build/hand-toy-check/final-focused.log` and individual `fault_*.log` files.
-The legacy fixture now runs real PRE/POST pairs. Unknown initial hand generation
-does not create a network event that can later adopt another generation; a fresh
-use after announcement sends normally. Native local use is not cancelled. The
-squeak fake models SetPitch preparation and checks currency before Activate, as
-the real wrapper does, rather than counting a sound before the preparation callback.
-
-PASS **8/8 selected groups**: run_2155, run_2156, run_2157, run_toy_music,
-run_watoy, run_sponge_effects, run_window_stroke and sync_native_contract.
-Release/ABI and the production formatter pass: **Watchers of the Void 0.9.2161**.
-Current evidence: `build/qualification-current/verification.json`,
-`source-before.json` and `build/qualification-current-run.log`.
-FullRegression remains false. DLL SHA256:
-`1990c650e1e57b9c83d14e341d0099c86a8ad31d8fd053452dc4c95e7939f751`.
-No game startup, rendered multiplayer, full regression, new archive, commit or
-publication was performed. Full regression/package qualification, initial-hand
-readiness and rendered music/squeak acceptance remain open. Hook-function/schema
-lifetime and native presentation/authorization budgets are separate implementation
-limits. Current evidence supersedes the preceding focused snapshot contents.
-
-# Earlier 2161 continuation — watoy native wrapper (26 October 2026)
-
-Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes
-cover field/class identity, unknown zero-component metadata, complete read
-bindings, requester predicate at activation, audio currency, service CDOs,
-mesh/template currency, checked/finite outputs, spawn candidate ownership and
-direct same-View Apply/Clear reentry. The controller passes its requester predicate
-into activation; reflected metadata and native query callbacks cannot silently
-continue an explicitly retired request in the tested preparation boundaries.
-
-PASS the legacy controller/native wrapper, ten controller lifetime groups and
-ten new wrapper lifetime groups. PASS ten existing controller and ten new wrapper
-compiled removal controls (**20 total**) and four production-TU compiles. Each
-wrapper control runs its named scenario and must reach a failing assertion.
-Evidence: `build/watoy-check/final-focused.log` and `wrapper_fault_*.log`.
-
-PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
-run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
-the production formatter pass: **Watchers of the Void 0.9.2161**.
-Current evidence: `build/qualification-current/verification.json`,
-`source-before.json` and `build/qualification-current-run.log`.
-FullRegression remains false. DLL SHA256:
-`225c5a080fc29194f80bfc27d25a98f0b24688c98b92043bcadabb50eb3705a7`.
-No game startup, rendered multiplayer, full regression, new archive, commit or
-publication was performed. Full regression/package qualification, rendered
-acceptance, complete reflected schemas/function ownership, cleanup across
-independently copied View owners, original-hand provenance and native-work budgets
-remain open. Current evidence supersedes the preceding focused snapshot contents.
-
-# Earlier 2161 continuation — watoy controller (26 October 2026)
-
-Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten individually named
-TODO/WORK fixes cover full session scope, exact activation POST, bounded PRE
-reservation/pruning, requester and recipient transport identity, snapshot state
-flush, retired drain ownership, revision-safe pruning, admission before cue dedup
-and owned incoming payload. Drains also handle a departure removing the remaining
-queue during native playback. Teardown preserves a freshly installed session.
-
-PASS legacy controller/native wrapper, ten new 32-seat lifetime groups, ten
-compiled protection-removal controls and four production-TU compiles. Evidence:
-`build/watoy-check/final-focused.log` and individual `fault_*.log` files. Controls
-run their selected scenario and must reach a failing assertion. The legacy fixture
-now supplies real invocation/function identity and expects automatic world-scope
-retirement; it retains existing activation, hand-readiness and reliable FIFO cases.
-
-PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
-run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
-the production menu/browser formatter pass: **Watchers of the Void 0.9.2161**.
-Current evidence: `build/qualification-current/verification.json`,
-`source-before.json` and `build/qualification-current-run.log`.
-FullRegression remains false. DLL SHA256:
-`aa1f5388a39da63184fb669a4653d9e4498268ca3c16bfea6fb4533649fe2af0`.
-No game startup, rendered multiplayer, full regression, new archive, commit or
-publication was performed. Full regression/package qualification and game
-acceptance remain open. Complete native-wrapper preparation lifetime, original
-hand provenance and bounded native work are separate open implementation limits.
-The current evidence directory supersedes the preceding focused snapshot contents.
-
-# Earlier 2161 continuation — world toy music/squeak (26 October 2026)
-
-Public version **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten fixes
-are individually tracked in TODO/WORK: session scope, requester transport,
-recipient transport, exact POST, reserved PRE, admission before pulse dedup,
-owned receive payload, 64-send budget, callback expiry/rollback and key domain.
-
-PASS the wrapper/phase/clock fixtures, ten new 32-seat lifetime groups, ten compiled
-protection-removal controls and four production-TU compiles. Evidence:
-`build/toy-music-check/final-focused.log` and individual `fault_*.log` files.
-Overflow is tested both before and during authorization, including nested newer
-receipt. The old fixture now uses distinct invocation IDs for distinct native
-calls and expects automatic scope retirement/rebinding on world change.
-The first seven-group run failed those two obsolete fixture assumptions; they
-were corrected before the complete seven-group rerun against stable source.
-
-PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
-run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
-the production menu/browser formatter pass: **Watchers of the Void 0.9.2161**.
-Current evidence is `build/qualification-current/verification.json`,
-`source-before.json` and `build/qualification-current-run.log`.
-FullRegression is false. DLL SHA256:
-`55df3183b7befd6ce4bcc4f0cb5678614ccaa17726a6894d11f17c100202b42e`.
-No game startup, rendered multiplayer, full regression, new archive or publication
-was performed. Full regression/package qualification and game acceptance remain open.
-The following sections describe earlier snapshots; the current evidence directory
-tracks the latest continuation and supersedes its prior focused-run contents.
-
-# Earlier 2161 continuation — sponge foam and version correction (26 October 2026)
-
-Owner correction: remain on public version **0.9.2161**. The assistant's previous
-2162 label was erroneous. Active metadata/documentation is corrected to 2161;
-internal b2217/protocol 2217 and the 68-byte SpongeEffect wire shape are unchanged.
-Earlier immutable reports retain their original labels as historical evidence.
-No new public version, release archive, publication or additional cleanup is part
-of this continuation. New evidence uses `build/qualification-current/` to avoid
-overwriting historical release qualification.
-
-Implemented the ten individually named TODO items: session retirement; exact
-invocation and POST pruning; PRE reservation; original item/hand address;
-actor/class/key authorization; source occupancy; recipient occupancy; queue
-admission before dedup; bounded native/send work with expiry/clock recovery; and
-current actor/player/class/player-link/hitResult schema through trace capture.
-
-PASS existing controller/wrapper, ten new lifetime groups at 32-seat capacity,
-trace-retirement/recovery cases, eleven compiled fault controls and four production
-TU compiles. Evidence: `build/sponge-effects-check/final-focused.log` and individual
-fault logs. The budget regression also checks ready effects behind eight unready
-mirrors; presentation rotates independently of wire FIFO. PASS **5/5 selected
-groups** on the final stable snapshot: sponge effects, window stroke, cooking,
-grime join and the cooked synchronization contract. Release/ABI and the actual
-production formatter also pass; displayed label: **Watchers of the Void 0.9.2161**.
-Evidence: `build/qualification-current/verification.json`, `source-before.json`
-and `build/qualification-current-run.log`; FullRegression remains false.
-DLL SHA256: `d09f1756759245a3a893b6116e12f460d2e679daf02033a608871761ff20a943`.
-Earlier 95-group/archive results do not qualify this changed implementation.
-Full regression/package qualification and rendered multiplayer remain open.
-
-# Historical native canvas continuation b2217 (26 October 2026; mistaken 2162 label)
-
-Started 0.9.2162 after previewing/running cleanup against the qualified 2161
-metadata: 752 files / 535.9 MiB removed, retaining the exact prior archive/DLL
-hashes. Removed obsolete 2160 delivery and generated test outputs/staging/caches;
-source, dependencies and unique research/verification/crash evidence remain.
-Current inventory: `package/cleanup-inventory.json`.
-
-Implemented ten native-window-canvas fixes documented in TODO/WORK: retriable
-incarnation-owned metadata, live raw observers, guarded/whole brush reads and
-known stock, checked factory/type/pin publication, detached teardown, current
-packed signal gate, source/target/component/function fences, checked argument
-sizes/offsets/Vector2D and retained pre-draw retries with at-most-once admission.
-
-PASS 14 controller + 14 actual-wrapper/ParamFrame scenario groups and 17 compiled
-fault controls (eight controller, nine wrapper), plus both production-TU compiles.
-The cooked 0.9.0n graph confirms canvas only opens/joins and rearms its 0.25-second
-close; K2_DrawMaterial is a separate painting admission. The wrapper keeps native
-ownership and never calls setDraw/endDraw directly. Native file hashes and scope:
-`build/window-stroke-check/native-contract.json`; focused evidence:
-`build/window-stroke-check/final-focused.log`.
-
-The complete final b2217 run passes **95/95 current-source groups** without
-prior-version result reuse. Release/ABI, the production formatter's 2162 label,
-32-member archive and five package rejection controls pass. Qualification:
-`build/release-2162/verification.json`; archive/control evidence:
-`build/package-current/verification.json` and `rejection-controls.json`.
-Prepared locally; no commit, push, publication or game installation.
-DLL SHA256: `0f34cdf7f1d276468f9c86d4a7de112aaf539b14c810bb70ff8b78c8385fa769`.
-ZIP SHA256: `c80bfe4c677fbf6ba0b4904b489128707faeb69bd1bbb645920b57956cfa1601`.
-Partial full runs were stopped for review corrections: native
-cleanBubbles can leave finite negative soap (subtract five without clamping), and
-Vector2D schema incarnations must remain owned through the final signal check
-and actual draw admission. Added late-schema replacement scenarios
-and a fresh cooked final-soap contract; all focused checks/17 controls pass again.
-Preparation also requires the audited base canvas entry: inherited subclasses
-are allowed; an unverified override cannot enter a supposedly repeatable path.
-The complete qualification restarts on that corrected production snapshot.
-Rendered/game startup and master deployment remain unverified. Original-dab
-brush provenance, atomic material-scalar sampling, thrown sponge transport,
-independent periodic grime, dynamic-source completeness and full-save parity remain open.
-
-# Bay-window stroke continuation b2216 (26 October 2026)
-
-Implemented ten window-stroke delivery/lifetime fixes for package 0.9.2161:
-source retirement across world/start serial/role/running/link changes; retained
-FIFO refusal and sealed brush payloads; eight-row send budget and 20-second expiry;
-owned completion across nested callbacks; validated ranges and ready host origins
-with host-relayed client slots; no oldest-row eviction at capacity; serial/world
-scan identity; guarded bounded at-most-once replay and hook recovery.
-
-PASS `agent/tests/run_window_stroke.ps1 -FaultControls`: 13 scenario groups and
-seven compiled controls reach their intended failing assertion when the named
-protection is removed. The actual production translation unit compiles separately.
-Coverage includes same-world reconnect without waiting for a scan backstop,
-32-seat origin bounds, nested replacement queues and old callback completion.
-The runner is registered in the complete current qualification.
-
-The first full-suite attempt was intentionally stopped after review identified
-the same-world scan-cache issue. Focused checks/controls passed again after that
-fix, and the complete suite restarted from the stable b2216 source snapshot.
-All 95 groups then ran on that stable snapshot. The only failure was the upstream
-integration fixture's hardcoded protocol 2215 assertion. Changed it to require the
-release metadata's protocol and at least 2215, retaining all wire-ID/32-seat checks.
-The corrected group reran after Release/ABI completed; production and DLL hashes
-matched the full run. PASS **95/95 groups** after that rerun, with no 2160 results
-reused. Initial qualification/failure remains in
-`build/release-2161/initial-verification.json`; the final report's
-`CorrectedTestRerun` records the original hash, corrected test hash, retry log and
-matching production stamps. Current report: `build/release-2161/verification.json`.
-
-PASS production menu/browser formatter: Watchers of the Void 0.9.2161.
-PASS 32-member manager archive, loader layout, branding, models, matching qualified
-DLL and five failed/incomplete/focused/stale-label/wrong-DLL package controls.
-Evidence: `build/package-current/verification.json`, `rejection-controls.json`
-and `dist/SHA256SUMS-current.txt`. Prepared locally; no commit/push/publication.
-DLL SHA256: `45b83eece370901457248db4012ab9b01f6c851af06318458a75462ec5888566`.
-ZIP SHA256: `ab201777ed50b2a67984a8f1a38814f3bb6ab68147b771fe93b27ad22878eaad`.
-
-No rendered/game startup or master deployment was performed. Uncertain admitted
-native draws are not retried. The brush is first sampled at the outgoing drain;
-exact original-dab hand/material provenance, thrown sponge transport, independent
-periodic grime, full-save parity and complete native-wrapper lifetime remain open.
-
-# Version-start cleanup for 2161 (25 October 2026)
-
-Next development target is 0.9.2161; the last qualified release remains
-0.9.2160 / DLL b2215 / protocol 2215. No 2161 build or gameplay pass is claimed.
-Updated the recurring cleanup workflow and reconciled TODO/WORK before fixes.
-
-Previewed and ran `package/cleanup_current.ps1`: 1,038 files / 849.4 MiB removed,
-including obsolete 2158 archives, superseded publication drafts, generated test
-binaries, copied test outputs, package staging and Python caches. Active source,
-test runners, CMake/dependencies, unique research and verification/crash evidence
-remain. Detailed targets and retained hashes: `package/cleanup-inventory.json`.
-
-PASS `package/package_current.ps1 -VerifyOnly` after cleanup: the retained 2160
-archive still has 32 members and matching loader layout, branding, models,
-identity and qualified DLL. Retained archive/DLL SHA256 values are unchanged.
-This verifies package preservation only; it does not rerun the 94 regression
-groups or close native startup/rendered multiplayer acceptance.
-
-# Package 0.9.2160 / b2215 (25 October 2026)
-
-Prepared the requested manager package with the combined upstream/fork source
-and ten native damage/slice/hit fixes now checked in TODO. Those fixes have 23
-scenario groups and ten compiled source-copy controls; actual getter dispatch,
-hit construction, parameter bindings, owner/class/source lifetime and wall
-destruction run through controlled native boundaries. Cutting/fragment gameplay
-is a separate path and remains unaccepted.
-
-The canonical production snapshot exactly matches the already qualified 94-group
-integration snapshot `67fc6c1e8c87ae12efbaf938d60248bf0d4d84d42e7fe5fad71fc0ced348ff88`.
-The new metadata-driven `package/build_current.ps1` reuses that complete evidence
-only after matching protocol and production hashes. `FreshFullRegression=false`
-and `RegressionReuse` retain the original report/hash/scope; this is not a new
-execution of all 94 groups on the changed public-version label.
-
-PASS fresh Release/ABI **0.9.0n b2215**, 842 build source entries, and the actual
-menu/browser formatter using its generated header: **Watchers of the Void 0.9.2160**.
-PASS complete manager archive: 32 members, exact DLL/content hashes, identity,
-enabled loader, shimloader dependency, 256x256 icon and starter-model paks.
-PASS five package controls rejecting failed, incomplete or focused qualification,
-stale labels and wrong DLLs. Public prose and final diff checks pass.
-PASS current fact-row gate: **565 rows / 181 files**, reference 0.9.0n.
-
-DLL SHA256: `e859eada7c2da04d7e60fd654d418678621158385ec6eab6d495b5b6826bc534`.
-ZIP SHA256: `5522ba389cc46535336e8a967c525f015a28c7931b47c059f306cb77725be59a`.
-Archive: `dist/ElvardFIC-WatchersOfTheVoid-0.9.2160.zip` (15,185,210 bytes).
-Evidence: `build/release-2160/verification.json`, retained reference qualification
-and source snapshot, `build/package-current/verification.json`,
-`build/package-current/rejection-controls.json`, `dist/SHA256SUMS-current.txt`.
-
-The requested GitHub README/changelog/release descriptions are published in
-`157fefd70743e93392fa1b0c2affc41dd9e01aa5`; the shared 201-character short About
-description is updated through the official API and read back. The connector
-publishes the documentation commit with a checked branch lease. Local main is
-fast-forwarded only after every published file matches its local content.
-Evidence: `build/release-2160/github-publication.json`. No GitHub binary release
-is created. The new Thunderstore README/manifest/changelog are inside the ZIP,
-but the live page has not been updated here: its upload API access is missing.
-No game run, game installation or master deployment was performed. Existing
-rendered, event/effect and debit/output/refund acceptance remains open.
-
-# Upstream integration b2215 (25 October 2026)
-
-Merged VOTV-MP/Multivoid through `ad531561142ff5685153dc799f9ff2de4af07056`
-with all fork history and the latest local native-action/hit-result fixes
-`ddc711220`. The fetched graph originally had 607 commits ahead / 923 behind;
-the integrated graph has **0 upstream commits missing**. Own commits remain.
-Origin `68f0c2a7f` is also an ancestor; no reset, rebase or force push is needed.
-
-Upstream rewrote its old `93dd26cc2` history; the corresponding rewritten
-`df76e6f66` differs in 15 cleanup files. Ordinary merge chose the ancient
-`1afb8c2ef` and conflicted over already-shared changes. Three-way content
-reconciliation uses preserved shared commit `2276a14c8` and resolves 53 paths,
-while the merge records the actual branch tips as parents. The subsequent
-latest-local merge uses our original `d00610643` content baseline.
-
-Combined behavior:
-
-- Keep 32-player chooser/admission/master capacity and all 226 published fork
-  message values. Protocol/build is **2215**, with fifteen additions at 238?252.
-  Legacy PlayerDamage=20 and AtvRelease=71 remain reserved and explicitly refused.
-- Import host-judged damage, creature-hit intents, parked-creature presentation,
-  full ATV ownership/seat/syncer tables and join sets, shared-prop transactions,
-  notebook/paper editing, text codec and device/UI/localization fixes. Retain
-  PvP, native-state guards, full NPC rotations, Kerfur and sit presentation.
-- Retain ATV companion placement/collision checks, save-key recovery,
-  steering, cockpit/modules, radio URLs, service/refuel/repair and honk retry.
-  Only the host ejects tyres; clients consume its resulting mask. Failed native
-  ejection publishes actual native state and the assigned syncer owns sends.
-- Keep owned record queues, safe/can/grill guards and exact source/class/revision
-  checks. Class-gated or held records wait; successful native application precedes
-  publication, including the actually adjusted record and reentrant replacements.
-- Use one native explosion pipeline; retain fork radial prop discovery and
-  force-only motion through the idempotent coast lane. Old blast controllers
-  remain testable but their duplicate runtime Install/Tick paths are disabled.
-  PC minigame blasts stay personal, without dissolve, broadcast or parking.
-- Keep drone lifetime/retry guards and legacy absolute requests; new timer presses
-  toggle current host state. Two queued presses restore the original setting.
-  Desk ping progress and pending verdict/reply retries both run.
-
-PASS **94/94 full regression groups** on the stable combined source. Includes
-118 Rust master tests, native/cooked contract checks and 18 routing mutation
-controls. Independent baseline checks preserve every published message value;
-new fixtures execute the actual blast decoder, drone intent controller and ATV
-condition controller. The latter reproduced the duplicate-ejection failure before
-its fix. Steering fixtures exercise the actual complete-set sender and retained
-join honks. Additional fault runs pass all **11 item-record** and **10 native
-prop-action/hit-result/wall** mutation controls, which must fail at their intended
-assertions. Engine/transport seams in controller tests are controlled doubles.
-
-Full qualification command in the isolated integration checkout:
-`package/check_current.ps1 -BuildDirectory build/integration
--EvidenceDirectory build/upstream-qualified-final-2215`.
-Final evidence is retained in the canonical checkout at
-`build/upstream-qualified-2215/verification.json`, with all 94 runner logs and
-fault-control logs. Paths inside the original evidence retain their execution
-locations; the qualified DLL is copied byte-for-byte beside the evidence as
-`build/upstream-qualified-2215/main.dll`. Production snapshot SHA256:
-`67fc6c1e8c87ae12efbaf938d60248bf0d4d84d42e7fe5fad71fc0ced348ff88`.
-
-PASS stable-source **Release/ABI b2215**, 842 production source entries.
-DLL SHA256:
-`36bf0697655c6ebeaaadf721f20b7da86f87c076acca5b9ed2bceb6c0256b290`.
-
-Rendered multiplayer, actual keyboard input and full-manager startup remain
-unverified. Every peer must use b2215. No distribution archive, game installation
-or master deployment is part of this integration. Existing acceptance items stay
-open in TODO and WORK.
-
-# Development b2214 - prop-action/MRE delivery (25 October 2026)
-
-Ten completed fixes are checked in TODO. Prop action queues now own target/class
-identity and a numbered entry before the first send. Native key/send callbacks
-cannot borrow invalidated queue storage, repeat a draining head, overtake an older
-request or erase a newly installed queue. Exact source/revision completion and
-owned payloads preserve FIFO across refusal and nested actions. Each drain handles
-at most eight rows; the existing capacity, expiry/clock, key and MRE hand-transition
-guards remain. Session pointer/serial, world, role, running and connection changes
-retire queued actions, buckets, safe retries and MRE scopes.
-
-Client world-MRE opening now refuses malformed/foreign-source/unscoped reflected
-calls, coalesces a pending open and guards request feedback through callbacks.
-Personal MRE loot requires the exact active native spawn scope, declaring function
-and actor/class/player ownership. A tracked native hand opening can clear the hand
-before spawn without losing that provenance. Bounded scopes use exact POST and
-active-invocation pruning; a hand pointer alone no longer admits loot.
-
-Received host opens capture readiness/person/body before authorization and retain
-target/key/function/owner/mesh currency through ParamFrame construction, argument
-binding and hit preparation. A bounded per-actor reservation prevents nested
-received opens; failed preparation releases it, while an admitted dispatch remains
-latched until actor/class or source retirement. This is conservative at-most-once
-admission, not proof that native output committed. Host-local native actions retain
-their existing path. Safe capture/retry now owns actor/class/revision snapshots;
-native key reads and old publication completions preserve fresh requeues.
-
-PASS **18 new controller scenario groups**, including six source transitions,
-four capture retirements, exact payload/order after nested installation, queue caps
-and eight-row budget, expiry/clock/key/class retirement, MRE request/cue guards,
-cleared-hand output, nine scope retirements, received-opening dedup/preparation
-retry, 36 native preparation combinations, six authorization changes and safe
-requeue/capture lifetime. Engine/native/transport seams are controlled doubles.
-PASS nine compiled source-copy controls at their intended assertions: prequeue
-send, recursive drain, budget, session serial, target class, missing spawn scope,
-duplicate received open, native function incarnation and safe revision.
-Evidence: `build/prop-action-delivery-check/final-2214.log`. Both production TUs
-compile against real headers.
-
-PASS fresh cooked MRE contracts: native action-4 entry calls spawn, ripping cue
-then destruction; three loot factories and ancillary poison-pour finish directly
-inside spawn. Native name/food initialization, weighted choices, jackpot reward,
-poison and roach/portion side effects are retained. This audit establishes the
-scope boundary; it does not establish multiplayer parity for ancillary effects
-or change native reward routing.
-
-PASS **6/6 selected groups**: run_prop_action_delivery, run_2162, run_2168,
-run_cooking, public_prose_include and reliablekind_gate (18 refusal controls).
-Evidence: `build/prop-action-delivery-2214/verification.json` (`FullRegression=false`).
-PASS stable-source Release/ABI **b2214 / protocol 2214**, 793 build source entries.
-DLL SHA256: `a4a227726743b7eec1178b289e1495a8eb4920ff64942329c3ba388285b0aac3`.
-Production snapshot SHA256:
-`51c6e5a78e4f30052c58bdf316ad46dccd7611e868af492da26d6f3a3f6aca05`.
-The current 92-group suite was not run in full; the last full aggregate remains
-83/83 on b2203. Final diff and new-file whitespace checks pass.
-
-All checks run locally. Rendered opening, package debit/output/refund recovery,
-remaining package subclasses, ancillary effects/rewards and full-save behavior
-remain open. No game run, package, installation, commit, publication or remote
-update was performed.
-
-# Development b2213 - food callback/output ownership (25 October 2026)
-
-Ten implemented fixes are checked in TODO. Client eat admission now requires a
-bounded, active observation, an addressable actor and a successful valid read
-with positive portions. Reserving before native reads refuses nested eats of
-the same item. Key/element and actor/class revalidation prevents a callback from
-retagging that observation. Exact POST owns and detaches its record without
-rereading caller parameters. Captured last-bite delivery and refused-send retry
-survive native destruction. Food caches and callback ownership retire across
-world, session pointer/serial, role, running and connection transitions.
-
-Empty box/banana/cup authoring now requires an active native eaten scope and its
-exact declaring graph. A captured local-hand eat retains that provenance when
-the native final bite clears the hand before eaten. World and mirror outputs
-keep host ownership. Bounded scopes validate the actor/class, function/owner,
-player and active invocation; exact POST or skipped-POST pruning removes them.
-Host bites require valid current food data and preserve source/key/class currency
-through authorization and writes. Final output/destruction rechecks zero portions
-after publication and native preparation. Refilling/replacing food during those
-callbacks cannot leave an empty wrapper or destroy the replacement. Native
-function/owner replacement retires the old prepared completion.
-
-PASS **18 new controller scenario groups**, including six invalid-condition
-cases, eight PRE retirements, nine output retirements, both capacity refusals,
-key/POST ownership, nested eats, cleared hand, dead final delivery, three allowed
-factories versus personal overrides, refilled final state and four native
-function/owner preparation changes. Engine/native/transport calls are controlled
-boundaries; production synchronization code runs unchanged. Both production TUs
-compile against real headers.
-
-PASS eight compiled source-copy fault controls: untracked eat, invalid condition,
-nested eat, captured address, session serial, missing output scope, refilled final
-state and native function incarnation. Each reaches its intended assertion.
-Evidence: `build/food-callbacks-check/final-2213.log`. PASS fresh cooked native
-contracts: final portion decrement precedes eaten/output/destruction; exactly
-three eaten paths spawn wrappers, while six personal overrides and the empty
-base are excluded from host replay. Personal hunger, poison, hints and
-achievements continue to run on the eater.
-
-PASS **8/8 selected groups**: run_cooking, run_food_callbacks, run_2140,
-run_2174, run_grill_hand, run_grill_edits, public_prose_include and reliablekind_gate
-(18 refusal controls). Evidence: `build/food-callbacks-2213/verification.json`
-(`FullRegression=false`). PASS stable-source Release/ABI **b2213 / protocol 2213**,
-793 build source entries.
-DLL SHA256: `05ea31f7c207aee8f499a5670681f83b7d83708f4a675964351b5a39357e3e99`.
-Production snapshot SHA256:
-`63cbd508943f485822a2d8e00a8fd193d5073d6a681c5699230c9812c873df05`.
-The current 91-group suite was not run in full; last full aggregate remains
-83/83 on b2203. Final diff checks pass.
-
-All checks run locally. Cross-peer concurrent consumption/output transactions,
-optimistic personal effects before host acceptance, remaining package subclasses,
-full-save behavior and rendered multiplayer acceptance remain open. No game run,
-package, installation, commit, publication or remote update was performed.
-
-# Development b2212 - wall material delivery (25 October 2026)
-
-Ten completed changes are checked in TODO. The deferred host wall/material queue
-now expires ownership across world, session serial, role and running transitions.
-Both actors and their class incarnations are captured before native enrollment;
-malformed or callback-retired input never queues a spend. The active pair remains
-visible during preparation, and its one replay permit is claimed before another
-callback can steal or requeue that pair. Recycled identities cannot mint a new
-queued attempt from an old replay.
-
-Native FeedWhile guards the caller through metadata binding, collision query and
-overlap dispatch, including actor/class/component/field/function incarnations.
-Only failures before native admission retain a paced 250 ms retry. Rotation keeps
-later due pairs moving, with eight actual attempts per tick, the existing expiry
-and bounded queue. Once the native gate admits that queued attempt, it is retired
-even if dispatch fails or POST is skipped: its graph may already have spent
-material. Admission is conservative and does not claim every admitted body ran.
-
-Native POST records are invocation/source/actor owned, detached before callbacks,
-bounded and pruned when cancellation/fault skips POST. Source-current partial wall
-state is marked for publication when admitted work lacks a successful POST;
-material-spending code is never rerun to obtain that state. Fresh callback queues
-and nested session installations survive old completions. Six guard registrations
-are attempted independently; accepted protections remain while only missing ones
-retry. Solo hosts and last-peer departure retain native host ownership.
-
-PASS **20 new scenarios** using the actual controller, wrapper and ParamFrame
-with controlled engine/native dispatch doubles. Coverage includes admitted failure
-versus pre-admission retry, pacing/fair budget, lifecycle retirement, 14 collision
-query changes, enrollment invalidation and reentry, nested body/tick callbacks,
-20 metadata retirement combinations, exact registration retry, stale POST,
-no-spend repair, missing-POST publication, replacement queue/install, solo hosting,
-four pre-dispatch identity/class changes, component requery and body-record cap.
-Both production translation units compile against real headers.
-
-PASS eight compiled source-copy controller/wrapper controls, each reaching its
-intended assertion: admitted retry, ignored session serial, enrollment reentry,
-unguarded wrapper source, stale collision component, registration short circuit,
-stale POST and wrong replay pair. Evidence: `build/wall-delivery-2212.log`.
-PASS existing placement/records/authority/wrapper, wall enrollment/damage and
-creative construction regressions: `build/wall-baseline-2212.log`,
-`build/wall-damage-2212.log`, `build/wall-creative-2212.log`.
-
-PASS **6/6 selected groups**: run_wall_delivery, run_2166, run_2168,
-run_wall_creative, public_prose_include and reliablekind_gate (18 refusal controls).
-Evidence: `build/wall-delivery-2212/verification.json` (`FullRegression=false`).
-PASS stable-source Release/ABI **b2212 / protocol 2212**, 793 build source entries.
-DLL SHA256: `a0288a41fb67ae40b03c1cca236315b489055a49318a29f766adc0a14e771a38`.
-Production snapshot SHA256:
-`91c0faecf0c358b171a23d2522780b58c60c432e810829e4162f63017b36f51a`.
-The current 90-group suite was not run in full; last full aggregate remains
-83/83 on b2203. Final diff checks pass.
-
-All verification runs locally. Paid client repair remains a no-spend refusal:
-host request/result acceptance and exact personal-stock accounting across
-hand/slot/drop, refusal and disconnect remain open. Native rendered material
-consumption, wall construction/impact/destruction and ordinary game acceptance
-still need current-DLL gameplay checks. No game run, package, installation,
-commit, publication or remote update was performed.
-
-# Development b2211 - local container failure recovery (25 October 2026)
-
-Ten completed fixes are listed in TODO. Base world-container extract now reserves
-bounded, invocation-owned full-record escrow before native takeObj can debit its
-source. Exact debit/pocket receipts distinguish accepted personal credit from
-refusal. Checked full-record restore owns its input and rejects incomplete scratch
-or stale frame/source state before loadData. No generic native loadData result
-bool is used: the base implementation does not reliably assign it.
-
-Failed/null spawning, including an alive deferred actor without a finished actor,
-and failed restoration/full-inventory refusal settle locally by retiring the exact
-carrier before atomically returning the retained record to its current source.
-Destruction/refund refusal retains paced debt. Same-key/class dedup preserves newer
-data; conflicting identity classes refuse. The append stages checked engine-owned
-data, revalidates save/component/index/headers and copies latest other rows only
-after callback-capable preparation. Cleanup reentry cannot turn a committed refund
-into another attempted credit.
-
-The contents lane is notified after a current-source commit. Both container
-derivation paths rebuild names before volume/mass, as native volume calculation
-reads nameData. The recovery caller's source guard spans those native callbacks.
-The existing birth suppressors now cover the whole native extraction and its
-pending carrier, preventing default-state publication before the transaction ends.
-Stopped-session teardown attempts only proven refunds against the original live
-source; a nested installation keeps its own state.
-
-PASS 16 production-controller scenarios on controlled engine/native VM seams,
-including both roles, owned data after caller locals expire, null/partial spawn,
-successful pocket, full inventory, refused destroy/refund retry, skipped receipts,
-nested extracts/installation, class/source retirement, teardown settlement and
-pre-debit capacity refusal. PASS nine real-wrapper groups using actual
-container_inventory/save_record/metadata code: all typed groups and zero values,
-same-save nested index, every allocation point, class/name/string/signal failures,
-key/class dedup, 13 source/header retirements, owned/nested input, current in-place
-edits and late same-key return, cleanup reentry and personal-store exclusion.
-
-PASS seven compiled controller fault controls: ignored refund refusal, carrier
-quarantine, partial spawn, ambiguous debit, admission cap, nested install and
-accepted credit. Each reaches its intended runtime assertion. Evidence:
-`build/container-recovery-check/final-2211.log`. Existing codec regression plus
-ten codec fault controls and source compilation also pass:
-`build/save-record-check/checked-restore-2211.log`.
-
-PASS fresh cooked extraction/debit/pocket-failure and names/volume contracts.
-The new extract reference is generated from saved live 0.9.0n canonical capture
-text; its whole-text hash and the existing takeObj signature/body control match.
-The 68-line capture is retained in tests. PASS fact-row gate: **517 rows / 166
-files**, `build/container-recovery-check/fact-rows-2211.log`.
-
-PASS **9/9 selected groups**: run_container_recovery, run_container_birth,
-run_container_apply, run_inventory_apply, run_save_record, run_2147,
-inventory_capture, public_prose_include and reliablekind_gate. Evidence:
-`build/container-recovery-2211/verification.json` (`FullRegression=false`).
-PASS stable-source Release/ABI **b2211 / protocol 2211**, 793 build source entries.
-DLL SHA256: `c48f57b607a0f5bbace1e19239b39d654f8a0370c3bbc1669739da2a26ac61fe`.
-Production snapshot SHA256:
-`980cff1745837906bc6978c04da6dc9935e685a975baaf076c159971e84c1f25`.
-The current 89-group suite was not run in full; last full aggregate remains
-83/83 on b2203. Final diff checks pass.
-
-All verification runs locally. This completes proven local base-container failure
-recovery; it does not close cross-peer debit/output arbitration, personal extract
-overrides/raw takeObj, rendered multiplayer acceptance or persistent recovery.
-Receipt-less faults keep bounded unresolved debt instead of speculative refunds;
-world/session replacement clears that debt. Teardown settlement is best effort,
-so guaranteed disconnect failure recovery remains open. No game run, package,
-installation, commit, publication or remote update was performed.
-
-# Development b2210 - console input and native playback (25 October 2026)
-
-Ten input/playback changes are checked in TODO. Client shared-world commands
-consume native input successfully before submission and refuse nested commits of
-the same input. A full command outbox refuses before consumption. The guarded
-wrapper prepares FText/SetText before changing the command, validates source,
-terminal/class/function/textbox serials and field ownership around reflected
-work, and returns failure after invalidation. Failed consumption sends no command
-and does not allow the original world-command body to execute on the client.
-
-Client preparation and counters retain their source/widget/host-binding token.
-Local command/graph records use invocation IDs, preserving nested clear/output
-ownership and pruning canceled/faulted calls whose POST never runs. Exact POST
-ownership detaches before native reads; source and revision checks protect busy
-state and latent output. The graph watch and its rollback use the same callbacks.
-
-Display rows retain source, target and clear revision across native dispatch.
-A failed row may retry ahead of an ordinary append, while a newer clear retires
-that old row. Widget replacement stops the drain; client host-binding replacement
-retires old text and mirror busy debt, including discovery immediately before a
-drain. Each replay scope owns expected arguments and claims one direct write
-invocation. Nested writes/commands, pre-claim alerts and replacement-session
-output follow normal canonical synchronization.
-
-PASS **17 callbacks scenarios** using the actual controller, wire codecs,
-chunker and assembler, with controlled native/transport doubles. Coverage
-includes 63 client read/consume retirement transitions, failed input recovery,
-duplicate Enter, consume-before-send ordering, stale POST and native arg reads,
-nested clear, skipped POST, latent local graph output, failed row clear/append,
-display source/widget/host-binding replacement and recovery, replay attribution,
-new-session output, pre-claim/probe reentry and exact watch rollback.
-
-PASS the actual input wrapper with real ParamFrame, field_io, FString and FText
-implementations: 39 preparation callback invalidations, five post-SetText
-invalidations, no textbox, dead textbox, failed mint/frame/parameter/native calls
-and ownership/serial replacement. Preparation failures retain original input;
-a native failure after mutation is refused, without claiming a complete rollback.
-
-PASS nine source-copy callback fault controls: ignored consume refusal, duplicate
-input ownership, stale POST, missing unwind pruning, clear revision, widget stop,
-replay invocation/preclaim and mismatched watch rollback. Every control compiles
-and reaches its intended runtime assertion; compile failures do not count.
-Evidence: `build/console-callbacks-2210/fault-controls/callbacks.json` and adjacent
-assertion logs. Existing delivery scenarios and all eight delivery controls pass:
-`build/console-callbacks-2210/fault-controls/delivery-controls.log`.
-
-PASS existing console/Madness controllers, Madness presentation and six production
-integration TU compiles: `build/console-baseline-2210.log`.
-PASS **6/6 selected groups**: run_sat_console_callbacks, run_sat_console_delivery,
-run_2154, run_session_reports, public_prose_include and reliablekind_gate
-(including its 18 refusal controls). Evidence: `build/console-callbacks-2210/`.
-PASS stable-source Release/ABI **b2210 / protocol 2210**, 792 build source entries:
-`build/console-callbacks-2210/verification.json`.
-DLL SHA256: `4e8687d8cc2657687aa2a76a11044c94bd5ce47d656da23b4b12adc03ecdb1af`.
-Production snapshot SHA256:
-`b0b8d9573b9afc9fa4f7b2002a26b63f3fc75359480048bbce0a608f7d7d0f1a`.
-FullRegression=false; the current 88-group suite was not run in full. Last full
-aggregate remains 83/83 on b2203. Final diff checks pass.
-
-All verification runs locally. Rendered console input, multiplayer world-command
-effects and ordinary game startup remain open. Other events/entity variants and
-personal resource transactions remain separate work. No game run, archive,
-installation, commit, publication or remote service update was performed.
-
-# Development b2209 - console delivery and lifetime (25 October 2026)
-
-Ten console changes are checked in TODO: 31 remote terminals; current-source
-guards; recipient generation/GUID/leave-incarnation binding; owned outgoing
-blobs; exact queue entry completion; nonreentrant per-recipient flush; guarded
-real wire chunks and retained refusals; revision-owned history/current-busy
-reseed with canonical all-observer clear ordering; both busy levels and
-widget-bound local holds; detached terminal/session teardown and guarded native
-construction, context initialization and command preparation.
-
-The actual controller retains its bounded text history and paced outbox. A join
-replays current text/busy state without executing a previous native command.
-Source/recipient changes stop old callbacks before committing a cached context
-or running a command. Nested transport callbacks cannot pop a replacement queue
-head or make later observers receive old text after a clear. Retired terminals
-and session state are detached before callbacks, so a nested replacement session
-keeps its own state.
-
-PASS local `run_sat_console_delivery.ps1 -FaultControls`: 14 scenarios using
-the production controller, wire codecs, chunk sender and assembler, with
-controlled engine/transport doubles. They include all 31 remote seats, slot 31,
-generation/GUID replacement, partial assembly retirement, queued append/replace,
-world/serial/role/link/session changes, refused/mutated history, busy reseeding,
-widget reincarnation, nested teardown/install, detached eviction and a nested
-clear during a multi-chunk broadcast to three recipients. Native preparation
-covers 27 source/recipient changes across busy read, context init and panel write.
-All eight production-source fault controls fail their intended assertions:
-capacity, recipient invalidation, nested flush, world identity, false busy,
-history revision, broadcast ordering and native command source. Compile failures
-do not count. Evidence: `build/sat-console-delivery-check/fault-controls-2209.log`.
-
-PASS existing console/Madness controllers and Madness presentation, plus
-production-header compilation of six integration translation units:
-`build/console-baseline-2209.log`. The new runner also compiles the console
-controller against production headers.
-
-PASS **5/5 selected groups**: run_sat_console_delivery, run_2154,
-run_session_reports, public_prose_include and reliablekind_gate (including its
-18 refusal controls). Evidence: `build/console-delivery-2209/`.
-PASS stable-source Release/ABI **b2209 / protocol 2209**, 792 build source entries:
-`build/console-delivery-2209/verification.json`.
-DLL SHA256: `febebb9da4e71f84ec5173afc57c7bfa68d52035cd4b8a9ab0d8810e2bc3aab1`.
-Production snapshot SHA256:
-`05d591b5340d92f56210aa5f1df4bd681ca105163c48a92963e630fc90655bab`.
-FullRegression=false; the current 87-group suite was not run in full. The last
-full aggregate remains 83/83 on b2203. Final diff checks pass.
-
-All verification runs locally. Rendered simultaneous console use, world command
-effects and real keyboard input remain open. Broader Rufus/thiccfus, llama,
-Madness/event variants and other entity effects are not closed by these changes.
-No game run, release archive, game installation, commit, publication or remote
-service update was performed.
-
-# Development b2208 - main-menu and promotional cleanup (24 October 2026)
-
-Removed the mod's tester/reviewer thanks block from the main-menu tick. Its
-renderer, widget builder, embedded text/resource, startup initialization, cache/
-parser, browser refresh and client FetchThanks API are retired together. CMake
-and the HTTP/prose censuses no longer retain those inputs or the /v1/thanks client
-operation. The server's legacy endpoint remains available to older clients.
-
-Removed voluntary original-author promotion from the boot banner, current root/
-package README copy, distributed branding changelog sentence, future package
-manifest description and repository Sponsor metadata. Current maintainers remain
-credited. LICENSE, THIRD-PARTY-NOTICES and historical source provenance are
-unchanged; no attribution is falsely reassigned. UI/master/release documentation
-now describes the current client rather than the removed roll.
-
-PASS **3/3 selected groups**, stable-source Release/ABI b2208 / protocol 2208,
-792 build source entries: `build/menu-cleanup-2208/verification.json`.
-Groups: run_host_players (including its 118 Rust library tests),
-public_prose_include and reliablekind_gate.
-DLL SHA256: `4868a0d7b5ae588c8e75575cd533457d718b9a44aa450b5ce62d9a982cc0d7be`.
-Production snapshot SHA256:
-`82d2bdcf2df6bb3510eea7bb0650cd02e3b4c29dfa1f9a2fe9ee567f4897df92`.
-FullRegression=false; the 86-group suite was not run in full. Last full aggregate
-remains 83/83 on b2203.
-
-PASS master contact census: 8 endpoints across two files, no failures;
-`build/menu-cleanup-master-contact.log`. Scans find no retired roll/cache/client
-API/endpoint references in current production code or promotional original-author
-references in the edited current copy. The license/third-party files have no diff.
-PASS artifact check: LoadLibraryEx loaded the current DLL as data only (no DLL
-entry execution), and FindResource confirms retired RCDATA ID 320 is absent:
-`build/menu-cleanup-2208/resource-check.json`. Diff checks pass.
-
-All verification ran locally. Visual in-game main-menu acceptance remains open;
-no game run, release archive, game installation, commit, publication or remote
-service update was performed. TODO records the ten concrete cleanup steps without
-claiming ten unrelated gameplay fixes.
-
-# Development b2207 - complete 2–32-player selection (24 October 2026)
-
-Ten completed changes:
-1. Capacity has its own row in native session settings, with window height for
-   the extra controls and an explicit total-including-host label.
-2. Quick 2/4/8/16/32 buttons complement minus/plus for every integer from 2 to 32.
-3. A typed net.player_limit row remembers the choice, defaults to four and bounds
-   both the UI and environment/config host path. Failed disk writes retain the
-   live choice and can retry persistence later.
-4. Native and overlay menus share the same selection. Slider dragging changes
-   memory; release/host remembers once. Serialized choices and cached reads avoid
-   competing defaults, per-frame ini reads/writes and render-thread widget calls.
-5. Partial build/menu cleanup clears every selector pointer. Endpoint controls
-   dim, ambiguous hover is refused and all external selector inputs clamp.
-6. ReadNetConfig carries the registered limit into scripted/environment hosting.
-7. The legacy HostLobby path copies the selected capacity into its actual network
-   Config, closing its advertised-limit versus default-four admission mismatch.
-8. Environment hosts announce their actual configured limit instead of four.
-9. Initial and retained/re-announced lobby requests normalize to the same bound.
-10. Browser counts stay within host-inclusive capacity, with safe signed/unsigned
-    64-bit JSON clamping. Master heartbeat counts cannot erase the hosting seat,
-    and create replies echo the accepted players_max without changing old fields.
-
-PASS `run_host_players.ps1 -FaultControls`: actual selector and config registry,
-all 31 limits/presets/endpoints, cached reads, concurrent choices, delayed writes,
-reopen, failed persistence and every one of eight partial-build points. Extracted
-production HostWithSave/HostLobby/environment bodies cover 496 save/mode/listing/
-master-availability combinations plus every legacy/environment limit. Real lobby
-list parsing covers missing/wrong-typed and extreme 64-bit counts.
-Seven controls fail after removing remembered choice, persistence, bounds,
-partial-build cleanup, deferred writes, legacy capacity or environment capacity.
-Evidence: `build/host-players-controls.log`.
-
-PASS all **118 Rust library tests**, including each 2–32 limit through signed
-create, heartbeat, browse and join, legacy/default/bad/out-of-range capacity and
-host-inclusive count bounds. Rust 1.99.1 runs from a portable workspace toolchain;
-the system PATH was not changed. Optimized local Windows master build passes:
-`build/master-player-limit-release.log`, `server/target/release/coop-master.exe`.
-Master SHA256: `8d5af3ec8a34bbf4fcce6734998f3a2c754158bf642569d6aff52965646e4ba7`.
-PASS config registry gate: 292 rows plus five font-role rows and its fixture
-controls, `build/host-players-registry.log`.
-
-PASS **7/7 selected groups**, stable-source Release/ABI b2207 / protocol 2207,
-794 build source entries: `build/host-players-2207/verification.json`.
-Groups: run_host_players, run_sync_2157, run_sleep_personal, run_profile_join,
-run_session_reports, public_prose_include and reliablekind_gate.
-DLL SHA256: `6e681dc776f64d68165095e8913a5baf8753c3a34221fdc2069d353cedd25a96`.
-Production snapshot SHA256:
-`4fc742aeed5572d5f1b373394592266041ba3bcdba67444e3f75f8d915ba5ed9`.
-FullRegression=false; the new default has 86 groups and was not run in full.
-Last full aggregate remains 83/83 on b2203. All verification ran locally.
-
-The chooser implementation is complete and checked in TODO. Rendered input/layout,
-real two/32-player admission/full/reuse and larger-group performance remain
-unperformed acceptance. The remote master's matching deployment is not confirmed
-or changed by this work. README distinguishes these b2207 development controls
-from prepared package 0.9.2158. No game run, release package, game installation, commit or
-publication was performed.
-
-# Development b2206 - ten sleep synchronization fixes (24 October 2026)
-
-1. Refused host-asleep flags retain recipient-specific current-state debt rather
-   than disappearing after the only edge. New sleep/wake truth supersedes old
-   levels; a refused recipient retries after 100 ms instead of on every frame.
-2. Refused peer-rest relays retain the same bounded debt, including wake and
-   departure notifications. Transport acceptance clears only the observed revision.
-3. Join/readiness seeds include every peer row, including explicit awake rows.
-   Partial/refused seeds retry, repairing old sleeping mirrors without history replay.
-4. Rest state, pending input and recipient delivery follow transport generation
-   and readiness. Missed departure edges, reused seats and readiness loss clear
-   old votes; a replacement needs its own accepted resting report.
-5. Paced reports are paid only by the installed running/connected host session.
-   Unready/departed reports are cleared, and full disconnect resets their token
-   state and debt so an old sleep cannot reappear in the next session.
-6. A valid wake/dream waiting in the pacing queue vetoes shared acceleration
-   immediately. Presentation remains paced; the clock no longer trusts an older
-   applied Resting value while its author's newest report says otherwise.
-7. Unanimity reads the host's native sleep/dream state, refusing unreadable or
-   non-finite flags. An overlapping host dream cannot count as ordinary rest.
-8. Sleep receive refuses stopped/disconnected input, null payloads and nonzero
-   padding. Awake-with-bed is rejected on the client receive path as on the host.
-9. World generation, session serial/object and role changes clear all snapshots,
-   pending reports and delivery debt. In-flight source/recipient checks stop old
-   delivery; a reentrant newer revision cannot be erased by the old completion.
-10. Clients publish their initial awake state and latch the exact accepted wire
-    payload. A nested newer send owns completion; an interrupted/disconnected
-    send cannot falsely mark the new local state as delivered.
-
-PASS `run_sleep_personal.ps1 -FaultControls`: the actual controller, native
-personal nightmare behavior and real 36-byte wire payload run with 32-seat stubs.
-Delivery refusal/coalescing/backoff, awake-inclusive seed repair, generation and
-readiness changes, real paced wake input, host dream, pending teardown, foreign
-session payment, malformed/offline input, world/serial/role reset, reentrant
-delivery and exact/nested client latches pass. Every connected seat votes, with
-the final subject/recipient slot covered. The complete production TU compiles.
-Twelve removed-protection controls fail their assertions: lost-host-level,
-lost-peer-level, incomplete-join, stale-occupancy, foreign-debt, paced-wake,
-host-dream, inactive-input, stale-world, stale-client-payload, stale-client-send
-and disconnect-debt. Evidence: `build/sleep-personal-check/fault-controls-2206.log`.
-
-PASS **7/7 selected groups**, stable-source Release/ABI b2206 / protocol 2206,
-794 build source entries: `build/sleep-delivery-2206/verification.json`.
-Groups: run_sleep_personal, run_session_reports, run_dream_identity,
-dream_identity_native_test, insomnia_native_test, public_prose_include and
-reliablekind_gate. The session-report sleep-speed controller and fresh native
-dream/Insomniac contracts remain green.
-DLL SHA256: `f1469bb7f1966bce051ea3ca0c84b82b85835cb1973f08b38fb9327aeb4601d0`.
-Production snapshot SHA256:
-`f5c08f20cc6ce85c02adaf202feb08c0a5855e0f14358fcd3dd180fde00af0a3`.
-FullRegression=false; the 85-group suite was not run in full. Last full aggregate
-remains 83/83 on b2203. All verification ran locally.
-
-Rendered multiplayer clock/wake/dream and recipient replacement acceptance remains
-open. Native nightmare probability/rewards stay personal, and the optional
-per-mattress capacity suggestion remains deferred because the wire identifies
-bed classes. No game run, package, installation, commit or publication was
-performed. TODO checks the ten implementations separately from game acceptance.
-
-# Development b2205 - ten inventory/profile fixes (24 October 2026)
-
-1. Strict personal-store outer headers refuse negative/inconsistent counts,
-   invalid pointers and malformed capacity. An unreadable inventory no longer
-   looks empty to profile persistence; genuine/reserved empty arrays stay valid.
-2. Personal snapshots validate equipment/hand headers before publishing any
-   carried/equipment/hand output. Failed reads cannot expose a partial profile.
-3. World-container reads use the same strict headers and return Unreadable on
-   corruption, preserving shared contents instead of broadcasting false emptiness.
-4. Restore validates existing carried/equipment/hand headers before using their
-   fixed-slot shape or staging replacements. Failure preserves the live arrays.
-5. Held-item replacement stages the complete record through the checked codec.
-   Failed construction and changed save/world/header/slot or nested replacement
-   refuse publication; existing key, tag and other saved data are preserved.
-6. Native container volume/name derivation checks object/class/world, ownership,
-   component binding and function lifetime between dispatches. A stale volume
-   callback cannot continue into an unrelated or replaced owner's name update.
-7. Save-ready join restoration binds each native step to the live client session,
-   world/serial and save incarnation. Failed effects reset also keeps client-to-host
-   profile reporting closed, protecting the stored profile after a partial restore.
-8. The callback owns one complete pending profile revision and consumes an exact
-   atomic request generation. New profiles/requests and nested joins cancel older
-   work without mixing items, vitals and pose or overwriting newer completion.
-9. Host profile delivery owns the recipient GUID and binds preparation and every
-   chunk to source epoch/world/serial, role, connection, occupancy, GUID and send
-   sequence. Disconnect callbacks fence an in-flight send immediately.
-10. The sent latch records recipient generation and GUID. Silent seat reuse
-    rearms delivery; refused/interrupted sends retain retry debt, and a stale
-    host tick cannot continue across a world/session change into another seat.
-
-PASS all three fault-control runners: 23 expected-failure controls (9 inventory,
-7 container and 7 profile-join). Each removed protection fails its assertion while
-the real implementation passes. Evidence:
-`build/inventory-apply-check/fault-controls-2205.log`,
-`build/container-apply-check/fault-controls-2205.log`,
-`build/profile-join-check/fault-controls.log`.
-The actual wrappers, record codec, extracted world read/apply/relay, profile
-controller/receiver/chunker and private save-ready callback are exercised. Join
-coverage changes world/session/save/request at each native stage, admits nested
-newer joins, checks partial failure and tests recipient replacement between chunks.
-Complete production inventory/container/save-record/profile TUs also compile.
-The equipment-view fixture (run_2146) passes separately.
-
-PASS **12/12 selected groups**, stable-source Release/ABI b2205 / protocol 2205,
-794 build source entries: `build/profile-safety-2205/verification.json`.
-Groups: run_profile_join, run_inventory_apply, run_container_apply,
-run_container_birth, run_2169, run_2176, run_trowel, run_2147, run_sync_2157,
-run_item_records, public_prose_include and reliablekind_gate.
-DLL SHA256: `f03c8e6843f63e24b5d9739d679141c0d60db512e2aa4a9b2363a178869bfa77`.
-Production snapshot SHA256:
-`f626d68fe29a739feba03fc87847fec2cde594c6d4d72b370ecd5c85ecf7edbe`.
-FullRegression=false; the new default has 85 groups and was not run in full.
-Last full aggregate remains 83/83 on b2203. All verification ran locally.
-
-Outer-header validation does not validate every nested record or allocation
-extent. A newer profile cancels an old restore without automatically restarting
-that consumed save-ready hook. Existing unpublished nested scratch retains the
-codec pin policy. Rendered join/rejoin, held/container UI and original item-copy
-reproduction remain open, as does removed-row/carrier refund accounting. No game
-run, package, installation, commit or publication was performed. TODO checks all
-ten implementations separately from those unperformed acceptance cases.
-
-# Tracking reconciliation (24 October 2026)
-
-At the owner's request, TODO now explicitly checks the six implemented b2200
-report paths, earlier blast/ATV/blood code, immediate-join infrastructure and
-record/material/grill safeguards. The 15 b2201–b2204 code items remain checked;
-their headings now identify completed implementation. Unreproduced item-copy,
-broader warp events, unfinished transactions and rendered acceptance stay open.
-Continuation size changes from 3–5 to **10 concrete fixes per pass** in the active
-instructions and TODO. This is a documentation reconciliation against existing
-evidence; no source, DLL, test result or gameplay status changed.
-
-# Development b2204 - five world-container fixes (24 October 2026)
-
-1. Removed the lane's separate raw Player/offset readers. Dirty publication,
-   receive/apply and diagnostics share the masked, class-incarnation wrapper.
-   World addressing also refuses reserved personal index zero when Player=false.
-2. Container slices stage checked records before swapping the live header. Failed
-   outer/nested allocation or construction retains the old contents and parks the
-   input without advancing hashes/publication. Missing classes wait before scratch
-   allocation; partial nested scratch retains the existing codec pin policy.
-3. Stack-owned apply scopes bind accepted work to session/role/world, sender
-   occupancy, actor/class/component/save/store/header and accepted newer/local
-   changes. Rejected input cannot cancel accepted work. Duplicate hashes require
-   the same live component/store binding. Transfer completion follows commit,
-   before native volume/name/view callbacks, preventing a committed birth from
-   being merged again after an interrupted callback. Interrupted committed host
-   state remains dirty for current-state publication.
-4. Park sweeps copy identities first and own one callback payload at a time.
-   Revisions/epochs preserve replacement/reset, nested sweeps defer, author-cap
-   replacement is counted, clock rollback cannot expire a row, and newer handled
-   input retires only the observed older park. Old held state cannot reappear
-   after newer truth, and large join queues do not duplicate every blob at once.
-5. Refused accepted-state relay becomes debt to that exact recipient generation.
-   The existing seed retry sends current truth; departed/replaced seats retire
-   their old debt. Relay checks source and recipient currency between chunks.
-
-PASS `run_container_apply.ps1 -FaultControls`: extracted production receive/apply/
-relay functions, actual record codec and container/inventory wrappers, real park
-and both complete production TUs. Allocation/construction refusal, retry, reserved
-personal address, callbacks/newer and rejected input, birth completion, binding
-replacement, recipient debt and old/new park cases pass. Six controls fail when
-checked encoding, current-source proof, relay debt, masked boundary, old-row
-retirement or revision protection is removed.
-Evidence: `build/container-apply-check/fault-controls.log`.
-
-PASS **8/8 selected groups**, stable-source Release/ABI b2204 / protocol 2204,
-794 source entries: `build/container-apply-2204/verification.json`.
-Groups: run_container_apply, run_inventory_apply, run_container_birth, run_2147,
-run_sync_2157, run_item_records, public_prose_include and reliablekind_gate.
-DLL SHA256: `922fec45cc6bbfc2c14949c4d5cb8e7d4e3328036df3f6e36c0353dd97a70d93`.
-The earlier same-build qualification was superseded after reducing park-copy
-peak memory; only this final stable snapshot qualifies the current DLL.
-
-check_current.ps1 now accepts an explicit CheckGroups array, rejects unknown
-groups before building, and records FullRegression/RequestedGroups. The default
-still runs all 84 groups. A focused pass is explicitly FullRegression=false;
-the last full aggregate remains 83/83 on b2203. The unknown-group control passes:
-`build/container-apply-check/selection-control.log`. All work ran locally.
-Rendered container concurrency/UI/rejoin and the original item-copy cause remain
-open, as does native removed-row/carrier refund accounting. No game run, package,
-installation, commit or publication was performed.
-
-# Development b2203 - four inventory restore fixes (24 October 2026)
-
-1. Prepare carried, worn and held arrays before publishing any live header.
-   Checked record encoding reports outer/nested allocation and class/name/string/
-   signal construction failures. Fixed empty equipment/hand slots preserve the
-   native shape and identity transform. Size/overflow refusals cannot empty the
-   previous inventory. Legacy record writers retain their existing fallback.
-2. Own the input before native dispatch, and bind staging to the target actor/
-   class, world, gamemode, save binding and original array headers. Nested apply
-   supersedes older staging. Changed/dead contexts return without publication.
-   Unwritten scratch is freed; failed partial nested scratch follows the existing
-   buffer pin policy rather than introducing a speculative deep destructor.
-3. Personal and world readers share the reflected Player bit/mask. Adjacent
-   flags no longer imply personal ownership. Both personal readers refuse an
-   index other than the baked zero instead of logging and reading foreign data.
-4. Save/container/index/owner/volume field offsets now use the actual class's
-   slot/serial incarnation. Replacement classes refresh positive and negative
-   old metadata; the Player mask cache refreshes with its class too.
-
-PASS `run_inventory_apply.ps1 -FaultControls`: actual inventory/container wrappers,
-record codec and extracted production InstanceOffset. Every one of the fixture's
-69 allocations is failed separately, preserving all three previous arrays.
-Coverage includes construction failures, nested/newer input, target/world/class/
-gamemode/save/header changes, fixed slots, masked flags and exact slot isolation.
-Four removed-protection controls fail: unchecked records, stale targets, foreign
-personal slot and stale class layout. Fresh cooked evidence reads the player
-component's index=0/player=true/customVolume=50000 and native fixed-slot lookup.
-Evidence: `build/inventory-apply-check/fault-controls.log`.
-The existing trowel/material persistence and equipment/view fixtures also pass.
-PASS **83/83 groups**, stable Release/ABI b2203 / protocol 2203, 794 source entries:
-`build/inventory-apply-2203/verification.json`.
-DLL SHA256: `6e665deb20a8f591ee9f8efb7dcffc418cbc5481a3564858a22fd5dadb7e168a`.
-
-All runners and compilation execute locally. Focused tests cover work in progress;
-this full aggregate qualifies a shared-codec change across its consumers. Full
-regressions are not required after every intermediate edit. Rendered join/rejoin,
-the unidentified original item-copy trigger and removed-row/carrier refund remain
-open. No game run, archive, installation, commit or publication was performed.
-
-# Development b2202 - three arirShipAppear fixes (24 October 2026)
-
-1. Host visible/alpha phase reaches ready clients on a dedicated host-only lane.
-   The adapter paints native material/light/radar and event-sender membership on
-   existing scene actors. It stops old client timelines, which write their float
-   track even when the Blueprint Update callback is refused. Indexed exact-class
-   discovery and name/position corroboration avoid generic event-actor spawning.
-2. Clients refuse their own appearance, camera/day disappearance and blank-email
-   function/latent entries, including chains started before joining. An exact
-   actor/epoch scope admits native photo-delegate bind/unbind while appear stays
-   blocked; native local photography runs only against an applied visible phase.
-   The host retains native timing, eligibility and mail generation. No host photo
-   reward is replayed by the adapter; shared reputation remains separate work.
-3. Current-state joins are quiet, with ordered incarnations/retirement, bounded
-   fair send retries, recipient generations/replay tokens and retained partial
-   application. Live cosmetic air cues have one-second retries from receipt.
-   Actor/component/gamemode, world/session/role and callback guards cancel stale
-   work. Whole discovery batches are slot/serial stamped before native reads;
-   newer incarnations during a read cannot inherit the old actor association.
-
-PASS `run_ariral_ship.ps1 -FaultControls`: production controller and real
-wrapper/ParamFrame tests, four removed-protection controls, fresh cooked native
-contract and both production TUs. Controls reject local latent continuations,
-stale phase overwrite, lost refused sends and historical join cues.
-Evidence: `build/ariral-ship-check/fault-controls.log`.
-PASS **82/82 groups**, stable Release/ABI b2202 / protocol 2202, 794 build inputs:
-`build/ariral-ship-2202/verification.json`.
-DLL SHA256: `4b8e918b1783b20fc631038ad85f801a66f515a9560ea6543021f716a2e430f5`.
-The first aggregate was stopped before its build to add discovery-batch and
-reentrant-incarnation guards. Only the subsequent stable aggregate qualifies b2202.
-
-This three-item pass covers `arirShipAppear_C`, whose native blank-email loop
-matches the screenshot clue. Original report (6.1) still needs rendered host/client
-acceptance. `arirShipVanishing_C`, other warp events, broader event completeness
-and shared reputation remain open. The unidentified item-copy report also stays
-open. The game disk remains unavailable; no archive, installation, commit or
-publication was performed.
-
-# Development b2201 - three container-birth fixes (24 October 2026)
-
-1. Replaced the process-global takeObj flag/ProcessEvent observers with the script
-   gate's native-body scope and a named body watch. Nested native calls cannot
-   clear an outer extraction, and cancellation/fault paths need no balancing POST.
-   The consumer reads its own thread's scope; Blueprint-internal calls are covered.
-2. Successful extraction results require current UFunction metadata, checked frame
-   bounds and the true caller out storage. Recreated functions refresh both offsets;
-   failed calls, truncated layouts and stale/recycled actors are refused.
-3. A bounded rotating queue retains birth and mutable-state delivery separately.
-   No state is published before the spawn is accepted, and a refused state does
-   not repeat that spawn. Final live key/EID and callback/lifetime guards bind each
-   attempt to its actor/world/session/role. Generic host finish work waits for this
-   owner rather than publishing a record around the refused birth.
-
-PASS `run_container_birth.ps1 -FaultControls`: production consumer/feeder tests,
-four removed-protection controls and the fresh cooked native takeObj/extract
-contract. Controls reject leaked scope, stale metadata, lost refused spawns and
-repeated spawns during a state retry. Three changed production TUs compile.
-Evidence: `build/container-birth-check/fault-controls.log`.
-PASS **81/81 groups**, stable Release/ABI b2201 / protocol 2201, 792 build inputs:
-`build/container-birth-2201/verification.json`.
-DLL SHA256: `38e98a8bbd7981f7a576749d95b83e92555b6a21b273d38dc7765957e7ee67f6`.
-
-This is a three-item continuation, per the owner's new workflow preference,
-recorded in agent/README. It does not close the unidentified original client
-item-copy reproduction, warp-arrow presentation, or the separate inventory
-removed-row/carrier-restore/refund transaction. Real-peer acceptance remains open;
-no package archive, game installation, commit or publication was requested.
-
-# Development b2200 - 24 October report batch
-
-Implemented paths for this batch's reports (1), (3), (4), (5), (6.2) and (7):
-transient shovel-hole identity/soil/geometry and lifetime, pending canonical can
-state before mutation plus no-refill/reclose/type rollback, physical satellite
-console claims, unpublished companion-ATV retry recovery, location activation
-without forced gathering, and unanimous host sleep acceleration.
-
-Hole mirrors wait for a live BeginPlay suppression watch; native BeginPlay
-would search buried objects and spawn treasure again. The adapter does not add
-persistent hole saves or close buried-item/loot accounting. Can initial births
-retain their saved portions; cross-peer concurrent-use accounting and other
-consumable families remain separate work. The bed-capacity suggestion is deferred.
-
-PASS targeted production regressions: `run_session_reports`, `run_sleep_personal`,
-`run_2174`, `run_item_records`, `run_garden_sync` and `run_2161`. Coverage includes
-actual console classifiers, ATV and sleep controllers, hole authors/ACK/late join/
-retirement/duplicate creation/watch readiness, and ordinary stale versus initial
-can records. Fresh cooked contracts verify the hole factory/material/loot path,
-console `used` owner before entry, and non-refillable native can semantics.
-PASS **80/80 groups**, stable Release/ABI b2200 / protocol 2200, 792 build inputs:
-`build/session-reports-2200/verification.json`.
-DLL SHA256: `54bc6b86735f11c9d236e765c4774b2b5ae7618bb276e2653b1c122f547413b2`.
-The first aggregate was intentionally interrupted to add the mirror-watch
-readiness guard; only the subsequent stable run may qualify b2200.
-
-The user could not identify the report build or item-copy trigger. Screenshot
-retrieval succeeded through stable GitHub attachment URLs after the signed-link
-viewer failed. The item images show a shovel and noodle packaging, without
-class/key/EID or transition evidence, so report (2) stays open. The warp-event
-image shows repeated blank emails; the native `arirShipAppear_C` graph's delayed
-blank-email loop makes it a strong candidate. Its alpha/light timeline, local
-camera/trace checks, photo reputation and email side effects require a specific
-presentation route; report (6.1) is not fixed by this batch.
-
-Rendered host/client acceptance remains open; the owner previously confirmed
-that the game disk is absent. No archive, installation, commit or publication
-was performed by this work.
-
-# Development b2199 - server delivery and personal dreams (24 October 2026)
-
-Serverbox per-recipient delivery debt survives refused/partial sends and occupant changes.
-Clients retain latest state and unfinished re-skin debt through native readiness/failure;
-per-box incarnations and callback/lifetime guards cancel stale work. Old-code regressions fail.
-Dream-burger overlaps reject remote puppets/ragdolls while preserving local/native collection.
-Function offsets bind to UFunction incarnations and checked parameter-frame bounds.
-PASS production regressions/compilation and three dream removal controls:
-`build/events-2199-final/dream-controls.log`, `build/requested-events-audit/serverbox-*.log`.
-Fresh native dream reward and protected-server contracts pass; serverBreaker stays excluded.
-Fresh audit: 42,941 pak entries, 37,971 extracted uasset/uexp files, 18,854 assets;
-1,621 relevant Blueprint packages / 22,691 functions / 69 scheduled-event rows.
-Zero package errors; 190 focused dumps: `build/requested-events-audit/summary.json`.
-PASS imported native-contract suite: `build/requested-events-qualified/fresh-native-contract.log`.
-The raw inventory's two graph rejections were hint-text false positives. PASS all 22,691
-raw decodes, zero actual errors: `build/requested-events-audit/reclassified-graphs.json`.
-Level/map scripts and complete semantic event coverage remain outside this result.
-PASS **78/78 groups**, stable Release/ABI: `build/events-2199-final/verification.json`.
-DLL SHA256: `a376716c7f9fd6bfce562ef983257db9abd95d04a2239644e72e5e94e7adcdd3`.
-The earlier `events-2199-qualified` run rejected source changes during the re-skin fix.
-Fact rows 515/165 and nine controls pass; prose findings: 85/82 documents,
-src.comment_doc_row 155/0, src.files_not_swept 84/0 with reading-room checkouts absent
-(previously 1/0 and 1/0 with them present). No new package or installation.
-Runtime acceptance remains open: owner confirms the game disk is absent on 24 October.
-
-# Development b2198 - event frequency and queued credit (23–24 October 2026)
-
-Queued credits cancel after world replacement; the old-code assertion reproduces the defect.
-Host-owned flickerer scales only its native 30–60s eligible wait, preserving probability/effects.
-PASS production/native/captured-reference regressions, **74/74 groups**, stable Release/ABI:
-`build/requested-events-qualified/verification.json`; sequential `final-build.log` supersedes
-the aggregate's concurrent-Ninja failure in `build.log`. No failed build counted as a pass.
-DLL SHA256: `0b9ea938eaa683e18d968d66898af25f687c4bb0d3f359a1c492958c85bc4d42`.
-Two isolated native launches overflowed before acceptance. Dumps prove recursive native
-lib_C.end; Untitled_1.CustomEvent's borders check is the strongest initial-caller candidate.
-Exact caller/failed check still needs live confirmation; no native guard was suppressed.
-Evidence: `build/requested-events-native/crash-analysis-20261024.md` and retained crashes.
-Bench58 placement, Token52 orders, trowel continuity and real-peer events remain unverified.
-
-# Development b2197 - full-record carriers (23 October 2026)
-
-Pre-fix: full restore ignores native invalidation; failed restoration still allows pickup.
-PASS guarded explicit-function capture/restore, saved key/full state and extraction owner/frame binding.
-PASS 15 codec/container/pickup controls: `build/container-lifetime-qualified/` control logs.
-PASS **74/74 groups**, stable Release/ABI: `verification.json` in that directory.
-DLL SHA256: `b1dc33c642e5136c36b1f35f30d823b166a3facd57701cbac0be9214ee0d34a2`.
-Fact rows 513/165 and nine controls pass; three inherited prose counters remain.
-Existing cooked corpus reused; fresh asset audit remains deferred.
-Failed-row retry/refund and current-DLL gameplay remain open; no package/install.
-
-# Development b2196 - guarded record dispatch (23 October 2026)
-
-Pre-fix native capture rekeys an actor but old loadData still dispatches: `pre-fix.log`.
-PASS production capture/apply/convention/context guards and receiver revision forwarding.
-PASS seven codec/eleven receiver controls: `build/record-dispatch-qualified/` control logs.
-Superseded run stopped for lineage ordering; scalar-fixture link mocks updated.
-PASS **73/73 groups**, stable Release/ABI: `verification.json` in that directory.
-DLL SHA256: `6d800135d85644e6a325549659213befb9a22d456249528d76f95620cda223b6`.
-Fact rows 513/165 and nine controls pass; three inherited prose counters remain.
-Current-DLL gameplay, writer/accounting and new package/install remain open.
-
-# Development b2194–b2195 - initial author state (23 October 2026)
-
-b2195 pre-fix: an empty park bypasses the author wait. PASS capture/matching drain,
-new native wait, pickup/output reset and ten controls; stable Release/ABI, **72/72 groups**.
-Evidence: `build/capture-wait-qualified/verification.json`, `pre-fix-pickup.log`, `fault-controls.log`.
-b2195 DLL SHA256: `2bd5e745df8e5b638abf0f09cda6ec6d168ceec5bdecd9cf82bb8d1b18a2c0bc`.
-b2194 pre-fix: foreign claims clear the wait. PASS author/application/early-state
-and repeated-birth refusal/retry, placement and eight controls; stable Release/ABI, **71/71 groups**.
-Evidence: `build/initial-record-qualified/verification.json` and `fault-controls.log`.
-b2194 DLL SHA256: `d5582405d608be4fa5a6d04b93f3b80a6e011d7b0e7adce895682a04647d89dc`.
-Writer/accounting and rendered acceptance stay open; no package/install.
-
-# Development b2193 - material publication revisions (23 October 2026)
-
-Pre-fix stale water publication includes native stock changes that skip observation.
-PASS exact-stock/material/hand and host/client capture/send fences, caller retries,
-compilation and four controls: `build/material-publish-qualified/fault-controls.log`, `stock-control.log`.
-PASS 71/71 stable Release/ABI: `build/material-publish-qualified/verification.json`.
-The superseded pre-correction run is not qualification evidence.
-DLL SHA256: `c11af21a8ac6868721222b2d93c8b4a1fc29271eba3c271c242e954176b50208`.
-Delivered records cannot be recalled; arbitration, debit/refunds and rendered acceptance remain open.
-
-# Development b2191–b2192 - grill lifetime (23 October 2026)
-
-Pre-fix regressions fail on stale coal after session restart and false admission
-of a replaced hand row. PASS ordered/hand restart fences, revision/fan-out/debt
-guards, native-read retirement and audio cleanup; two/seven fault controls pass.
-Each DLL passes 71/71 groups and stable Release/ABI; evidence and fault logs:
-b2191: `build/grill-session-qualified/verification.json`.
-DLL SHA256: `8fc98843693b4b4332c96d1a7e3f3a4aaea834611ee9f61ee2ed6194bacfe2de`.
-b2192: `build/grill-hand-qualified/verification.json`.
-DLL SHA256: `a767674fcfa8e989ec4736c23f406d5c2990ec56ad602091f844b7643638ea43`.
-Fact rows 513/165 pass; three inherited prose counters remain. Personal debit/refunds
-and rendered acceptance stay open; native payloads unchanged, no package/install.
-
-# Development b2190 - zero-damage explosion motion (23 October 2026)
-
-Accepted host blasts are tracked independently of damage; the native impulse's
-sphere/object-type query discovers targets before physics integrates positions.
-PASS production feeder/wrapper/native contract and five expected-failure controls.
-PASS 71/71 groups, stable Release/ABI: `build/force-only-qualified/verification.json`.
-DLL SHA256: `60f082e28962f60ab58057c7d0ec86c91b2b86311e6e176fe244970e6f3b899f`.
-PASS native LAN damage 0 / force 5000: bucket moves 541.02 cm, reliable rest edge,
-live/rejoin agree within 0.1 cm: `build/force-only-qualified/native.json`.
-Both compatibility reports HEALTHY; native query MATCH; fact rows 513/165.
-Historical b2189 qualification: `build/explosion-motion-qualified/verification.json`;
-ordinary-blast evidence: `build/explosion-motion-qualified/native.json`.
-Rendered/input/all-blast acceptance stays open; existing corpus reused, broader audit deferred.
-Package 2158 stays b2186; no archive, profile installation or publication.
-
-# Development b2188 - ATV steering and join honk (23 October 2026)
-
-ATV handle/wheel steering is replicated; join snapshots retain pending live honks.
-PASS 70/70, Release/ABI: `build/atv-steering-qualified/verification.json`.
-PASS native LAN 6/6 + nonzero late join: `build/atv-steering-qualified/native.json`.
-Two controls, 511/163 fact rows/nine controls and 225 routing kinds/18 controls pass.
-Native field stimulus does not close rendered/keyboard acceptance; package stays b2186.
-
-# Development b2187 - player bleeding (23 October 2026)
-
-Owner blood-loss drops are host-validated/forwarded without echo; damage/blur stay local.
-PASS 69/69, Release/ABI: `build/bleeding-qualified/verification.json`.
-DLL SHA256: `b6cd023baaba1d2807a733ecd8114066c6cb72d2d052c97ecfe87578c1229a56`.
-Native contract: [blood capture](tests/blood_capture_0.9.0n.txt), two live functions.
-HEALTH PASS/reference MATCH/zero census problems: `build/bleeding-qualified/native.json`.
-PASS fact rows 509/161/nine controls and routing 225/18; inherited destroy-watch errors remain.
-Rendered bleeding and stain/join/cleaning/save parity stay open; package stays b2186.
-
-# Package 0.9.2158 test build
-
-PASS 68/68 stable Release/ABI b2186 / protocol 2186, 786 entries: `build/release-2158/verification.json`.
-DLL SHA256: `d57443e02bf588ec1f3fe812af1acce0f9e3b93f564bf562645ed5539b55535a`.
-PASS label 0.9.2158, 32-member archive, source/DLL hashes, manifest/icon/models,
-activation/disclaimers and matching export; four rejections and DLL-only routing:
-`build/package-current/verification.json` and `rejection-controls.json`.
-ZIP SHA256: `05e67388365d16902f283aef7a9c962b942ca844eb9d5fb2bc590702ab9d6929`.
-Native gameplay/archive startup stayed unverified; qualification is explicitly offline.
-About/README/release/changelog publication: `565edebe2e86b357b24cb26681102967c38bd36a`.
-The branch fast-forward left implementation changes uncommitted; no binary/upload/master deployment.
-
-# Selected upstream qualification
-
-PASS stable Release/ABI 0.9.0n b2185 / protocol 2185, 68/68 groups and 786 entries:
-`build/upstream-qualified/verification.json`.
-DLL SHA256: `321c13ced4a507f862ef2e343d338684e8cca9abc013fad2605fba796d807c51`.
-PASS vital encoding, delayed loading, worker isolation, NPC rotations, dedup and
-write/landing retries; fact rows 508/160. Prose counters 84/82 documents, 26/24 naming,
-155/0 citations, 84/0 unswept; baseline unchanged: `build/upstream-qualified/prose-import-counters.json`,
-`prose-head-counters.json`. Rendered gameplay stayed unverified; no package/deployment.
-
-# Development b2185 qualification ? 22 October 2026
-
-Rendered join reports remain open: [SYNC_2157_FIXES.md](SYNC_2157_FIXES.md).
-PASS 67/67 stable Release/ABI, 785 entries, protocol 2185 / game 0.9.0n:
-`build/sync-2157-qualified/verification.json`; DLL: `build/votv-coop-2154/main.dll`.
-PASS 1100 watches/eight reopens, exact-recipient seeds/readiness, occupancy/reentry,
-2–32 seats/slot-31 and flashlight setter/connect/world retries. Assertions stay enabled.
-CMake exit status is checked; stopped seed-correction run is not final evidence.
-DLL SHA256: `5b5b5a4a745f11c1e2dc31840f886b7188569a6faa77a94ef81451aaa8109207`.
-Production snapshot SHA256: `9bc95f5f4c6c29e80604ccae7f23916b1ef80671f918513e668ecca558932908`.
-Rendered/32-player/Rust/deployment/archive checks stayed open; update the old master
-for larger automatic lobbies and use identical b2185 DLLs.
-Fork review: [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
-
-## Historical release 0.9.2157 / b2184 - package-label correction, 22 October 2026
-
-The menu and server browser now show Watchers of the Void 0.9.2157 from
-package/release.json. CMake regenerates the label when that metadata changes;
-game target 0.9.0n and wire protocol 2184 remain separate compatibility values.
-The packer requires matching runtime formatter evidence and verifies the label
-again in the freshly unpacked installation's startup log.
-
-PASS Release build, actual shared DisplayVersion formatter at startup, ABI drill,
-one impaired LAN run per direction (Scientist and Kerfur, selected articulated
-mesh, entry and recovery; 250ms lag,40ms jitter,5percent send loss), and isolated
-startup of the full 32-member ZIP. Production/build inputs frozen:2646.
-Evidence: build/version-2157-check/verification.json and final logs;
-build/package-current/verification.json with archiveStartupVerified=true.
-DLL SHA256:fa77a7c20c685840579e452191bc7f5f098152a0aa5f9dc961097392161f2e87
-ZIP SHA256:ab9f59c44bf8cc3dc4f2761559c222a1a9e4a4ce6f35cc621d4417bb75e525f8
-
-The gameplay, ragdoll physics and wire implementation are unchanged from the
-preceding qualification below. Its complete physics/model/camera matrix was
-not rerun on this label-only rebuild. Tests use NullRHI; native widget text
-readback and an ordinary rendered/input check are not claimed. The full65 suite,
-existing16 fact-row findings and script-name watch capacity remain open.
-Entity, original game files and the normal installed profile are untouched.
-The same 0.9.2157 filename replaces the previous ZIP; authorship is AquaFishhh.
-
-
-## Preceding ragdoll qualification 0.9.2157 / b2184 - 22 October 2026
-
-This supersedes the b2183 status below; package number and filename stay unchanged.
-Selected-character physics now starts in the local native FinishSpawningActor
-post-hook, before camera attachment and native impulses, without the polling pause.
-At native recovery attachment, preserve the camera world pose and hand current yaw
-to the capsule/controller once, preventing the late return to the pre-fall heading.
-Native fallImpulse, physics and get-up animation remain the owners of movement.
-
-PASS final exact-DLL native entry/recovery8/8 (instant selected simulation,
-completed wakeup, no delayed yaw drift and subsequent turning), momentum8/8,
-camera10/10,blocking dynamic-platform contact24/24,installed models30/30 and
-remote sleep/sit/ragdoll transitions36/36. Impaired LAN3/3 per direction passes
-with250ms lag,40ms jitter and5percent send loss; production construction hook
-fires on all six entries without a manual watcher setup in the peer driver.
-
-PASS focused native/skin/retry/stream, shared-screen C++ and personal-sleep
-regressions; four native correction-removal controls, stream old-behavior controls,
-ABI drill and18 reliable-routing negative controls. Both new camera dependencies
-match their live-captured references; the fact-row gate retains16 baseline
-violations and gains none. No new complete65-group pass.
-The legacy external toolchain/private laptop corpus is unavailable here.
-Production/build inputs frozen:2645; tested DLLs identical.
-Evidence: build/ragdoll-transition-check/verification.json and final logs.
-
-Full32-member ElvardFIC-WatchersOfTheVoid-0.9.2157.zip passes original branding,
-models, loader layout, byte comparisons and actual isolated unpacked startup.
-DLL SHA256:7bf4a68037a384605ae54fd9c8939564ba531f274d9b94fb6fc5f99617f647d2
-ZIP SHA256:cf0c122bb787876eb62e13a01f4896bc94468622460f4c559e4a89405f30955a
-Package proof: build/package-current/verification.json; archiveStartupVerified=true.
-
-The first impulse observer missed the first spawn's watcher registration; fix the
-acceptance setup before the native call. An artificial movable platform also
-retained StaticMeshActor's WorldStatic channel, triggering native camera wall
-travel on recovery. The final fixture explicitly verifies WorldDynamic and keeps
-all physical responses blocking. No native wall-detection suppression was added.
-The surface driver now uses ordinary C-key recovery through completed native
-animation, rather than ForceWakeup, whose immediate reset could snap a sliding
-head across scenery. A world change aborts the matrix instead of posting stale
-pawn tasks. Failed intermediate runs remain in build/ragdoll-transition-check/; they are not
-release evidence. Static terrain beyond the tested native ground remains open.
-
-Native test logs also expose the existing 768-slot script-name watch capacity
-being exhausted during world startup. Keep that registration-capacity issue open;
-this change does not enlarge the registry or claim the other refused lanes fixed.
-
-Entity and the normal installed profile are untouched. Owner rendered/input
-acceptance, other terrain/vehicles, native bed/chair and uninstalled rigs remain
-open. Branch updates retain AquaFishhh authorship and package0.9.2157.
-
-## Historical release 0.9.2157 / b2183 — 22 October 2026
-
-This status supersedes older package/build statements below. Existing open gameplay
-and implementation tasks remain open unless explicitly accepted.
-
-Integrated main 2e104004b with the selected-character native ragdoll changes.
-Preserved upstream computer leases/desktop edits, balance retries, event cues,
-container births and lifetime guards. DLL/protocol2183 includes both wire changes.
-Public package version is 0.9.2157 at the owner's request; 2158/2159 below are
-historical local iterations, not the current delivery.
-
-PASS Release and focused native/skin/retry/stream, shared-screen C++/sleep,
-events, balance, placement, trowel, water/material and personal-sleep groups;
-ABI and reliable routing with all18 negative controls. The legacy full runner
-cannot complete with the absent external toolchain/private laptop corpus.
-No new complete65-group result is claimed.
-
-PASS actual NullRHI game momentum8/8,camera10/10,surfaces24/24,catalog30/30,
-remote sleep/sit/ragdoll transitions36/36 and impaired LAN3/3 per direction
-(250ms outbound lag,40ms jitter,5percent send loss on both peers).
-Frozen production/build inputs:2644; test DLLs identical.
-Evidence: build/release-2157-check/verification.json and final logs.
-
-Full32-member ElvardFIC-WatchersOfTheVoid-0.9.2157.zip passes package identity,
-original icon/models/authors/loader checks and actual unpacked startup.
-DLL SHA256:c4237cc74aed8932873bf1a6f6c7bb35d47a8e4566b1278135641ef9f2c78f9a
-ZIP SHA256:dde82f9435b31896cef5fc43b4b385dbca471b62194781b4e115aad1c5c5d9b7
-Package proof: build/package-current/verification.json; archiveStartupVerified=true.
-
-The first integration candidate included a superseded pre-mesh collision/all-body
-shutdown. Offline setup checks passed, but actual momentum fell to6/8 and camera
-entries rose over50m. Keep that rejected run in integration-first-failed.log.
-The final build retains the previously qualified staging order: pause component
-simulation, place/rebuild the selected mesh, then stop its new per-body simulation
-until warmup finishes. Both the ordering regression and all native matrices pass.
-
-Normal installation/profile and Entity remain unchanged by this release work.
-Owner handles rendered/input acceptance, especially local bed/chair interaction;
-uninstalled rigs, other terrain/vehicles and more extreme outages remain open.
-Both requested branches are intended to carry this exact release tree, preserving
-prior main/fish history and AquaFishhh commit authorship.
-
-## Ragdoll robustness b2182 / package0.9.2159 — 22 October 2026
-
-Reproduced wall-clock body starvation at 75ms and loss of distinct same-tick bone packets.
-PASS actual-send rotation/bounded merge for 1/5/17/35/64 bodies, loss/burst/reorder/wrap/reset;
-both old-behavior controls fail: stream-final.log, ragdoll-stream-check/legacy-{time,inbox}.log.
-PASS native/skin/retry/stream, sleep/display, shared UI/wire, ABI and routing224/18 controls.
-Full65 suite not rerun. Candidate LAN6/6, surfaces24/24 and remote transitions6/6 passed.
-Initial raw-snap fixtures left native lastLoc stale, legitimately triggering backrooms travel
-(mainGamemode7160/7183). Native teleportWObackrooms934..1075 and Block2/Movable2 correct
-the fixture; gameplay rules unchanged. Retained surface-{initial,registered,no-mirror,travel,
-backrooms}.log cleanup faults and catalog-fixture-interrupted.log are not passing evidence.
-PASS final DLL `b35471ad15d0f417b26439f51c9b64e2f034987de7d2e51e3ba031ea54cbb5a1`:
-momentum8/8, camera10/10, surfaces24/24, installed catalog30/30, transitions36/36, LAN6/6.
-Frozen2644 inputs/three matching DLLs; GNS250ms lag,40ms jitter,5% loss after world-ready.
-Six skins sci_v1sc/walter_v1sc/rvi_scientist_v1sc/luther_v1sc/KerfurH/M use real colliders,
-flat/25deg/35deg/moving surfaces, selected body/mesh, finite motion and native recovery.
-Moving platform100cm/s traveled175cm; max camera entry jump0.069deg; final logs free of travel.
-PASS historical2159 archive32 members, identity/icon/authors/models and unpacked startup:
-b2182, HEALTH, skins4/4, fork namespace, archiveStartupVerified=true.
-ZIP SHA256: `bb85eaff437b031ed101c88702d8b5c8ea676bb258d77e9a45b845aaea49e42b`.
-Evidence: build/ragdoll-robustness-check/{verification.json,*-final.log,source-before.json,
-catalog-names.json}, build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
-No extra models installed or normal profile/publication changed; private processes stopped.
-Ordinary rendered/input and local bed/chair acceptance remains with the owner.
-
-## Native entry momentum b2181 — development, 22 October 2026
-
-Reproduced lost running motion in the actual engine substrate fixture before the
-fix. Native fallImpulse resumes after Delay(0), adding saved fallVeloc to every
-bone. Preserve its commands in order during physics rebuilding, restore the old
-body motion once, and initialize newly added limbs with the original translation.
-Late commands run normally; no invented movement kick or replacement solver.
-
-PASS focused attachment/entry/camera/momentum, selected physics/joint templates,
-remote lifecycle, articulated display, wire, sleep, shared screen, reliable routing
-and ABI checks. Removing the actual velocity hold makes its regression fail;
-removing camera correction also fails its control. Routing rejects all 18 controls.
-Logs: build/ragdoll-momentum-check/*-final.log. Full 65-group suite was not rerun.
-
-Native DLL 6116e6755237f01f9d227caa9335dfe6167780e756efd1f01d8c8a7868ebd293:
-PASS 8/8 controlled movement cases on sci_v1sc and kerfur_omega_h (walk 300,
-run 600, diagonal, airborne), with recovery. Native camera PASS 10/10, entry view
-change below 0.1 degrees. An optional held-input probe yielded zero movement;
-rendered input-path acceptance remains open. Initial recovery failures were a
-test setup problem: forceGetUp waits and gates recovery, forceWakeup is immediate.
-Retain the failed/intermediate logs; do not count them as successful cases.
-
-LAN on that DLL: entry/recovery observed both ways, selected model correct, but
-articulated display absent in the acceptance probe (PARTIAL, streamed=0). A prior
-8-second game-thread wait aborted readiness while loading; the harness now respects
-its overall bounded readiness deadline. That fix let the drive sequence execute.
-Final DLL 3d77b13017ed02d4353ec19a0b7de47035663ab7ca041ea9ed8924c67131d3e2
-adds rig/body/batch counts to existing limited emissions and remote rig-change logs.
-PASS exact final DLL: momentum8/8, camera10/10 (max view jump0.056deg, max rise60.9cm
-over entry centre in crouch), bidirectional LAN selected articulated display and
-recovery. Source snapshot2642 entries frozen, all three DLL copies identical.
-ABI/native/remote fixtures rerun after the logging changes. Qualification evidence
-build/ragdoll-momentum-check/verification.json. The previous partial LAN is not
-explained by a behavior change and remains an intermittent acceptance limitation.
-PASS complete ElvardFIC-WatchersOfTheVoid-0.9.2158.zip (32 members) and actual
-unpacked startup: correct b2181 boot, HEALTH PASS, starter skins4/4 and enabled
-fork namespace. build/package-current/verification.json archiveStartupVerified=true.
-ZIP SHA256 ba8277a78e51b03ac2cd9dd47707e36f2ed641525b1186a542f7d03d9f14b269.
-All private game instances stopped; git diff --check clean. Original installation,
-normal profile and Entity code remain unchanged.
-
-## Ragdoll entry camera b2180 / package 0.9.2157 (22 October 2026)
-
-Owner confirms the launch fix and reports the camera looking upward on entry.
-Before correction, native game measurements changed from a level view to
-89.75 degrees upward at the selected-mesh swap. The inherited camera arm still
-had the native plushie's fixed head-relative rotation.
-
-Capture the controller's entry rotation, rebase the head-attached arm after the
-swap and through pose warmup/physics initialization, then stop camera writes.
-Retain normal physical head following and native recovery. Cached object serials
-and actual attach-parent reads reject recycled/reparented camera references.
-
-PASS focused native attachment/entry/camera, selected rig/joint-template, remote
-lifecycle/bone batches, articulated display and wire regressions. The camera
-regression rejects an actual-substrate mutant with correction disabled. Release
-ABI and reliable-kind gates pass with their negative controls (18 routing drills).
-
-PASS ten native 0.9.0n transform/physics cases: sci_v1sc and kerfur_omega_h, each
-with level, down/wrapped-yaw, up, crouched and faint entries, with recovery between
-entries. Mesh-replacement view differences stay below 0.1 degrees; selected
-bodies remain attached and physically move without sky launch. In the NullRHI test,
-synthetic pitch resets between frames, so angled stimuli arrange native controller and
-camera-arm transforms in the same posted task as ragdollMode. These checks do not
-claim rendered-image acceptance or verification of the real input path.
-
-The first LAN attempt completed client-to-host but its old screenshot-framing
-teleport moved the reverse observer toward an unconverged puppet position. It
-fell/died and disconnected before the host drove. Evidence is retained in
-build/ragdoll-camera-check/peer-framing-{host,client}.log. The headless test now
-opts out of screenshot teleports/view writes; normal gameplay is unaffected.
-
-PASS final identical b2180 DLLs in both native LAN directions: scientist client
-to host and Kerfur host to client, selected articulated display and entry/recovery.
-PASS complete ElvardFIC-WatchersOfTheVoid-0.9.2157.zip package verification and
-actual startup from the unpacked archive in an isolated manager layout, dev off.
-Original fork identity/icon/models and ElvardFIC/AquaFishhh credits are retained.
-Normal game/profile files were not modified. No online release was published.
-
-Evidence: build/ragdoll-camera-check/{verification.json,source-before.json,
-camera-final.log,peer-host-final.log,peer-client-final.log,native-final.log};
-build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
-The full 65-group suite remains specific to b2178; it was not repeated for b2180.
-Terrain, moving props, high latency, arbitrary imported rigs, sleep/chair transitions
-and visual camera acceptance remain in the broader gameplay checklist.
-
-## Corrected full manager package 0.9.2156 / b2179 (22 October 2026)
-
-The previous ragdoll ZIP was a manual DLL replacement, not an installable fork
-package. The owner's actual r2modman profile confirms it was inferred as
-WatchersOfTheVoid-ragdoll, author WatchersOfTheVoid, version 2179.0.0. Its root
-manifest/icon and loader enabled marker were absent; UE4SS did not start it.
-The ragdoll code had been tested, but that delivery had not passed manager
-installation verification. This packaging failure supersedes the earlier
-delivery claim; the player-ragdoll qualification below still applies to its DLL.
-
-Prepared the complete **ElvardFIC-WatchersOfTheVoid-0.9.2156.zip**, retaining the
-existing fork name/namespace and original supplied 256x256 icon. README credits
-ElvardFIC and co-maintainer AquaFishhh, preserving original Multivoid credits.
-The root manifest declares version 0.9.2156 and unreal_shimloader 1.1.7. The
-archive contains mod/enabled.txt, mod/dlls/main.dll, starter models/previews and
-legal notices, using the original mod/ and pak/ manager routes.
-
-PASS package/package_current.ps1: all 32 entries checked against current inputs,
-unchanged qualified b2179 DLL, production source hashes, metadata, icon dimensions
-and loader tree. The existing manager-routing predicate rejects the prior broken
-archive and accepts the complete one. The author's namespace comes from the
-canonical Author-Name-Version filename; the actual r2modman import source was
-checked, as were the installed VotV schema's shimloader route rules.
-
-PASS actual game startup from the newly unpacked archive in an isolated manager
-layout, with dev mode disabled and default loader settings. UE4SS reports
-ElvardFIC-WatchersOfTheVoid's enabled.txt and starts the module. The module reports
-Watchers of the Void by ElvardFIC, game 0.9.0n, build b2179, correct namespaced
-data path and HEALTH: PASS; the installed starter pak supplies all four skins.
-The user's Default profile was inspected without modification.
-
-The DLL is byte-identical to the one which passed the bidirectional ragdoll game
-tests. No gameplay source changed for this delivery correction. Evidence:
-build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
-Package identity has one source in package/release.json. The previous manual-only
-delivery is retained under build/package-current/ as a rejected test control.
-
-## Player ragdoll hotfix b2179 (21 October 2026)
-
-Owner report: launch into the sky on entry; standing remote puppet followed by
-a recovery teleport; selected character required instead of the native plushie.
-
-Release built with MSVC x64 against the actual 0.9.0n game. The clean dependency
-build exposed a WebRTC C++14 / Abseil C++20 link mismatch; the two ICE targets
-now use the project's C++20 standard. Final incremental build reports no work.
-This is a focused hotfix qualification, not another 65/65 b2178 full-suite run.
-
-Reproduced before repair:
-
-- Original game log repeatedly read an unknown ReturnValue from the void Actor
-  attachment call, then destroyed the remote body. The actual-ParamFrame native
-  regression failed on this behavior.
-- Native entry regression failed because the selected mesh was lowered to the
-  plushie's pelvis, putting the full-size feet below the floor.
-- Isolated live Kerfur still rose 18–35 metres after the initial geometry fixes.
-  Native asset audit found the full rig's mixed-scale chest pivot; the measured
-  joint-anchor gap was 1069.2 cm. Entry velocity was zero before simulation.
-
-PASS focused checks:
-
-- run_ragdoll_native.ps1 -CompileSources: actual ParamFrame attachment contract,
-  pelvis parent verification, recycled actor/body/mesh, missing parameters,
-  selected geometry retained, one staged configuration and recovery; three
-  production translation units compile.
-- run_ragdoll_skin.ps1: selected mesh/materials, compatible common/custom rig,
-  bodies/joints/pelvis, transform before physics initialization, no player AnimBP,
-  stale objects and failures. Separated anchors are repaired while instantiating
-  bodies and shared NPC templates restored on success, dispatch failure and a
-  later joint-read failure. Foreign authored rigs are not retargeted.
-- run_ragdoll_retry.ps1: actual remote lifecycle, drift, complete bone batches,
-  parent ordering, rig replacement, malformed poses and retry/recovery.
-- sleep_display_test.cpp: model/material/scale, articulated pose and sleep
-  transitions. shared_screen_wire_test.cpp: actual protocol and bone validation.
-- abi_gate.py --drill: no UE4SS imports; injected forbidden import rejected.
-  reliablekind_gate.py --drill: 224 kinds and all 18 negative controls pass.
-- Fault control with joint-anchor repair deliberately removed fails the native
-  skin test. Original attachment and geometry failures are retained as controls.
-
-Actual game evidence uses isolated executables/profiles and native PhysX under
-NullRHI. Normal game/profile files were not modified. The loading curtain now
-uses a steady clock: its former game-thread ImGui::GetTime call faulted without
-a renderer and prevented the test client's join from completing.
-
-PASS Kerfur local entry/fall/rest/recovery: 64 samples, maximum pelvis height
-22.5 cm above the pre-entry actor centre; selected model, remote mirror model,
-pelvis attachment and recovery all verified. PASS scientist sci_v1sc with the
-final physics implementation: 52 samples, the same 22.5 cm maximum and all flags
-true. Earlier broken builds rose thousands of centimetres in the same probe.
-
-PASS real LAN in both directions: sci_v1sc client to host, then kerfur_omega_h
-host to client. Both observers verify the selected mesh and complete articulated
-network display; rising and falling edges observed, no observer death.
-Final bidirectional run and artifact hashes are recorded in
-build/ragdoll-evidence/verification.json. Its logs distinguish the reverse round.
-
-Evidence: build/ragdoll-evidence/, build/ragdoll-fault-controls/ and the actual
-native harnesses in agent/tests/. Remaining gameplay acceptance includes arbitrary
-imported rigs, slopes/moving surfaces, high latency and sleep/chair transitions.
-Entity implementation and the shared native physics asset defaults are unchanged.
-
-## Recheck: PC boot, C-key ragdoll and resource identity (21 October 2026)
-
-PASS repeated ragdoll_skin/shared_screen/trowel and **65/65 groups**, stable Release/ABI,
-781 inputs: `build/continued-20261021/verification.json`; snapshot/DLL match qualified b2179.
-PC loading and all-role C-key reports still need real-peer acceptance on matching DLLs.
-WindowsApps Python failed, so full prose/fact gates were not rerun: historical findings
-remain13 prose counters and45 fact findings/525 rows/157 files. Passing include-context
-tests do not replace the full gates; subsequent qualification records supersede these counts.
-
-## Development b2179: PC boot, C-key ragdoll and held materials (21 October 2026)
-
-Owner report: the stationary base PC stays loading on host and client. The
-production shared-screen wrapper regression reproduces an old boot snapshot
-writing `rootswitch` back to 0 after native startup has set it to 1. The previous
-code fails the root-page assertion. Desktop-only traversal passes and preserves
-native boot/power pages across repeated paints, while still restoring desktop
-text, scroll and tabs with late-child retry. `run_shared_screen.ps1` passes,
-including the existing wire, lifecycle and sleep-display cases.
-
-`computer_boot_native_test.py` checks the existing laptop corpus: rootswitch 0
-at ubergraph 29, 1 at 329, delayed continuation 315, anim=false at 550 and the
-launched notification at 561. No fresh pak/Blueprint extraction was run. Actual
-host/client startup, repeated power cycles, entering/leaving during boot, power
-loss/restoration and join/reconnect remain gameplay acceptance for reports 54/55.
-
-Owner report: pressing C launches the player on all roles and breaks ragdoll.
-Model/runtime logs are not yet recorded. New production regressions fail on
-the previous code: the skin setup changes mesh/physics asset before stopping all
-old bodies, and local startup aligns the pelvis before animation warmup. The
-latter starts simulation at the moved warm pose rather than the entry anchor.
-An additional regression exposes the different-rig height error: the native
-shell's pelvis cannot determine the selected model's standing/crouched height.
-This is an offline reproduction of code defects, not of PhysX launch.
-
-The skin setup now disables collisions and all old bodies before replacement.
-Local startup captures the selected model's standing/crouched pelvis, preserves
-that entry anchor across failed setup retries and
-teleports the warmed pose to it immediately before simulation. Pawn, body, source
-mesh and selected asset identities are checked across calls; missing/non-finite
-poses and failed teleports refuse startup. Unreadable initial velocity becomes
-zero, without reusing a previous entry's velocity.
-
-Focused PASS: `run_ragdoll_skin.ps1` (actual production startup seam and skin
-wrapper), `run_ragdoll_retry.ps1` (remote lifecycle and both production TUs).
-Tests cover different native/selected pelvis heights, crouched entry, warmed-pose
-movement, retry after configuration/read/teleport failure,
-single startup, velocity preservation, non-finite positions and replacement or
-teardown during reads/configuration/translation/start. Native C-key/faint and
-standing/crouched/repeated recovery, slopes and selected/common/custom models
-still require matching b2179 host/client gameplay. Reports 5/50 remain open.
-
-The native `mainPlayer.updateHold` corpus reads `saveSlot.hold[0]` before replacing
-the held actor. Existing profile snapshots refreshed water/material values only
-in a copy; immediate native stock persistence covered only trowels. A new
-production-controller regression first failed on the unchanged water-hand use
-path because it never invoked persistence.
-
-The controller now persists local held stock after water use/tick, material
-changes and both native cement-transfer endpoints. The inventory wrapper accepts
-the five exact supported classes, matching inner/outer keys and a current hand/
-save/world/slot, then confirms live stock again. The codec validates all existing
-bool/float/int groups against the snapshot before writing any changed values,
-without native dispatch, engine allocation or replacing array headers.
-
-Material focused PASS: `run_trowel.ps1`, `run_2153.ps1 -CompileSources`,
-`run_2169.ps1 -CompileSources`, `run_nonentity.ps1`, `run_sponge_effects.ps1`.
-Coverage includes zero/refill, unchanged base groups and array ownership,
-malformed/missing shapes, stock changes, nested saved-value changes, actor
-recycling, world/save/slot replacement and selected-hand controller hooks.
-The scalar-memory test compiles the actual production codec function.
-
-The first full attempt exposed an obsolete scalar-codec mock in
-`inventory_view_2146_test.cpp`; it now uses the current API and `run_2146.ps1`
-passes. Final qualification via `package/check_current.ps1
--EvidenceDirectory build/material-persistence-check` passes **65/65 groups**,
-the stable-source guard and Release identity/ABI inspection (781 build entries).
-Production snapshot SHA256:
-`828154d98e2208cf82869997293f059d422511e62a8a5b2f801b5d4592ce3dcc`.
-Development DLL `build/votv-coop-2154/main.dll` SHA256:
-`5a92cbeda18433d3a3dde41494ddf75a2e8f0979c7698136f1fe97af53271332`.
-Package 2155 and its delivery archive remain b2178. No package, installation or
-publication is part of this continuation. Runtime resource transitions, trowel
-key mismatch repair, concurrent writers and paid debit/output/refund transactions
-remain open. Bench58 and Token52 are unchanged; no fresh asset audit was run.
-
-Full public-prose and fact-row gates were rerun during this continuation: prose
-still has 13 counters above baseline; fact rows reports 45 findings across 525
-rows in 157 files (missing reference entries and unused declarations). Logs are
-`build/material-persistence-check/public-prose.log` and `fact-rows.log`.
-Passing offline groups do not close these full CI findings.
-
-## Final package 0.9.2155 / DLL b2178 (21 October 2026)
-
-Final **0.9.2155 / b2178** supersedes incompatible b2177; labels/metadata agree.
-PASS Release `build/release-2155-logs/final-build.log`; unchanged **65/65**, 781 inputs,
-identity/ABI: `build/continuation-check/verification.json`. PASS32 members,256x256 icon,
-manifest/docs/paks/loader and delivery identity: `build/release-2155-logs/release-verification.json`.
-Delivery: outer `dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`, `SHA256SUMS-2155.txt`.
-DLL SHA256: `9e5f4fd23b272efa6fd807df45cba466664acfe8639c5d4d639a9f23c9c4d5f8`.
-ZIP SHA256: `ce2688393150abb294f3c3edb4acc489439042fc661fd09eefa80afb029764b1`.
-No publication/commit/push/installation. Real-peer acceptance, host rifle, Token52,
-events, paid transactions and then-deferred native audit remained open at this date.
+# TESTLOG - verification and open reports
+
+Development target: **0.9.2164**. Last qualified offline package: **0.9.2163 / b2217**. Implementation backlog: [TODO.md](TODO.md) and [WORK.md](WORK.md). Maintained test coverage: [tests/README.md](tests/README.md).
+
+## HandTaken delivery and client cleanup (8 November 2026)
+
+Implemented HD01-HD25 / HX01-HX50: confirmed notices retain recipient-owned FIFO debt after refusal, reserve bounded capacity before native spending, and complete only the accepted receipt. Context/recipient/body replacement cancels stale work; command/service retirement does not erase confirmed debt. Client cleanup captures typed hand fields and weak actor/class identities, preserves replacement hands and shared props, retries refused inventory writes and unattempted native refresh/release, and consumes dispatched native work once. Transactional inventory writes accept caller guards; native updateHold and physics-handle release revalidate their captured targets and preserve callback-installed grab fields.
+Verification: PASS 75 named controller cases, native wrapper/inventory cases, 21 assertion-based fault controls and three production object compiles. Actual controller, service/Registry stack, extracted native wrappers and production inventory/save-record code run with metadata, dispatch, hand/puppet/transport and clock doubles. Full regression and repository gates are running. Exact item/operation correlation remains open because the wire notice carries only a class; a delayed notice can still match a newer same-class item. Native multiplayer acceptance and uncertain resource/latent reconciliation remain open. No Release build, package, install or version/protocol change.
+Evidence: `build/handtaken-controls.log`, `build/handtaken-check`, `build/handtaken-verification/verification.json`. Each HX cell separately cancels stale continuation after the named operation/replacement; cleanup never erases a newer receipt.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| HD01 | retain confirmed HandTaken notices after transport refusal. | HD02 | bind notice debt to recipient generation and world-ready revision. | HD03 | detach notice debt on session/world/stop/role/connection retirement. | HD04 | reserve bounded per-recipient notice capacity before native hand commands. |
+| HD05 | preserve FIFO notice ordering without blocking other recipients. | HD06 | complete only the exact notice accepted by transport. | HD07 | guard notice pumping against recursive Tick/native callbacks. | HD08 | retry immutable packets without rerunning native verbs or inventory work. |
+| HD09 | cancel notices after recipient body/puppet replacement. | HD10 | preserve confirmed notice debt after command/service retirement. | HD11 | admit HandTaken cleanup only in a live connected client context. | HD12 | reject empty, oversized and non-ASCII class notices. |
+| HD13 | own client cleanup by an independent receipt, superseded by newer notices. | HD14 | capture local body actor/class identities and revalidate its registry binding. | HD15 | use bounded typed nonoverlapping local hand field layouts. | HD16 | retain held/grabbed actor/class serials during cleanup. |
+| HD17 | validate class observations before any client mutation. | HD18 | compare captured hand fields before clearing inventory or pointers. | HD19 | retry refused inventory writes while the same captured cleanup owns them. | HD20 | pass cleanup ownership into transactional held-inventory writes. |
+| HD21 | guard native updateHold resolution/dispatch and distinguish unattempted work. | HD22 | destroy only the captured distinct hotbar mirror, preserving shared world props. | HD23 | guard native physics-handle release and preserve callback-installed grab state. | HD24 | freeze only the captured released prop, preserving replacement grabs. |
+| HD25 | retire client cleanup on teardown and consume uncertain native attempts once. |  |  |  |  |  |  |
+
+| Operation | World | Session serial | Body actor serial | Body class serial | Notice/cleanup receipt |
+| --- | --- | --- | --- | --- | --- |
+| Host notice send | HX01 | HX02 | HX03 | HX04 | HX05 |
+| Client hand layout | HX06 | HX07 | HX08 | HX09 | HX10 |
+| Held class read | HX11 | HX12 | HX13 | HX14 | HX15 |
+| Grabbed class read | HX16 | HX17 | HX18 | HX19 | HX20 |
+| Release stream arm | HX21 | HX22 | HX23 | HX24 | HX25 |
+| Held inventory clear | HX26 | HX27 | HX28 | HX29 | HX30 |
+| Native updateHold | HX31 | HX32 | HX33 | HX34 | HX35 |
+| Old mirror destroy | HX36 | HX37 | HX38 | HX39 | HX40 |
+| Grab handle release | HX41 | HX42 | HX43 | HX44 | HX45 |
+| Released prop freeze | HX46 | HX47 | HX48 | HX49 | HX50 |
+
+## Omega host command transactions (8 November 2026)
+
+Implemented OC01-OC25 / OX01-OX50: command attempts own robot/registry, sender and session/world proofs through service assignment, native replay and carried-object work. Service snapshots support compare-and-set assignment, host reservations and receipt-bound rollback; startKill preserves newer assignments. Temporary puppet hand fields retain bounded layouts, weak identities and per-body receipts, restoring only unchanged staged values. Native actionName validates a typed bounded frame and owns its FString input. Dispatched failures remain consumed without guessed rollback/replay. Queues retire old context/sender/target work; the receiver admits all nine defined commands.
+Verification: PASS 75 named cases, 24 assertion-based fault controls and three production object compiles. Actual Omega controller, service ledger, Registry/Element/claims and extracted native replay functions run with engine/metadata, hand/puppet/transport and clock doubles. All 162 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose fails 14 counters above baseline, including 23 uncalled declarations and 156 unswept source files. HandTaken delivery/client cleanup, uncertain native resource reconciliation and wider latent review remain open. No Release build, package, install or version/protocol change.
+Evidence: `build/omega-command-controls.log`, `build/omega-command-check`, `build/omega-command-verification/verification.json`. Each OX cell separately cancels old command work after its operation/replacement; owned temporary-hand cleanup can still restore unchanged fields.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| OC01<br>OC05 | Bind Omega execution to current session/serial/stop/role/connection and world.<br>Capture immutable prior service assignments instead of only ServedSlot. | OC02<br>OC06 | Capture canonical NPC registry identity and robot actor/class serials before execution.<br>Compare-and-set client service assignment against the captured prior receipt. | OC03<br>OC07 | Keep sender generation and world-ready revision current through native command work.<br>Rollback only the captured attempt and a still-valid prior assignment. | OC04<br>OC08 | Reserve actor command attempts and reject recursive/superseded execution.<br>Represent host takeover with an owned no-client reservation. |
+| OC09<br>OC13 | Bind startKill service removal to actor/function/context and exact assignment.<br>Capture local/requester body identity and revalidate puppet lookups. | OC10<br>OC14 | Guard kill-watch registration and settlement across callbacks.<br>Stamp staged hand body/class/context lifetime. | OC11<br>OC15 | Restore the previous host-replay recursion flag after nested/native exits.<br>Validate pointer/FName hand layouts by property type, size, bounds and nonoverlap. | OC12<br>OC16 | Reject unreadable job state before service/hand changes, preserving equipment exemption.<br>Retain weak identities of previous/staged held and grabbed actors. |
+| OC17<br>OC21 | Restore only hand fields still containing this attempt's staged values.<br>Fence hold retirement, release publication and drive claims after native callbacks. | OC18<br>OC22 | Use per-body staging receipts so older cleanup preserves a newer stage.<br>Validate recipient and owned staged class before HandTaken publication. | OC19<br>OC23 | Guard native floppy/hold/viewer before-and-after observations.<br>Validate native actionName actor/class/function/player and bounded typed frame. | OC20<br>OC24 | Fence carried-object physics work by command/service/object identity.<br>Expose actual dispatch and avoid rollback/replay after an uncertain native attempt. |
+| OC25 | Detach command/staging work on teardown and reject stale queued context. |  |  |  |  |  |  |
+
+| Operation | World | Session serial | Robot slot | Robot class | Service/attempt receipt |
+| --- | --- | --- | --- | --- | --- |
+| Job state read | OX01 | OX02 | OX03 | OX04 | OX05 |
+| Service assignment | OX06 | OX07 | OX08 | OX09 | OX10 |
+| Local player lookup | OX11 | OX12 | OX13 | OX14 | OX15 |
+| Hand-source lookup | OX16 | OX17 | OX18 | OX19 | OX20 |
+| Pre-command floppy read | OX21 | OX22 | OX23 | OX24 | OX25 |
+| Native replay preparation | OX26 | OX27 | OX28 | OX29 | OX30 |
+| Native replay dispatch | OX31 | OX32 | OX33 | OX34 | OX35 |
+| Post-command held-object read | OX36 | OX37 | OX38 | OX39 | OX40 |
+| Carried-object physics | OX41 | OX42 | OX43 | OX44 | OX45 |
+| HandTaken send | OX46 | OX47 | OX48 | OX49 | OX50 |
+
+## Follow and served-player ownership (8 November 2026)
+
+Implemented SF01-SF25 / SM01-SM50: robot/player assignments retain actor/class, recipient-generation/readiness and session/world proofs. Monotonic leases isolate stale cleanup; follow attempts and tick/departure walks own their records. Unreadable active state no longer falls through to Serve or destroys a valid assignment. Native seams retain function/owner identities and reconcile arm/watch decisions; unknown arm results retry. Player substitution validates the exact callee, current service and puppet identity. Main-player output and native insert selection use bounded typed function schemas; native field names retain case-insensitive FName matching.
+Verification: PASS 75 named cases, 26 assertion-based fault controls and three production object compiles. Actual follow/service controllers, Element/Registry/claims and extracted native insert-read functions run with metadata, hook/watch operations, puppet access, engine/transport and clock doubles. All 161 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose fails 14 counters above baseline, including 22 uncalled declarations and 155 unswept source files. Native multiplayer acceptance and remaining Omega command/latent continuations remain open. No Release build, package, install or version/protocol change.
+Evidence: `build/served-player-controls.log`, `build/served-player-check`, `build/served-player-verification/verification.json`. Each SM cell separately cancels the old continuation after its operation/replacement.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SF01<br>SF05 | Fence follow/service work by session pointer, serial, stop, role, connection and world.<br>Release follow services by lease so stale cleanup preserves newer assignments. | SF02<br>SF06 | Stamp robot actor/class slot serials and retain owned records through native callbacks.<br>Stop OnToggle when active state is unreadable or ownership changes. | SF03<br>SF07 | Bind service recipients to slot generation and world-ready reset revision.<br>Own follow Tick snapshots and recheck the installed activator after reads. | SF04<br>SF08 | Allocate monotonic service leases and complete only the captured service receipt.<br>Reserve follow attempts before native reads/Serve and preserve reentrant replacements. |
+| SF09<br>SF13 | Retain unreadable active-state debt; retire only confirmed off/dead activators.<br>Retain native seam function/declaring-class identities and retry missing resolution. | SF10<br>SF14 | Keep host-toggle cleanup isolated to the follow-owned service.<br>Own arm/watch decisions across callbacks and reconcile changed wanted seams. | SF11<br>SF15 | Reject invalid slots/seam masks and preserve valid older service after refused admission.<br>Reject partial seam activation; retain retryability after failed arm/disarm. | SF12<br>SF16 | Keep pump/arm recursion guards active through disconnect and retire context debt.<br>Validate exact native callee and current service before rewriting player-0 results. |
+| SF17<br>SF21 | Validate puppet identity, pose and actor/class lifetime through body/result lookups.<br>Keep legacy Serve/Unserve/ServedSlot entry points compatible with owned receipts. | SF18<br>SF22 | Bound main-player out-parameter metadata by function identity, type and frame extent.<br>Use owned departure snapshots and preserve newer records during cleanup callbacks. | SF19<br>SF23 | Bind insert-read selection to caller function/frame and guarded native schema.<br>Clear follow/services without erasing records admitted by later reentrant work. | SF20<br>SF24 | Preserve native missing-body fallback and explicit null insert rejection.<br>Cache the native insert-read schema by live class/function incarnation and retry metadata. |
+| SF25 | Bound native insert variable storage and cancel metadata/read continuations on caller retirement. |  |  |  |  |  |  |
+
+| Operation | World | Session serial | Robot slot | Robot class | Service receipt |
+| --- | --- | --- | --- | --- | --- |
+| Follow toggle active read | SM01 | SM02 | SM03 | SM04 | SM05 |
+| Follow tick active read | SM06 | SM07 | SM08 | SM09 | SM10 |
+| Native seam arm | SM11 | SM12 | SM13 | SM14 | SM15 |
+| Main watch arm | SM16 | SM17 | SM18 | SM19 | SM20 |
+| Puppet registry lookup | SM21 | SM22 | SM23 | SM24 | SM25 |
+| Puppet pose/body lookup | SM26 | SM27 | SM28 | SM29 | SM30 |
+| Native result lookup | SM31 | SM32 | SM33 | SM34 | SM35 |
+| Main out metadata | SM36 | SM37 | SM38 | SM39 | SM40 |
+| Main out pointer resolution | SM41 | SM42 | SM43 | SM44 | SM45 |
+| Insert-read selection | SM46 | SM47 | SM48 | SM49 | SM50 |
+
+## Kerfus command admission and dispatch (8 November 2026)
+
+Implemented KA01-KA25 / KB01-KB50: owned client FIFO retries preserve refused sends, while host commands retain target identity, sender generation/readiness and world/session scope. NoBody and undispatched metadata waits refund the token; a dispatch attempt is consumed even if native execution fails. PRE frames and FString data are bounded and copied safely. Native action frames validate types, extents, actor/class/function/player lifetime and dispatch receipts. Watch registration owns its scope and rejects recursive registration.
+Verification: PASS 75 named cases, 25 assertion-based fault controls and two production object compiles. Actual command controller, native action wrapper, Element/Registry and claims run with metadata, reach judgement, follow attribution, engine/transport and clock doubles. All 160 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose still fails 14 counters above baseline. Follow/served-player lifetime, native gameplay and the wider upstream review remain open. No Release build, package, install or version/protocol change.
+Evidence: `build/kerfus-intent-controls.log`, `build/kerfus-intent-check`, `build/kerfus-intent-verification/verification.json`. Each KB cell separately cancels old work after its operation/replacement.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| KA01<br>KA05<br>KA09<br>KA13 | Retire command work on session pointer/serial/stop/role/connection and world changes.<br>Validate host Prop identity/incarnation and canonical Actor/Class bindings.<br>Bound ingress queues and keep slot 31 independent from blocked peers.<br>Cancel queued client commands on mirror/actor/class replacement. | KA02<br>KA06<br>KA10<br>KA14 | Own queued command and target identity receipts across callbacks.<br>Use owned target snapshots before reach authorization, without borrowed Elements.<br>Guard recursive pumps and clear detached work on disconnect.<br>Validate PRE function identity, frame extent and action storage before reads. | KA03<br>KA07<br>KA11<br>KA15 | Bind host queues to sender generation and world-ready reset revision.<br>Retain NoBody waits without spending the per-peer token.<br>Retain client command FIFO after transport refusal.<br>Copy bounded FString headers/data without unaligned reads or access violations. | KA04<br>KA08<br>KA12<br>KA16 | Reject invalid host IDs, reserved bytes and unsupported shared actions.<br>Preserve one command per peer per tick and the native 10/10 token budget.<br>Pace client retries and complete only the captured head receipt.<br>Preserve native colour/local options and offline operation. |
+| KA17<br>KA21<br>KA25 | Refuse client shared verb bodies even while disconnected or metadata is unavailable.<br>Validate bounded, nonoverlapping player/action frame fields and property types.<br>Preserve newer queued work after reentrant enqueue, disconnect or sender replacement. | KA18<br>KA22 | Guard PRE metadata continuation by caller/actor/class/function/context ownership.<br>Expose action dispatch attempts separately from native success. | KA19<br>KA23 | Keep presser attribution scoped to the exact host invocation; consume uncertain attempts once.<br>Preserve legacy action wrapper compatibility and retry missing metadata. | KA20<br>KA24 | Validate actionOptionIndex actor/class/function and captured player lifetimes.<br>Guard watch registration/live settlement and diagnostic counters after callbacks. |
+
+| Operation | World | Session serial | Actor slot | Class slot | Element |
+| --- | --- | --- | --- | --- | --- |
+| Client action metadata<br>Client name metadata | KB01<br>KB06 | KB02<br>KB07 | KB03<br>KB08 | KB04<br>KB09 | KB05<br>KB10 |
+| Client send<br>Host clock | KB11<br>KB16 | KB12<br>KB17 | KB13<br>KB18 | KB14<br>KB19 | KB15<br>KB20 |
+| Host reach<br>Host class gate | KB21<br>KB26 | KB22<br>KB27 | KB23<br>KB28 | KB24<br>KB29 | KB25<br>KB30 |
+| Host local-player lookup<br>Action function metadata | KB31<br>KB36 | KB32<br>KB37 | KB33<br>KB38 | KB34<br>KB39 | KB35<br>KB40 |
+| Action parameter metadata<br>Native action dispatch | KB41<br>KB46 | KB42<br>KB47 | KB43<br>KB48 | KB44<br>KB49 | KB45<br>KB50 |
+
+## Kerfus state delivery and refresh (8 November 2026)
+
+Implemented KD01-KD25 / KX01-KX50: per-recipient state/join debt retains refused or unreadable work, validates recipient generations/readiness revisions, and completes only the captured receipt. Client state application retains individual writes and unfinished refresh work; actual upd dispatch is consumed once. Completed duplicate packets recheck declarative state, restoring local drift without replaying an unchanged active edge. Native layouts follow actor/class/ancestor identities, field extents and masks; missing metadata retries. Session/world/registry replacement cancels old continuations.
+Verification: PASS 75 named cases, 19 assertion-based fault controls and two production object compiles. Actual manager, native wrapper, Element/Registry and drive claims run with reflected metadata, engine/transport and clock doubles. All 159 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose fails 14 counters above baseline, including 21 uncalled declarations and 154 unswept sources. Native gameplay acceptance remains unperformed. No Release build, package, install or version/protocol change.
+Evidence: `build/kerfus-state-controls.log`, `build/kerfus-state-scoped.log`, `build/kerfus-state-check` and `build/kerfus-state-verification/verification.json`. Every KX cell separately cancels the old continuation after its named operation/replacement.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| KD01<br>KD05<br>KD09<br>KD13 | Retire state work across session pointer/serial/stop/role and world changes.<br>Validate finite energy and supported flags while preserving native energy above 100.<br>Acknowledge only the captured publication; preserve newer state and join work.<br>Preserve immediate flag edges and half-unit/one-second energy gating, including clock rollback. | KD02<br>KD06<br>KD10<br>KD14 | Own host and client registry identity snapshots instead of Element/container references.<br>Retain separate immutable delivery receipts for every recipient.<br>Enumerate owned late-join rows without iterators surviving native calls.<br>Accept state only on the current client, for valid host IDs and mirror props. | KD03<br>KD07<br>KD11<br>KD15 | Check canonical actor/EID, Element incarnation and actor/class serials.<br>Pace refused/unreadable retries without an attempt-count cutoff.<br>Read fresh native state for a queued join and retry unreadable joins.<br>Retain bounded latest-state apply debt and preserve the existing deferred-bind route. | KD04<br>KD08<br>KD12<br>KD16 | Preserve unenrolled sampling and acquire drive leases only for a valid current host prop.<br>Bind sends to recipient generation and world-ready reset revision.<br>Include slot 31 and bound/fairly rotate delivery and client-apply work.<br>Stop and retain progress between individual declarative client writes. |
+| KD17<br>KD21<br>KD25 | Carry an unfinished active-state refresh into a newer packet for the same incarnation.<br>Bound native fields by type/extent and reject overlapping or nonfinite state data.<br>Guard metadata settlement and make HostKnows reflect only current canonical records. | KD18<br>KD22 | Consume upd dispatch once, including native failure and reentrant replacement.<br>Guard upd actor/class/function/frame ownership and expose actual dispatch. | KD19<br>KD23 | Cancel client effects after actor, class, Element or world replacement.<br>Retry missing/replaced layouts without poisoning legacy wrapper entry points. | KD20<br>KD24 | Cache native state layouts by live class incarnation and preserve boolean masks.<br>Invalidate queued work on teardown without resetting an active stack's recursion guard. |
+
+| Operation | World | Session serial | Actor slot | Class slot | Element |
+| --- | --- | --- | --- | --- | --- |
+| Host active read<br>Host charging read | KX01<br>KX06 | KX02<br>KX07 | KX03<br>KX08 | KX04<br>KX09 | KX05<br>KX10 |
+| Host energy read<br>Recipient send | KX11<br>KX16 | KX12<br>KX17 | KX13<br>KX18 | KX14<br>KX19 | KX15<br>KX20 |
+| Client class gate<br>Client active read | KX21<br>KX26 | KX22<br>KX27 | KX23<br>KX28 | KX24<br>KX29 | KX25<br>KX30 |
+| Client active write<br>Client charging write | KX31<br>KX36 | KX32<br>KX37 | KX33<br>KX38 | KX34<br>KX39 | KX35<br>KX40 |
+| Client energy write<br>Client upd dispatch | KX41<br>KX46 | KX42<br>KX47 | KX43<br>KX48 | KX44<br>KX49 | KX45<br>KX50 |
+
+## Independent drive claims (8 November 2026)
+
+Implemented LS01-LS25 / LX01-LX50: host mechanisms retain separate source masks and monotonic lease tokens. Release removes only its captured contribution; other sources keep the stream claimed. Legacy operations are isolated. Handoff/election and hand episodes clear incompatible tokens; context stamps expire abandoned contributions across first bind, world/session replacement and disconnect. Hook sweeps own their input/lease snapshots; robot cleanup preserves foreign claims before thaw; Kerfus and watoy retain source-bound leases across native callbacks. Nine producer routes use canonical source groups.
+Verification: PASS 75 named cases, 23 assertion-based fault controls and 11 production object compiles. The actual core, hook controller, NPC cleanup, Kerfus sampler and extracted watoy/handoff bodies run with engine/transport doubles and real Element/Registry code. Targeted NPC, publisher, grant/revoke, watoy, grayboar and drive-lifetime regressions pass. All 158 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose still fails the same 14 counters above baseline. Native constraint/transform priority, contact physics and the original prop-jitter root cause remain open. No Release build, package, install or version/protocol change.
+Evidence: `build/prop-claim-controls.log`, `build/prop-claim-check`, `build/prop-claim-verification/verification.json`. Each LX cell is a separately exercised interference case for the named source pair.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| LS01<br>LS05<br>LS09<br>LS13<br>LS17<br>LS21<br>LS25 | Bound claim-source enum values before indexing or shifting.<br>Fence claim/release by epoch, world pointer/generation and session serial/binding.<br>Keep the stream claimed when another source remains.<br>Return no foreign lease after row replacement during notification.<br>Reject old leases after disconnect/rebind, including same-EID reuse.<br>Bind robot carry release to its lease and preserve other owners' physics.<br>Preserve active source claims across ordinary impulse coasts. | LS02<br>LS06<br>LS10<br>LS14<br>LS18<br>LS22 | Allocate monotonically unique claim tokens without resetting on disconnect.<br>Validate canonical actor/class/EID before using a lease.<br>Revalidate the last-owner release after its clock callback; retain retryable ownership.<br>Preserve a newer source claim created by a callback.<br>Clear client claim metadata at host handoff and coast abandoned reservations.<br>Preserve Kerfus leases and owned host records across native callbacks. | LS03<br>LS07<br>LS11<br>LS15<br>LS19<br>LS23 | Return the same token for an idempotent active source claim.<br>Carry the caller's lifetime proof through claim admission and client handoff.<br>Isolate legacy Claim/Release from typed source ownership.<br>Reject an old release after its source is released and reacquired.<br>Clear host source metadata on client election and protect claimed rows.<br>Bind watoy activation/deactivation leases to its captured actor/state row. | LS04<br>LS08<br>LS12<br>LS16<br>LS20<br>LS24 | Retain independent source masks/tokens on one host row.<br>Release only the exact source, EID and token receipt.<br>Return no lease for refused or abandoned admission.<br>Invalidate source tokens on a new hand-release episode.<br>Bind hook release to owned per-pass leases and cancel nested/reset sweeps.<br>Use canonical source groups for carry starters, rockets, grayboars and client feeders. |
+
+| Source pair A/B | Release A keeps B | Release B keeps A | Old A after reacquire | Legacy release isolation | Hand episode then stale release |
+| --- | --- | --- | --- | --- | --- |
+| Hook / Kerfur<br>Hook / Kerfus<br>Hook / Watoy<br>Hook / Rocket | LX01<br>LX06<br>LX11<br>LX16 | LX02<br>LX07<br>LX12<br>LX17 | LX03<br>LX08<br>LX13<br>LX18 | LX04<br>LX09<br>LX14<br>LX19 | LX05<br>LX10<br>LX15<br>LX20 |
+| Hook / Grayboar<br>Kerfur / Kerfus<br>Kerfur / Watoy<br>Kerfus / Watoy | LX21<br>LX26<br>LX31<br>LX36 | LX22<br>LX27<br>LX32<br>LX37 | LX23<br>LX28<br>LX33<br>LX38 | LX24<br>LX29<br>LX34<br>LX39 | LX25<br>LX30<br>LX35<br>LX40 |
+| Rocket / Watoy<br>Grayboar / Watoy | LX41<br>LX46 | LX42<br>LX47 | LX43<br>LX48 | LX44<br>LX49 | LX45<br>LX50 |
+
+## Drive admission and verb handoff (7 November 2026)
+
+Implemented VA01-VA25 / VX01-VX50: drive admission validates actor/class/world/session state between native class, hand, EID and key reads. It rejects duplicate streams and malformed keys, owns callback data and re-resolves committed rows after notifications. A client-to-host handoff records its exact predecessor revision; Claim, Coast and election consume that lineage instead of inheriting a newer row. Insertion replaces the caller's absent-target precondition with the committed row receipt. Release uses the row's captured weak identity and revalidates after its clock read, without probing dead or opaque actor pointers. Same-actor admission recursion remains bounded across teardown. Verification: PASS 75 named cases, 21 assertion-based fault controls, six production object compiles and targeted publisher/controller/lifetime/control-delivery/stream regressions. All 157 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose still fails 14 counters above baseline. The actual admission/verb functions and extracted actual handoff commit run with native/transport doubles; the controller fixture also checks lineage through the complete native-ending coordinator. Multi-verb claim leases, original prop-jitter root cause, native contacts and multiplayer acceptance remain open. No Release build, package or version/protocol change. Evidence: `build/prop-verb-controls.log`, `build/prop-verb-check`, `build/prop-verb-verification/verification.json`. Each VX cell exercises cancellation after the named read and replacement.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| VA01<br>VA05<br>VA09<br>VA13<br>VA17<br>VA21<br>VA25 | Capture actor slot/serial before admission metadata work.<br>Own reason text across native callbacks.<br>Revalidate between individual class/hand gates.<br>Recheck the prop's canonical EID after native key work.<br>Snapshot election inputs before native hand checks.<br>Resume Coast only from its own completed handoff.<br>Consume handoff lineage when Claim, Coast or election commits. | VA02<br>VA06<br>VA10<br>VA14<br>VA18<br>VA22 | Retain class slot/serial through admission.<br>Preserve a competing actor/EID row rather than inserting a duplicate.<br>Admit only valid, nonzero host-range prop IDs.<br>Allocate generation only at the still-owned commit.<br>Cancel election when a callback replaces its original row.<br>Guard the Kerfur gate and later Coast work by actor/context ownership. | VA03<br>VA07<br>VA11<br>VA15<br>VA19<br>VA23 | Cancel admission across disconnect epoch and world generation/pointer changes.<br>Bound recursive admission for the same actor across teardown.<br>Reject oversized/unrepresentable keys instead of truncating them.<br>Own notification/log fields and re-resolve the committed row after notification.<br>Record exact predecessor revision on a completed client-to-host handoff.<br>Commit hand-release generation and episode changes only to the captured row. | VA04<br>VA08<br>VA12<br>VA16<br>VA20<br>VA24 | Bind admission to the current bound session, serial, stop, role and connection.<br>Permit independent actor admissions without borrowing vector storage.<br>Refuse empty or None native keys.<br>Initialize client admission only on the exact surviving row receipt.<br>Resume Claim only from its own completed handoff.<br>Revalidate Release after its clock read before changing a row. |
+
+| Read | World | Session serial | Actor slot | Class slot | Competing drive row |
+| --- | --- | --- | --- | --- | --- |
+| Prop descendant<br>Local hold<br>Last held actor<br>Remote hand | VX01<br>VX06<br>VX11<br>VX16 | VX02<br>VX07<br>VX12<br>VX17 | VX03<br>VX08<br>VX13<br>VX18 | VX04<br>VX09<br>VX14<br>VX19 | VX05<br>VX10<br>VX15<br>VX20 |
+| Hotbar hand<br>Initial EID<br>Class name<br>Class suppression | VX21<br>VX26<br>VX31<br>VX36 | VX22<br>VX27<br>VX32<br>VX37 | VX23<br>VX28<br>VX33<br>VX38 | VX24<br>VX29<br>VX34<br>VX39 | VX25<br>VX30<br>VX35<br>VX40 |
+| Native key<br>Final EID | VX41<br>VX46 | VX42<br>VX47 | VX43<br>VX48 | VX44<br>VX49 | VX45<br>VX50 |
+
+## NPC pose and robot holds (7 November 2026)
+
+Implemented NH01-NH25 / NX01-NX50: host pose walks own registry identities and invocation buffers, cancel retired native continuations, and revalidate earlier rows before publication. Robot holds own receipts and prop identities, preserve another robot's take, respect hand ownership and retry a failed thaw without repeating release. Teardown invalidates in-flight work without native cleanup calls. This does not establish the original joined-client jitter cause or finish drive-verb arbitration. Verification: PASS 75 named cases, 23 assertion-based fault controls and four production object compiles. All 156 full regression groups pass on stable production sources. Native fact rows pass (626 rows / 199 files); public prose still fails the same 14 counters above baseline. The actual controller, Element/Registry and atomic transform body run with engine/hand/drive doubles; native contact, mirror materialization and multiplayer acceptance are unperformed. No Release build, package or version/protocol change. Evidence: `build/npc-pose-controls.log`, `build/npc-pose-check`, `build/npc-pose-verification/verification.json`. Each NX cell is a separately exercised cancellation after the named read and replacement.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| NH01<br>NH05<br>NH09<br>NH13<br>NH17<br>NH21<br>NH25 | Reject nested pose ticks before join/native work.<br>Check Element incarnation, type, name and canonical actor binding.<br>Preserve rotating MTU fairness and reset rotation with context.<br>Read root transform atomically with caller cancellation.<br>Replace borrowed hold-vector rows with owned receipts.<br>Respect hand ownership before freezing or thawing a carried prop.<br>Clear hold receipts and invalidate active work without native teardown calls. | NH02<br>NH06<br>NH10<br>NH14<br>NH18<br>NH22 | Bind pose work to session pointer, serial, stop, role and running state.<br>Validate actor/class slot serials across native continuations.<br>Keep offline hold/death lifecycle without publishing a stale connection.<br>Reject nonfinite/out-of-range coordinates, velocity, speed and facing.<br>Stamp held-prop actor/class identities and invalidate reused addresses.<br>Retain failed thaw work for retry without repeating completed release. | NH03<br>NH07<br>NH11<br>NH15<br>NH19<br>NH23 | Cancel work on world generation/pointer or disconnect epoch changes.<br>Own each invocation's pose batch and final row receipts.<br>Recheck context after pending-spawn draining and diagnostic census.<br>Stop body-yaw fallback immediately after ownership changes.<br>Stamp client hold notes with session/world/actor identity.<br>Preserve another robot's hold when one robot drops the same prop. | NH04<br>NH08<br>NH12<br>NH16<br>NH20<br>NH24 | Copy registry identities instead of retaining NPC Element pointers.<br>Revalidate earlier rows before publication after later actor callbacks.<br>Retire only the captured, still-bound dead NPC identity.<br>Commit optional look/state/floppy/ATV fields only while current.<br>Check holdObject remains selected before freeze and claim.<br>Sweep removed/rebound NPC holders and guard release continuations. |
+
+| Read continuation | Session | World | Actor slot | Class slot | Element |
+| --- | --- | --- | --- | --- | --- |
+| Transform<br>Velocity<br>Falling<br>Look target | NX01<br>NX06<br>NX11<br>NX16 | NX02<br>NX07<br>NX12<br>NX17 | NX03<br>NX08<br>NX13<br>NX18 | NX04<br>NX09<br>NX14<br>NX19 | NX05<br>NX10<br>NX15<br>NX20 |
+| Kerfur body yaw<br>Fossilhound body yaw<br>Rufus body yaw<br>Kerfur state | NX21<br>NX26<br>NX31<br>NX36 | NX22<br>NX27<br>NX32<br>NX37 | NX23<br>NX28<br>NX33<br>NX38 | NX24<br>NX29<br>NX34<br>NX39 | NX25<br>NX30<br>NX35<br>NX40 |
+| Floppy state<br>ATV state | NX41<br>NX46 | NX42<br>NX47 | NX43<br>NX48 | NX44<br>NX49 | NX45<br>NX50 |
+
+## NPC join delivery (7 November 2026)
+
+Implemented NJ01-NJ25 / NK01-NK50: recipient-owned NPC join delivery now retains refused, unreadable and unbound rows; validates canonical actor bindings and Element incarnations; reads current transforms without partial outputs; preserves save/adoption and off-prop retirement provenance. Same-address rebinds refresh their object serial without taking another Element's binding. SnapshotComplete has independent per-slot delivery debt, a captured bracket token and registry-coherence proof; a waiting recipient does not hold the prop enumeration queue. The sender never repeats native NPC creation, save or reward work during retry. Verification: PASS 75 named cases, 30 assertion-based fault controls, eight production object compiles and all 155 full regression groups on stable sources. Actual Element/Registry implementations, transform/save-key bodies and the prop completion function are exercised with engine/transport/clock doubles. The sender permits 16 delivery attempts per invocation, including at most 12 NPC row attempts, and 64 row scans; callback-owned event lanes retain their own budgets. Native fact rows pass (626 rows / 199 files); public prose still fails the same 14 counters above baseline. Native multiplayer/materialization and the remaining UP2/UP4/UP5/UP6 work remain open. No Release DLL/package or version/protocol change. Evidence: `build/npc-join-verification/verification.json`; named cases and mutations: `build/npc-join-controls.log`; objects: `build/npc-join-check`. Earlier upstream evidence below describes its own source identity.
+
+| ID | Completed fix | ID | Completed fix | ID | Completed fix | ID | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| NJ01<br>NJ05<br>NJ09<br>NJ13<br>NJ17<br>NJ21<br>NJ25 | host authority<br>retain temporarily unready work<br>reject recycled Element identity<br>exact actor/class binding<br>current off-prop retirement key<br>native and scan budgets<br>per-recipient snapshot completion debt | NJ02<br>NJ06<br>NJ10<br>NJ14<br>NJ18<br>NJ22 | running/connected admission<br>retain refusals beyond five attempts<br>retain not-yet-bound NPC<br>owned canonical class name<br>finite/bounded complete payload<br>fair recipient rotation | NJ03<br>NJ07<br>NJ11<br>NJ15<br>NJ19<br>NJ23 | recipient bounds<br>retire only accepted rows<br>retire dead actor<br>readable save provenance<br>fresh transform on retry<br>preserve newer join receipts | NJ04<br>NJ08<br>NJ12<br>NJ16<br>NJ20<br>NJ24 | departed/zero generation<br>snapshot owned IDs<br>retire removed/deleting Element<br>save-key cache incarnation/schema<br>retry after clock rollback<br>refuse recursive drain |
+
+Each NK cell stops the old continuation after the indicated boundary and replacement.
+
+| Boundary | World | Session pointer | Session serial | Stop | Role | Recipient | Ready revision | Actor serial | Class serial | Element incarnation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Location<br>Rotation<br>Scale<br>Save-key format | NK01<br>NK11<br>NK21<br>NK31 | NK02<br>NK12<br>NK22<br>NK32 | NK03<br>NK13<br>NK23<br>NK33 | NK04<br>NK14<br>NK24<br>NK34 | NK05<br>NK15<br>NK25<br>NK35 | NK06<br>NK16<br>NK26<br>NK36 | NK07<br>NK17<br>NK27<br>NK37 | NK08<br>NK18<br>NK28<br>NK38 | NK09<br>NK19<br>NK29<br>NK39 | NK10<br>NK20<br>NK30<br>NK40 |
+| Recipient send | NK41 | NK42 | NK43 | NK44 | NK45 | NK46 | NK47 | NK48 | NK49 | NK50 |
+
+## Full-upstream work (7 November 2026)
+
+UI01 implements tower PRE/POST ownership, nesting, reserved admission, owned FIFO delivery until ACK and detached native claim cleanup; UI02 checks parameter-cache incarnations and frames; UI03 records committed writes, easy-repair confirmation, captured refused-pull output and unknown receipts, sequence bounds and refund debt. Only one paid insert spends before ACK. Unattempted creation retries, uncertain creation is not repeated, and temporary world-unready retains debt. UI04 tracks cord recipients independently; UI05 guards native head/component/caller continuations and newer pose/release receipts. UI09 also guards actual deferred spawn schemas/caller/world/actor ownership through begin/finish and unfinished cleanup. UI06 adds retained Geom decisions, reconstruction checks and ordered recipient-owned NPC birth admission. Refused birth work retries without losing newer decisions; native transforms retain root/function/caller ownership and publish all outputs together. Birth reads/sends/receipts bind the recipient's world-ready reset revision, including a false/true transition between pumps. Exact phase/audio/effect joins and native mirror creation acceptance remain open. UI07 serializes native Present/Destroy; GPU quiescence remains the engine caller's contract, without adding an unsynchronized queue-idle call to Destroy. Full context recovery/backend retirement remains open. UI08 has no demonstrated jitter root cause; reproduction steps were requested. Read-only local inspection found four older stack-overflow crash contexts, without a fresh jitter trace (`native-log-review.json`). UI09 repairs tower/Geom session retirement; this is not a completed review of all 436 transferred commits. Verification: 154 full regression groups passed on stable production sources, including the birth/transform/world-ready follow-up. PASS 84 assertion-based fault controls and ten production object compiles. Native fact rows pass (626 rows / 199 files); public prose still fails the same 14 counters above baseline. `pre-birth-verification.json` retains the earlier source identity. Full-upstream implementation and native gameplay acceptance remain incomplete; Release was not built. Evidence: `build/upstream-integration-verification/verification.json`; focused controls: `build/upstream-completion-tower-controls.log`, `build/upstream-completion-tower-rows.log`, `build/upstream-completion-cord-controls.log`, `build/upstream-completion-vulkan-controls.log`, `build/upstream-completion-geom-birth-controls.log`; ten production objects: `build/upstream-completion-verification/objects`. Engine/transport/identity/clock/GPU dispatch are doubled; Vulkan uses the actual extracted Present/Destroy functions with two threads; actor-transform extraction exercises 71 refusal/replacement/root/schema/finite boundaries. Actual Session world-ready methods cover all 32 slots, bounds and eight concurrent reset writers.
+
+## Cord publication and intent continuations (7 November 2026)
+
+Implemented CP01-CP25 / CQ01-CQ50 in cord_sync. PASS 75 named cases, preserved same-world scan/partial-scan state, nested publication/outbox/release replacement, slot 31, refused retries and backwards clocks. Twenty-five independently compiled mutations fail at assertions; production cord_sync and the native cord wrapper compile. PASS eleven scoped groups and stable-source guard, including legacy 4/32-peer intent, wrapper and 200-read idle repaint checks. Engine/transport, object/session identity and clock are doubled. Raw endpoint/property reads do not dispatch Blueprint code; the host reach row exercises IntentTarget::Authorize. Per-recipient canonical-state/join delivery and native drag-wrapper ownership remain open. No Release DLL or package. Each CQ cell cancels stale completion/continuation after the named boundary and replacement. Evidence: `build/cord-continuation-verification/verification.json`, `results.json` and `source-start.sha256`; named cases/mutations/object: `build/cord-continuation-check.log`; legacy wrapper/object and shared-fixture regression: `build/cord-continuation-2170.log` and `build/cord-continuation-2145.log`.
+
+| ID | Completed cord fix | ID | Completed cord fix | ID | Completed cord fix | ID | Completed cord fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CP01<br>CP05<br>CP09<br>CP13 | Retire replaced Session pointers while preserving the same-world scan index and partial scan.<br>Retire replaced worlds.<br>Own the targeted-join actor snapshot.<br>Preserve newer nested publication requests. | CP02<br>CP06<br>CP10<br>CP14 | Retire same-pointer session reconstruction.<br>Retire disconnected context debt.<br>Own Sent records across transport callbacks.<br>Own outbound intent bytes across transport callbacks. | CP03<br>CP07<br>CP11<br>CP15 | Retire changed stop counters.<br>Guard every Tick stage with the captured context.<br>Publish operation identity before callbacks.<br>Saturate heartbeat and drag-timeout arithmetic. | CP04<br>CP08<br>CP12<br>CP16 | Retire changed roles.<br>Own the host publication actor snapshot.<br>Commit only the exact publication receipt.<br>Own and revise coalesced intent-outbox entries. |
+| CP17<br>CP21<br>CP25 | Erase only the sent outbox revision.<br>Bind timeout/RestoreHead continuation to its context.<br>Validate actor/class/endpoint proofs through publication and native intent work. | CP18<br>CP22 | Retain refused owned outbox work.<br>Bind targeted sends to recipient generation and departure. | CP19<br>CP23 | Own release receipts independently of actor presence.<br>Copy intent input before native callbacks. | CP20<br>CP24 | Complete only the sent release receipt.<br>Bind native intent work to sender generation/readiness/session. |
+
+| Boundary | World | Session pointer | Session serial | Stop | Role | Cord | Cord class | Socket | Socket class | Peer |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Broadcast send completion<br>Targeted send completion<br>Intent-outbox send completion<br>Host reach judgement | CQ01<br>CQ11<br>CQ21<br>CQ31 | CQ02<br>CQ12<br>CQ22<br>CQ32 | CQ03<br>CQ13<br>CQ23<br>CQ33 | CQ04<br>CQ14<br>CQ24<br>CQ34 | CQ05<br>CQ15<br>CQ25<br>CQ35 | CQ06<br>CQ16<br>CQ26<br>CQ36 | CQ07<br>CQ17<br>CQ27<br>CQ37 | CQ08<br>CQ18<br>CQ28<br>CQ38 | CQ09<br>CQ19<br>CQ29<br>CQ39 | CQ10<br>CQ20<br>CQ30<br>CQ40 |
+| Host connect completion | CQ41 | CQ42 | CQ43 | CQ44 | CQ45 | CQ46 | CQ47 | CQ48 | CQ49 | CQ50 |
+
+## End recipient delivery (7 November 2026)
+
+Implemented EH01-EH25 / EX01-EX50 in the shared prop_end_delivery ledger and both callers. PASS 75 named cases, two-translation-unit shared-state identity, reserved-field rejection before native effects, snapshot cancellation and recursive-drain controls. Twenty-seven End mutations, sixteen publisher mutations, fifteen controller mutations and eleven drive-stream mutations fail at assertions; both production objects compile. PASS eleven scoped groups and stable-source guard. Engine/transport, object/session identity and clock are doubled. Each Queue and Tick invocation sends at most 16 packets; this is not a global frame cap. Retry copies immutable End bytes after row retirement without repeating native release/physics. Native handoff/contact acceptance and the original jitter investigation remain open. No Release DLL or package. Each EX cell cancels stale publication/completion after the named boundary and replacement. Evidence: `build/prop-end-delivery-verification/verification.json`, `results.json` and `source-start.sha256`; End cases/mutations/objects: `build/prop-end-delivery-controls.log`; publisher/controller/stream controls: `build/prop-publisher-check/end-delivery-regression.log`, `build/prop-syncer-host-check/end-delivery-regression.log` and `build/prop-drive-lifetime-check/end-delivery-regression.log`.
+
+| ID | Completed End-delivery fix | ID | Completed End-delivery fix | ID | Completed End-delivery fix | ID | Completed End-delivery fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| EH01<br>EH05<br>EH09<br>EH13 | Replace any-recipient broadcast success with per-slot End debt.<br>Drain publisher debt even with no driven rows.<br>Retire changed recipient generations, including slot 31.<br>Cancel replaced Session pointers. | EH02<br>EH06<br>EH10<br>EH14 | Skip the original syncer for an admitted client rest End.<br>Preserve immutable End bytes and owned receipts across callbacks.<br>Retire observed departures even when the generation remains unchanged.<br>Cancel reconstructed sessions and stopped links. | EH03<br>EH07<br>EH11<br>EH15 | Retain controller-judged End after row retirement.<br>Keep independent progress after partial acceptance.<br>Keep refusal debt beyond five attempts.<br>Cancel changed worlds and roles. | EH04<br>EH08<br>EH12<br>EH16 | Transfer publisher End debt before retiring its row.<br>Wait for connected recipients to become world-ready.<br>Pace retries and preserve debt under backwards clocks.<br>Cancel replaced actor/class incarnations. |
+| EH17<br>EH21<br>EH25 | Validate actor/EID binding before and after native getters.<br>Bound and rotate recipient/batch work; reject recursive drains.<br>Keep existing no-End branches for host takeback/death and unobserved rows. | EH18<br>EH22 | Cancel superseded End requests without erasing their successor.<br>Validate End identity, bounds, finite data and reserved fields. | EH19<br>EH23 | Invalidate debt on new episodes, including transient same-byte successors.<br>Retain debt independently of the expired retirement guard. | EH20<br>EH24 | Complete against the captured request identity after transport.<br>Retry delivery without repeating native release, physics or reward work. |
+
+| Boundary | World | Session | Actor | Class | Recipient | Boundary | World | Session | Actor | Class | Recipient |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Publisher initial class lookup<br>Publisher initial send completion<br>Publisher retry send completion<br>Controller initial EID lookup | EX01<br>EX11<br>EX21<br>EX31 | EX02<br>EX12<br>EX22<br>EX32 | EX03<br>EX13<br>EX23<br>EX33 | EX04<br>EX14<br>EX24<br>EX34 | EX05<br>EX15<br>EX25<br>EX35 | Publisher initial EID lookup<br>Publisher retry EID lookup<br>Controller initial class lookup<br>Controller initial send completion | EX06<br>EX16<br>EX26<br>EX36 | EX07<br>EX17<br>EX27<br>EX37 | EX08<br>EX18<br>EX28<br>EX38 | EX09<br>EX19<br>EX29<br>EX39 | EX10<br>EX20<br>EX30<br>EX40 |
+| Controller retry EID lookup | EX41 | EX42 | EX43 | EX44 | EX45 | Controller retry send completion | EX46 | EX47 | EX48 | EX49 | EX50 |
+
+## Grant/revoke recipient delivery (6 November 2026)
+
+Implemented GD01-GD25 / GX01-GX50 in prop_syncer_host. PASS 75 named cases, pending grant/revoke supersession, death notices, partial recipient delivery, slot 31, host takeback and owned transport buffers. Twenty delivery mutations, fifteen host-controller mutations and eleven drive-stream mutations fail at assertions; the production object compiles. PASS ten scoped groups and stable-source guard, including the joint stream fixture with Windows headers. Function-row gate passes 626 rows / 199 files; full public prose still fails 14 counters. Engine/transport, object/session identity and clock are doubled. Retries retain transport refusals and wait for world-ready; ordinary request Refused answers still use their paced direct path. Per-recipient End delivery and native multiplayer acceptance remain open. No Release DLL or package. Each GX cell cancels stale publication/completion after the named boundary and replacement. Evidence: `build/prop-control-delivery-verification/verification.json`, `results.json` and `source-start.sha256`; control cases/mutations/object: `build/prop-control-delivery-controls.log`; existing host/stream controls: `build/prop-syncer-host-check/control-delivery-regression.log` and `build/prop-drive-lifetime-check/control-delivery-regression.log`.
+
+| ID | Completed control-delivery fix | ID | Completed control-delivery fix | ID | Completed control-delivery fix | ID | Completed control-delivery fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GD01<br>GD05<br>GD09<br>GD13 | Retain refused claim grants.<br>Bind delivery to recipient generation, including slot 31.<br>Pace transport retries.<br>Cancel stopped sessions. | GD02<br>GD06<br>GD10<br>GD14 | Retain refused throw grants.<br>Retire departed recipients even without a generation change.<br>Preserve debt under backwards clocks.<br>Cancel replaced worlds. | GD03<br>GD07<br>GD11<br>GD15 | Retain live-actor revocations after row retirement.<br>Wait for recipient world-ready without dropping debt.<br>Cancel reconstructed sessions.<br>Cancel changed roles. | GD04<br>GD08<br>GD12<br>GD16 | Deliver death revocations without reading dead actors.<br>Retry transport refusal beyond five attempts.<br>Cancel replaced Session pointers.<br>Cancel replaced actor incarnations. |
+| GD17<br>GD21<br>GD25 | Cancel replaced class incarnations.<br>Supersede an undelivered grant with its revocation.<br>Keep revocation delivery through host takeback and preserve kind/sequence. | GD18<br>GD22 | Validate actor/EID binding across getters.<br>Invalidate grants when a successor row opens, including transient successors. | GD19<br>GD23 | Keep grants through ordinary revisions of their episode.<br>Bound and rotate drain work; reject recursive drains. | GD20<br>GD24 | Complete only the exact queued request; preserve a newer request.<br>Own payload bytes across queue replacement callbacks. |
+
+| Boundary | World | Session | Actor | Class | Recipient | Boundary | World | Session | Actor | Class | Recipient |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Initial grant class lookup<br>Initial grant send completion<br>Retry grant send completion<br>Initial revoke EID lookup | GX01<br>GX11<br>GX21<br>GX31 | GX02<br>GX12<br>GX22<br>GX32 | GX03<br>GX13<br>GX23<br>GX33 | GX04<br>GX14<br>GX24<br>GX34 | GX05<br>GX15<br>GX25<br>GX35 | Initial grant EID lookup<br>Retry grant EID lookup<br>Initial revoke class lookup<br>Initial revoke send completion | GX06<br>GX16<br>GX26<br>GX36 | GX07<br>GX17<br>GX27<br>GX37 | GX08<br>GX18<br>GX28<br>GX38 | GX09<br>GX19<br>GX29<br>GX39 | GX10<br>GX20<br>GX30<br>GX40 |
+| Retry revoke EID lookup | GX41 | GX42 | GX43 | GX44 | GX45 | Retry revoke send completion | GX46 | GX47 | GX48 | GX49 | GX50 |
+
+## Swinger host join delivery (6 November 2026)
+
+Implemented SJ01-SJ25 / SD01-SD50 in swinger_join_pose. PASS 75 named cases, unreadable pose retries, slot 31, partial acceptance, nested replacement and selective Forget. Nineteen separately compiled mutations and eleven retained drive-stream mutations fail at assertions; the production object compiles. PASS nine scoped groups, stable-source guard and the function-row gate (626 rows / 199 files). Full public prose still fails 14 counters, unchanged from the previous scope. Engine/transport and object/session identity are doubled; pacing is exercised with controlled due times. Grant/revoke/End recipient delivery and native multiplayer acceptance remain open. No Release DLL or package. Each SD cell cancels stale publication/completion after the named boundary and replacement. Evidence: `build/swinger-delivery-verification/verification.json`, `results.json` and `source-start.sha256`; host cases/mutations/object: `build/swinger-delivery-controls.log`; drive-stream controls: `build/prop-drive-lifetime-check/swinger-delivery-regression.log`.
+
+| ID | Completed join-delivery fix | ID | Completed join-delivery fix | ID | Completed join-delivery fix | ID | Completed join-delivery fix |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SJ01<br>SJ05<br>SJ09<br>SJ13 | Retain a recipient-owned join request.<br>Retire replaced worlds.<br>Filter portable keys and deduplicate the snapshot.<br>Pace refused/unavailable retries. | SJ02<br>SJ06<br>SJ10<br>SJ14 | Retire replaced Session pointers.<br>Retire changed roles.<br>Own lid snapshots across native callbacks.<br>Preserve debt under backwards-clock scheduling. | SJ03<br>SJ07<br>SJ11<br>SJ15 | Retire same-pointer session reconstruction.<br>Bind work to the original slot generation.<br>Publish requests before reentrant collection.<br>Keep refused work beyond five attempts. | SJ04<br>SJ08<br>SJ12<br>SJ16 | Retire stopped sessions.<br>Retain work until world-ready.<br>Reject recursive host drains.<br>Support isolated delivery through slot 31. |
+| SJ17<br>SJ21<br>SJ25 | Own each outbound payload.<br>Cancel replaced actor/class/key bindings.<br>Forget only the matching stale host debt. | SJ18<br>SJ22 | Complete only the exact request sent.<br>Validate finite/bounded outgoing poses. | SJ19<br>SJ23 | Read the current native pose on each retry.<br>Keep per-key progress after partial acceptance. | SJ20<br>SJ24 | Distinguish a closed lid from an unreadable one.<br>Bound and rotate recipient/key work. |
+
+| Boundary | World | Session | Actor | Class | Recipient | Boundary | World | Session | Actor | Class | Recipient |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Initial key binding<br>Initial location | SD01<br>SD11 | SD02<br>SD12 | SD03<br>SD13 | SD04<br>SD14 | SD05<br>SD15 | Initial open query<br>Initial rotation | SD06<br>SD16 | SD07<br>SD17 | SD08<br>SD18 | SD09<br>SD19 | SD10<br>SD20 |
+| Initial send completion<br>Retry open query | SD21<br>SD31 | SD22<br>SD32 | SD23<br>SD33 | SD24<br>SD34 | SD25<br>SD35 | Retry key binding<br>Retry location | SD26<br>SD36 | SD27<br>SD37 | SD28<br>SD38 | SD29<br>SD39 | SD30<br>SD40 |
+| Retry rotation | SD41 | SD42 | SD43 | SD44 | SD45 | Retry send completion | SD46 | SD47 | SD48 | SD49 | SD50 |
+
+## Native stream caller scope (6 November 2026)
+
+Implemented SG01-SG15 / SX01-SX60 across controller, stream, driver episodes, park and parity. PASS 75 named cases and lifetime/same-byte reacquisition, owned-input/bind-cleanup, guarded host End, transient-successor invalidation, failed-write and cleanup controls. Eighteen independently compiled scope mutations and eleven retained drive-stream mutations fail at assertions; five production objects compile. PASS eight scoped groups and stable-source guard. Engine/transport, registry, clock and rider tokens are doubled; per-recipient control/join delivery and rendered contacts remain open. Host-local episode proof is required to supersede a closed byte generation. No Release DLL or package. Each SX cell stops further application after the named boundary and replacement; movement-lease cleanup retains its own ownership. Evidence: `build/prop-stream-scope-verification/verification.json`, `results.json` and `source-start.sha256`; joint fixture/mutations/objects: `build/prop-stream-scope-check/verification.log`; receiver regression: `build/prop-drive-lifetime-check/source-scope-regression.log`.
+
+| ID | Completed scope boundary | ID | Completed scope boundary | ID | Completed scope boundary | ID | Completed scope boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SG01<br>SG05<br>SG09<br>SG13 | Own guarded FeedAdmitted source.<br>Propagate host takeback retirement.<br>Prevent borrowed host End replay.<br>Own payloads and callbacks through native work. | SG02<br>SG06<br>SG10<br>SG14 | Guard ReleaseHost.<br>Persist episode lifetime across row revisions.<br>Commit End accounting after valid completion.<br>Suspend invalid lifetimes; retain park debt. | SG03<br>SG07<br>SG11<br>SG15 | Propagate the admission receipt.<br>Retire changed session/stop/role/world work.<br>Compose Park/Unpark guards.<br>Stop after refused velocity writes. | SG04<br>SG08<br>SG12 | Propagate rest-End retirement.<br>Bind actor/class and mesh incarnation.<br>Guard give-back/yield and child notification. |
+
+| Boundary | World | Session | Sender | Actor | Class | Episode | Boundary | World | Session | Sender | Actor | Class | Episode |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pose resolution<br>First-pose diagnostic location | SX01<br>SX13 | SX02<br>SX14 | SX03<br>SX15 | SX04<br>SX16 | SX05<br>SX17 | SX06<br>SX18 | Pose mesh capture<br>Park simulation write | SX07<br>SX19 | SX08<br>SX20 | SX09<br>SX21 | SX10<br>SX22 | SX11<br>SX23 | SX12<br>SX24 |
+| Initial lerp location<br>End rotation | SX25<br>SX37 | SX26<br>SX38 | SX27<br>SX39 | SX28<br>SX40 | SX29<br>SX41 | SX30<br>SX42 | End location<br>End frozen/sleep verb | SX31<br>SX43 | SX32<br>SX44 | SX33<br>SX45 | SX34<br>SX46 | SX35<br>SX47 | SX36<br>SX48 |
+| End linear velocity | SX49 | SX50 | SX51 | SX52 | SX53 | SX54 | End unpark completion | SX55 | SX56 | SX57 | SX58 | SX59 | SX60 |
+
+## Host prop publisher ownership (6 November 2026)
+
+Implemented HP01-HP25 / HT01-HT50 in prop_drive_host. PASS 75 named cases plus slow-heartbeat End, unreadable-pose fallback, slot 31, binding/class/root replacement, sender replacement during publication and nested disconnect recovery. Sixteen publisher mutations and eleven drive-stream mutations fail at assertions; the changed production object compiles. PASS seven scoped groups and stable-source guard. Engine/controller/transport are doubled; native contact acceptance and per-recipient control/join delivery remain open; stream caller proof is covered in the SG section. No Release DLL or package. Each HT cell cancels a continuation after the indicated boundary and replacement. Evidence: `build/prop-publisher-verification/verification.json`, `results.json` and `source-start.sha256`; publisher cases/mutations/object: `build/prop-publisher-check/verification.log`; stream controls: `build/prop-drive-lifetime-check/publisher-regression.log`.
+
+| ID | Completed publisher boundary | ID | Completed publisher boundary | ID | Completed publisher boundary | ID | Completed publisher boundary | ID | Completed publisher boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HP01<br>HP06<br>HP11<br>HP16 | Own Tick receipts across growth.<br>Retire same-pointer reconstruction.<br>Cancel remaining Pump stages.<br>Preserve callback coast/keepalive. | HP02<br>HP07<br>HP12<br>HP17 | Commit only the captured revision.<br>Retire stopped sessions.<br>Check the original slot occupant.<br>Reject nonfinite poses. | HP03<br>HP08<br>HP13<br>HP18 | Reject recursive Tick.<br>Retire replaced worlds.<br>Defer callback arrivals.<br>Reject out-of-world positions. | HP04<br>HP09<br>HP14<br>HP19 | Reject recursive Pump.<br>Retire changed roles.<br>Rotate within the current table.<br>Reject nonfinite velocity. | HP05<br>HP10<br>HP15<br>HP20 | Retire changed Session pointers.<br>Guard contact-drain completion.<br>Preserve a newer resend request.<br>Refresh the actual primitive root. |
+| HP21 | Bind root incarnation through capture. | HP22 | Recheck the hand before publication. | HP23 | Saturate backwards clocks. | HP24 | Retain refused End without stale commits. | HP25 | Retire only the accepted episode, once. |
+
+| Boundary | World | Session | Actor | Class | Episode | Boundary | World | Session | Actor | Class | Episode |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Initial hand query<br>Host location | HT01<br>HT11 | HT02<br>HT12 | HT03<br>HT13 | HT04<br>HT14 | HT05<br>HT15 | Host pose turn<br>Host rotation | HT06<br>HT16 | HT07<br>HT17 | HT08<br>HT18 | HT09<br>HT19 | HT10<br>HT20 |
+| Host velocity<br>Host End send | HT21<br>HT31 | HT22<br>HT32 | HT23<br>HT33 | HT24<br>HT34 | HT25<br>HT35 | Host End capture<br>Admitted pose turn | HT26<br>HT36 | HT27<br>HT37 | HT28<br>HT38 | HT29<br>HT39 | HT30<br>HT40 |
+| Admitted publication | HT41 | HT42 | HT43 | HT44 | HT45 | Host publication | HT46 | HT47 | HT48 | HT49 | HT50 |
+
+## Host prop-syncer controller ownership (6 November 2026)
+
+Implemented PH01-PH15 / HS01-HS60 in prop_syncer_host and the driver's row helpers. PASS 75 named cases, slot 31, host takeover after slot reuse, live class/binding replacement, bounded election, native-key cancellation and nonfinite End controls. Fifteen host-controller mutations and eleven drive-stream regression mutations fail at assertions; both changed production translation units compile. PASS six scoped groups and stable-source guard. Native engine/transport are doubled; this does not qualify rendered multiplayer physics. Publisher ownership is recorded in the HP section; retained grant/revoke/End delivery and swinger join retries remain open. No Release DLL or package. Evidence: `build/prop-syncer-host-verification/verification.json`, `results.json` and `source-start.sha256`; host cases/mutations/object compiles: `build/prop-syncer-host-check/verification.log`; stream mutations: `build/prop-drive-lifetime-check/host-syncer-regression.log`. Each HS cell cancels the controller continuation after the indicated boundary and replacement. Application completion guards do not supply caller scope inside the stream's own native operations.
+
+| ID | Completed host boundary | ID | Completed host boundary | ID | Completed host boundary | ID | Completed host boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PH01<br>PH05<br>PH09<br>PH13 | Own drained batches across callbacks.<br>Bind hand-back history to occupant/departure.<br>Own departure snapshots; reject invalid slots.<br>Saturate backwards-clock calculations. | PH02<br>PH06<br>PH10<br>PH14 | Reject recursive admission drains.<br>Stamp row revisions and actor/class incarnation.<br>Detach endings before native release/transport.<br>Own and bound throw-election inputs. | PH03<br>PH07<br>PH11<br>PH15 | Retire session/world/stop/role state.<br>Own claim/row/End input bytes.<br>Guard the opened grant across BeforeGrant.<br>Require the exact current End sender/generation. | PH04<br>PH08<br>PH12 | Bind rows to their original slot occupant.<br>Own periodic-pass snapshots.<br>Reject nonfinite/out-of-bounds row poses. |
+
+| Boundary | World | Session | Sender | Actor | Class | Episode | Boundary | World | Session | Sender | Actor | Class | Episode |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Claim prop type<br>Claim reach authorization | HS01<br>HS13 | HS02<br>HS14 | HS03<br>HS15 | HS04<br>HS16 | HS05<br>HS17 | HS06<br>HS18 | Claim hand query<br>Grant BeforeGrant | HS07<br>HS19 | HS08<br>HS20 | HS09<br>HS21 | HS10<br>HS22 | HS11<br>HS23 | HS12<br>HS24 |
+| First thrown-row location<br>Pass puppet location | HS25<br>HS37 | HS26<br>HS38 | HS27<br>HS39 | HS28<br>HS40 | HS29<br>HS41 | HS30<br>HS42 | Stream application completion<br>Pass prop location | HS31<br>HS43 | HS32<br>HS44 | HS33<br>HS45 | HS34<br>HS46 | HS35<br>HS47 | HS36<br>HS48 |
+| Ending physics flags | HS49 | HS50 | HS51 | HS52 | HS53 | HS54 | Ending transport completion | HS55 | HS56 | HS57 | HS58 | HS59 | HS60 |
+
+## Client prop-syncer ownership (6 November 2026)
+
+Implemented PC01-PC25 / PS01-PS50 in prop_syncer_client; EndFromBody now accepts a caller guard between native reads. PASS all 75 named cases plus generation wrap/long-gap, root replacement, bound-eid and orphan-End retirement controls. Fifteen separately compiled syncer mutations and eleven existing drive-stream mutations are rejected at assertions. PASS production client/host object compiles, five scoped groups and stable-source guard. Function-row gate passes 626 rows in 199 files; full public prose still fails below. No Release build or package. Evidence: `build/prop-syncer-client-verification/verification.json`, `results.json` and `source-start.sha256`; detailed mutation/object log: `build/prop-syncer-client-check/verification.log`; stream regression: `build/prop-drive-lifetime-check/syncer-regression.log`. Engine/transport calls are doubled. Host controller ownership was addressed in the host-controller section; host join retries and native prop jitter/contact acceptance remain open. This is not a completed UP5 gameplay fix. Each PS cell is a completed cancellation boundary; episode includes same-gen replacement.
+
+| ID | Completed client boundary | ID | Completed client boundary | ID | Completed client boundary | ID | Completed client boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PC01<br>PC05<br>PC09<br>PC13 | Own Tick snapshots across table growth.<br>Retire same-pointer session reconstruction.<br>Register Pending before claim transport.<br>Ignore duplicate live grants. | PC02<br>PC06<br>PC10<br>PC14 | Commit/erase only the captured episode revision.<br>Retire stopped-session state.<br>Preserve a grant delivered during that send.<br>Reject stale live grants; fresh native throw nonce proves replacement. | PC03<br>PC07<br>PC11<br>PC15 | Reject recursive Tick work.<br>Retire replaced-world state.<br>Refused send erases only its own Pending.<br>Distinguish cancelled from missing throws. | PC04<br>PC08<br>PC12<br>PC16 | Retire state after Session pointer replacement.<br>Retire changed-role state.<br>Own answer bytes across callbacks.<br>Detach before native throw cleanup. |
+| PC17<br>PC21<br>PC25 | Own and revalidate backoff queries.<br>Reject nonfinite streamed velocity.<br>Retain refused Ends; close once accepted; cancel rebound/host-ended orphan debt. | PC18<br>PC22 | Saturate backwards pending-clock arithmetic.<br>Refresh and bind the actual primitive root. | PC19<br>PC23 | Saturate backwards rest/beat/age arithmetic.<br>Recheck hand ownership before publication. | PC20<br>PC24 | Reject nonfinite pose output.<br>Preserve interaction keepalive during callbacks. |
+
+| Native boundary | World | Session | Actor | Class | Episode | Native boundary | World | Session | Actor | Class | Episode |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Claim key capture<br>Tick hand query | PS01<br>PS11 | PS02<br>PS12 | PS03<br>PS13 | PS04<br>PS14 | PS05<br>PS15 | Claim send completion<br>Sync location | PS06<br>PS16 | PS07<br>PS17 | PS08<br>PS18 | PS09<br>PS19 | PS10<br>PS20 |
+| Sync rotation<br>Rest End capture | PS21<br>PS31 | PS22<br>PS32 | PS23<br>PS33 | PS24<br>PS34 | PS25<br>PS35 | Sync velocity<br>Rest End send | PS26<br>PS36 | PS27<br>PS37 | PS28<br>PS38 | PS29<br>PS39 | PS30<br>PS40 |
+| Throw grant key | PS41 | PS42 | PS43 | PS44 | PS45 | Deferred break replay | PS46 | PS47 | PS48 | PS49 | PS50 |
+
+## Tower operation ownership (6 November 2026)
+
+Implemented TQ01-TQ20 / TO01-TO55 in fuse_tower_ops and the native kind helpers. PASS all 75 named cases, legal operations, slot 31, active duplicates, overflow during Wait and pinned spend reservations. Native calls/reflection are doubled; committed output/refund debt and native multiplayer acceptance remain open. Operation faults: 11 independent mutations rejected, production ops/kind objects compiled (`build/tower-ops-check/verification.log`). Tower-row/kind regression rejects 21 independent mutations (`build/tower-rows-check/ops-regression.log`). PASS five scoped groups and stable-source guard; fact_rows_gate passes 626 rows in 199 files. Full prose still fails; no new Release DLL or package. Evidence: `build/tower-ops-verification/verification.json`, `results.json` and `source-start.sha256` in the same directory. Each TO cell is a completed cancellation boundary; native helper guards also stop subsequent writes/effects when their caller is cancelled.
+
+| ID | Completed queue/spend boundary | ID | Completed queue/spend boundary | ID | Completed queue/spend boundary | ID | Completed queue/spend boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TQ01<br>TQ05<br>TQ09<br>TQ13 | Detach waiting operations before native calls.<br>Require a connected, ready, current sender.<br>Reject recursive drains.<br>Preserve arrivals inside overflow callbacks. | TQ02<br>TQ06<br>TQ10<br>TQ14 | Restore current Wait to FIFO head.<br>Avoid backwards-clock timeout underflow.<br>Queue nested offers behind active work.<br>Drop queued/active duplicate sequences. | TQ03<br>TQ07<br>TQ11<br>TQ15 | Drop Wait after peer departure.<br>Refund rate capacity only to the current waiting owner.<br>Own detached overflow-refusal records.<br>Validate operation/kind before admission. | TQ04<br>TQ08<br>TQ12<br>TQ16 | Stamp queued session/world/peer ownership.<br>Bound and rotate frame drains.<br>Cancel overflow after ownership loss.<br>Clear departed ack/refusal/spend state. |
+| TQ17 | Retire state on session/world reconstruction. | TQ18 | Bind recorded spends to sender/session. | TQ19 | Bind spends to actual tower/class incarnation. | TQ20 | Pin spends during validation; consume at decision. |
+
+| Native boundary | World | Session | Sender | Tower | Class | Native boundary | World | Session | Sender | Tower | Class |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Part location<br>Insert difficulty | TO01<br>TO11 | TO02<br>TO12 | TO03<br>TO13 | TO04<br>TO14 | TO05<br>TO15 | Reach authorization<br>Tower state read | TO06<br>TO16 | TO07<br>TO17 | TO08<br>TO18 | TO09<br>TO19 | TO10<br>TO20 |
+| Pull rule<br>Use rule | TO21<br>TO31 | TO22<br>TO32 | TO23<br>TO33 | TO24<br>TO34 | TO25<br>TO35 | Insert rule<br>Native use | TO26<br>TO36 | TO27<br>TO37 | TO28<br>TO38 | TO29<br>TO39 | TO30<br>TO40 |
+| Native pull<br>Native easy insert | TO41<br>TO51 | TO42<br>TO52 | TO43<br>TO53 | TO44<br>TO54 | TO45<br>TO55 | Native insert | TO46 | TO47 | TO48 | TO49 | TO50 |
+
+## Entity adapters (6 November 2026)
+
+G01-G11/R01-R40/P01-P24: seven focused groups, eight independent fault controls, cooked native contracts and production object compiles pass; native dispatch/transport are doubled. Evidence: `build/entity-adapters-check/verification/results.json` and `fault-controls.log`; individual boundaries: [test coverage](tests/README.md#entity-adapter-boundaries-6-november-2026). Function-row gate passes 626 rows/199 files; full public prose still fails. No Release DLL or native multiplayer acceptance. The remaining entity routes in WORK/TODO stay open.
+
+## Floppy-slot delivery and claims (6 November 2026)
+
+Implemented SB1-SB5 and FC01-FC75 in floppy_slot_sync. The actual controller passes 75 named cancellation cases, claim parsing/uncertain-write corrections, 18 independently compiled fault controls and production object compilation. PASS run_events, server_breaker_native_test and disk_utf8 on a stable source snapshot; fact_rows_gate passes 626 rows / 199 files. Full prose still fails below. Evidence: `build/event-slot-check/verification.log`; scoped suite results and source stamp: `build/server-breaker-delivery-check/results.json` and `source-start.sha256`. Transport/reflection are doubled; no new DLL or native multiplayer acceptance. Each FC cell is a completed cancellation boundary; peer includes observed departure.
+
+| ID | Completed boundary | ID | Completed boundary | ID | Completed boundary |
+| --- | --- | --- | --- | --- | --- |
+| SB1<br>SB4 | Require canonical acceptance by every ready recipient, including slot 31.<br>Cancel host publication/join after world/session/object/recipient replacement or departure. | SB2<br>SB5 | Retain refused delivery through later sweeps without another native consumption.<br>Keep paced, recipient-owned join debt; retain completed device kinds across other-kind refusal. | SB3 | Complete against captured bytes/digest; preserve newer and nested changes. |
+
+| Boundary | World | Session | Actor | Class | Peer | Boundary | World | Session | Actor | Class | Peer |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Client initial digest<br>Client content read | FC01<br>FC11 | FC02<br>FC12 | FC03<br>FC13 | FC04<br>FC14 | FC05<br>FC15 | Client scalar read<br>Client final digest | FC06<br>FC16 | FC07<br>FC17 | FC08<br>FC18 | FC09<br>FC19 | FC10<br>FC20 |
+| Client transport completion<br>Client refusal bookkeeping | FC21<br>FC31 | FC22<br>FC32 | FC23<br>FC33 | FC24<br>FC34 | FC25<br>FC35 | Client baseline completion<br>Host initial digest | FC26<br>FC36 | FC27<br>FC37 | FC28<br>FC38 | FC29<br>FC39 | FC30<br>FC40 |
+| Host previous scalar<br>Host apply completion | FC41<br>FC51 | FC42<br>FC52 | FC43<br>FC53 | FC44<br>FC54 | FC45<br>FC55 | Host previous content<br>Host response continuation | FC46<br>FC56 | FC47<br>FC57 | FC48<br>FC58 | FC49<br>FC59 | FC50<br>FC60 |
+| Client sweep digest<br>Laptop occupancy-settled digest | FC61<br>FC71 | FC62<br>FC72 | FC63<br>FC73 | FC64<br>FC74 | FC65<br>FC75 | Client overdue-answer continuation | FC66 | FC67 | FC68 | FC69 | FC70 |
+
+## Current development verification (6 November 2026)
+
+Workflow correction BO1-BO3: failed tests now stop before Release compilation; fresh/reused builds require native-function and full public-prose gates; scoped checks are test-only, with ChecksOnly available for the full pre-build stage. PASS nine build-order scenarios using the actual scripts with external-command doubles (`build/build-order-check/verification.log`); no release DLL was compiled. The 142-group evidence below predates this workflow change.
+
+PASS **142/142 groups across the full run and one scoped recheck**, stable production sources, Release/ABI and source-list inspection, **1234 production entries**, **0.9.0n b2220 / protocol 2220**. BuildUpToDate=true; TwoPlayerGameplayVerified=false; Packaged=false.
+
+The initial full run passed 141/142: run_2141's negative-control text anchor no longer matched after the cord guard moved into available(). The anchor was fixed; that group and all five of its negative controls then passed. Both runs verify the same production snapshot and DLL. The original failing result is retained.
+
+- Combined evidence: `build/upstream-semantic-verification/coverage.json`.
+- Full run: `build/upstream-semantic-verification/verification.json` and `logs/`.
+- Scoped repeat: `build/upstream-semantic-recheck/verification.json` and `logs/`.
+- DLL: `build/votv-coop-2164/main.dll`.
+- DLL SHA-256: `714474dc8926d0aeb705871bfb88783740d8a35b0d9c4682799da1c51c35419f`.
+- Production snapshot SHA-256: `b7167737d975d495bcaeab56162ce64a6e7e6e8a724ca712557d6e037ebf9bc1`.
+- Four new independently compiled fault controls fail at assertions:
+  `build/swinger-join-check/fault-controls.log`.
+
+Previous 140/138/137-group evidence remains in `build/physics-child-verification/verification.json`, `build/tower-wrapper-verification/verification.json` and `build/backlog-20261105/verification.json`. Their focused controls retain the scope recorded in the corresponding sections below. The last native function-row check passed 626 rows / 199 files: `build/physics-native-check/fact-rows.log`. The separate full prose gate still fails; see the documentation check below. The development DLL has no new package, installation or publication recorded.
+
+## Selected upstream integration seams (6 November 2026)
+
+SI01-SI08 / CI01-CI02 / VI01-VI02 are implemented. Focused actual-controller fixtures pass, including 4/32-peer cord builds, 32 rider leases and slot-31 join capture. The compiled authority/lane policy covers the eight selected message kinds; it does not qualify every imported adapter. Full-run and scoped-recheck evidence for these sources is recorded above. Vulkan's fixture checks 12 context-identity changes and permits same-context resize; VI02 is source-reviewed and compiled, not a concurrent GPU execution test. Gameplay, GPU replacement and the concrete remaining WORK findings stay open.
+
+| ID | Implemented boundary | ID | Implemented boundary | ID | Implemented boundary |
+| --- | --- | --- | --- | --- | --- |
+| SI01<br>CI02 | Own pending records through map growth/native callbacks.<br>Recheck drag/occupancy after disconnect and power callbacks. | CI01<br>SI03 | Preserve remotely dragged socket occupants.<br>Cancel on actor/class/world/session retirement. | SI02<br>VI01 | Register before apply; Forget/replacement cancels the old receipt.<br>Check Vulkan context before touching old fences. |
+| SI04<br>SI08 | Recheck lid binding and hand/drive ownership before each write.<br>Acquire/return all 32 rider movement leases once. | VI02<br>SI06 | Recheck stopped/down inside the frame mutex.<br>Expire pending work even without a new index pass. | SI05<br>SI07 | Failed pose writes stop further writes; failed velocity zeroing retries.<br>Validate host capture, peer bounds and occupant generation. |
+
+Focused logs: `build/swinger-join-check/cord-review.log` and `authority-review.log`. Four independently compiled mutations (receipt, deadline, four-rider cap and device identity) fail at assertions: `build/swinger-join-check/fault-controls.log`. Maintained runners: `run_swinger_join`, `run_vulkan_context`, `run_2170`, `run_placement`.
+
+## Native physics and deferred children (6 November 2026)
+
+Implemented NP01-NP45 / CR01-CR30 against the actual physics wrapper and child release coordinator. All 75 named cases pass; 22 independently compiled controls fail at assertions (11 per runner). Reflection, engine execution, hand state and clock are doubled. These results do not simulate contact physics or close the original joined-client resting-stack report. Failed declarative pose writes retain debt; a dispatched unpark is consumed once. Parent retirement releases a surviving unheld child without restoring an old pose. Evidence: `build/physics-native-check/fault-controls.log` and `build/child-release-check/fault-controls.log`; full verification is recorded above.
+
+| ID | Implemented boundary | ID | Implemented boundary | ID | Implemented boundary | ID | Implemented boundary | ID | Implemented boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| NP01<br>NP06 | Retire the primitive-class cache by slot and serial.<br>Retry unavailable classes/functions instead of permanently disabling physics. | NP02<br>NP07 | Retain native functions by slot and serial rather than raw pointer.<br>Retire a resolving thunk across world replacement. | NP03<br>NP08 | Retain each function's declaring owner and validate its binding.<br>Reject zero and negative native frame sizes. | NP04<br>NP09 | Refuse recursive resolution of an unfinished physics thunk.<br>Reject native frames larger than the fixed stack buffer. | NP05<br>NP10 | Publish a thunk only after all metadata and identities remain valid.<br>Validate SetSimulatePhysics boolean storage and mask. |
+| NP11<br>NP16 | Validate the full linear-velocity vector parameter span and size.<br>Validate the simulation query's result storage and mask. | NP12<br>NP17 | Validate the linear-velocity BoneName parameter span and size.<br>Validate the centre-of-mass BoneName parameter span and size. | NP13<br>NP18 | Validate the full angular-velocity vector parameter span and size.<br>Validate the full centre-of-mass return vector span and size. | NP14<br>NP19 | Validate the angular-velocity BoneName parameter span and size.<br>Reject overlapping parameter spans, allowing only disjoint boolean bits. | NP15<br>NP20 | Validate the simulation query's BoneName parameter span and size.<br>Explicitly resolve and clear bAddToCurrent for velocity replacement. |
+| NP21<br>NP26 | Reject non-finite linear velocity before native dispatch.<br>Cancel physics dispatch after world replacement. | NP22<br>NP27 | Reject non-finite angular velocity before native dispatch.<br>Validate the primitive ancestor incarnation through dispatch. | NP23<br>NP28 | Reject non-finite centre-of-mass output.<br>Reject completion after component retirement during native execution. | NP24<br>NP29 | Cancel physics dispatch after component slot/serial retirement during resolution.<br>Reject completion after function retirement during native execution. | NP25<br>NP30 | Cancel physics dispatch after the component's class is replaced.<br>Reject completion after declaring-owner retirement during native execution. |
+| NP31<br>NP36 | Respect a refused native query instead of accepting its frame output.<br>Key component-member layouts by class incarnation rather than class name. | NP32<br>NP37 | Decode only the simulation result's declared boolean mask.<br>Bound Blueprint ancestor traversal and reject cycles. | NP33<br>NP38 | Commit centre-of-mass output only after successful current dispatch.<br>Validate component field extents against the actor's class size. | NP34<br>NP39 | Use aligned stack storage and byte copies for reflected vector/name fields.<br>Bound reflected component-field and layout-cache growth. | NP35<br>NP40 | Own resolved thunk metadata across nested physics calls.<br>Deduplicate inherited component offsets before physics changes. |
+| NP41<br>CR01 | Accept only instanced object-pointer fields for component discovery.<br>Reject null or retired child/parent input. | NP42<br>CR02 | Validate the actor and component owner through each stop operation.<br>Reject a child that names itself as parent. | NP43<br>CR03 | Recheck the actor's component binding after the simulation query.<br>Bind deferred work to its world generation. | NP44<br>CR04 | Count a stopped component only when its setter succeeds.<br>Own capture records across native callbacks instead of referencing vector storage. | NP45<br>CR05 | Own component-offset snapshots and refuse recursive StopActorSimulating.<br>Publish a replacement wait before capture so older callbacks cannot overwrite it. |
+| CR06<br>CR11 | Preserve a newer reentrant Defer for the same child.<br>Bind each wait to the child's class incarnation. | CR07<br>CR12 | Reject non-finite captured locations.<br>Bind each wait to the parent's class incarnation. | CR08<br>CR13 | Reject non-finite captured rotations.<br>Match parent-release notifications by object incarnation. | CR09<br>CR14 | Keep a location-read failure from publishing a fabricated pose.<br>Prevent backwards clocks from triggering timeout through unsigned underflow. | CR10<br>CR15 | Keep a rotation-read failure from publishing a partial pose.<br>Release a surviving unheld child when its parent disappears, without restoring an old pose. |
+| CR16<br>CR21 | Preserve the existing timeout release for a parent that never ends.<br>Recheck hand ownership after the location setter. | CR17<br>CR22 | Traverse owned identities during parent-release processing.<br>Recheck hand ownership after the rotation setter. | CR18<br>CR23 | Traverse owned identities during tick processing.<br>Bind final unpark to the captured current mesh. | CR19<br>CR24 | Cancel old release work when a successor wait replaces it.<br>Retain declarative release debt after a location-write refusal. | CR20<br>CR25 | Yield to a new hand before restoring a release pose.<br>Retain declarative release debt after a rotation-write refusal. |
+| CR26 | Defer nested pumps while preserving newly received parent-release work. | CR27 | Consume the release record before unpark to prevent duplicate native release. | CR28 | Detach disconnect work and refuse reentrant Defer during teardown. | CR29 | Preserve a child's current hand ownership during disconnect. | CR30 | Invalidate in-flight capture/release continuations on disconnect, even if the world stays live. |
+
+## Native tower wrapper boundaries (5 November 2026)
+
+Implemented CW01-CW37 / RW01-RW38. `run_tower_wrappers.ps1` compiles both actual wrappers and real ParamFrame; the 75 named cases pass. Its fault controls reject 13 independently compiled faults per wrapper (26 total). Native reflection, timeline reads, hit construction and engine execution are doubled. Current-state reads commit atomically; native effects already dispatched are never rolled back. Evidence: `build/tower-wrapper-check/fault-controls.log` and the current suite log. UP4 still owns operation queue/claim/debit/output/refund, lower-level timeline schema review and native multiplayer acceptance. A refused wrapper completion does not prove a native effect was absent; higher layers must retain their receipts.
+
+Each ID below is a separate completed fix in the indicated wrapper.
+
+| Coordinate | Radio | Completed fix | Coordinate | Radio | Completed fix | Coordinate | Radio | Completed fix |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| CW01<br>CW04 | RW01<br>RW04 | Reject a live object of the wrong tower class before raw field access.<br>Validate scalar field extents against the class allocation. | CW02<br>CW05 | RW02<br>RW05 | Resolve offsets again when the class incarnation changes.<br>Reject unresolved, out-of-range or invalid boolean masks. | CW03<br>CW06 | RW03<br>RW06 | Retire a failed-layout latch when its class incarnation changes.<br>Validate complete array-header extents before reading them. |
+| CW07<br>CW10 | RW07<br>RW10 | Validate component-pointer field extents before reading them.<br>Cancel a state read after world replacement in a timeline callback. | CW08<br>CW11 | RW08<br>RW11 | Validate look-at flag and index extents before staging a use.<br>Cancel a state read after the tower class changes in a timeline callback. | CW09<br>CW12 | RW09<br>RW12 | Cancel a state read after the tower slot/serial changes in a timeline callback.<br>Cancel a state read after its timeline binding changes. |
+| CW13<br>CW16 | RW13<br>RW16 | Publish state output only after every native read remains current.<br>Reject malformed or oversized puzzle array headers. | CW14<br>CW17 | RW14<br>RW17 | Reject malformed or oversized fuse array headers.<br>Bound fuse writes by both native length and the supported fuse count. | CW15<br>CW18 | RW15<br>RW18 | Reject fuse states outside empty/good/blown.<br>Reject invalid fuse values before any write. |
+| CW19<br>CW22 | RW19<br>RW22 | Bound puzzle writes and require the exact native array length.<br>Cancel location output after part replacement during the native query. | CW20<br>CW23 | RW20<br>RW23 | Validate part-array headers and supported button/fuse indices.<br>Cancel use continuations when the tower incarnation retires. | CW21<br>CW24 | RW21<br>RW24 | Reject non-finite native part locations without publishing output.<br>Cancel use continuations when the player incarnation retires. |
+| CW25<br>CW28 | RW25<br>RW28 | Cancel use continuations when the selected part retires or is rebound.<br>Own the caller's LookAt input across native callbacks. | CW26<br>CW29 | RW26<br>RW29 | Bind use dispatch to the resolved function incarnation.<br>Refuse recursive wrapper interactions while look-at staging is active. | CW27<br>CW30 | RW27<br>RW30 | Reject oversized reflected frames before allocating them.<br>Restore look-at only while the staged values still belong to this invocation. |
+| CW31<br>CW34 | RW31<br>RW34 | Restore owned look-at state during exception unwinding.<br>Validate audio component binding through playback callbacks. | CW32<br>CW35 | RW32<br>RW35 | Bind insert dispatch to the fuse incarnation through frame construction.<br>Guard lever dispatch and its completion against retired bindings. | CW33<br>CW36 | RW33<br>RW36 | Guard parameterless painters against lookup/frame-time retirement.<br>Reject invalid button/fuse indices in ReadLookAt without publishing output. |
+| CW37 | RW37 | Reject invalid fuse indices in ReadFuseLook without publishing output. | — | RW38 | Resolve the radio tower from the current gamemode binding while the previous tower remains live; validate field extent and both incarnations through resolution. |  |  |  |
+
+## Release 0.9.2163 qualified offline (28 October 2026)
+
+This is the retained package selected by `package/release.json`, separately from current development. PASS fresh package qualification: **124/124 groups**, Release/ABI, unchanged source/release inputs and a **32-member** manager archive with matching manifest, loader, branding, models and DLL. Rejection controls refuse incomplete/focused/failed suites, stale UI labels and mismatched DLL bytes.
+
+- Archive: `dist/ElvardFIC-WatchersOfTheVoid-0.9.2163.zip`.
+- DLL SHA-256: `5d1e5de9db22a3a3bcc3f82d3c3854a8bfdebe768ee96f827a5204f6c3078a8e`.
+- Archive SHA-256: `dba1cbdfcf84d5d605da82f52430589c332f4f7cdfb621f1acfc41d8730aa147`.
+- Checksums: `dist/SHA256SUMS-current.txt`.
+- Qualification: `build/qualification-current/verification.json`.
+- Package evidence: `build/package-current/verification.json`.
+
+TwoPlayerGameplayVerified=false; archiveStartupVerified=false. Cleanup targets and retained hashes are in `package/cleanup-inventory.json`.
+
+## Prop-drive lifetime and failed-marker cleanup (5 November 2026)
+
+Actual marker wrapper, prop-drive receiver/host, bind-wait code and interpolation primitive are exercised against native/transport doubles. Coverage includes every native end seam, first/steady pose reentry, same-generation revisions, mesh/world/ body replacement, nested ticks, input mutation, failed cleanup and hand transfers. The current verification and retained 15 control results cover these boundaries.
+
+- [x] LM1: Pump failed-marker deletion from the game-thread frame tail at most four times per second while debt exists, without waiting for another spawn.
+- [x] LM2: Retain refused cleanup across disconnect and retry outside a running network session; only bodies created by this wrapper are eligible.
+- [x] LM3: Refuse nested marker creation during construction or cleanup; keep cleanup guards through native callback reentry.
+- [x] LM4: Retire cleanup on actor/class/world replacement, retain it while the current world is temporarily absent, and cancel it after verified adoption.
+- [x] PD1: Detach an ending drive and close its generation before native calls; no live-map iterator crosses final transform, physics or child-release callbacks.
+- [x] PD2: Use the same generation/watermark admission for host releases and client ends, rejecting older/duplicate host releases and old in-flight poses.
+- [x] PD3: Stop final-pose continuations after disconnect, world/body/component replacement, a new hand, or a successor drive/end.
+- [x] PD4: Validate direct pose/end input for finite bounded transforms, generation, key length, reserved bytes and defined end flags before changing stream state.
+- [x] PD5: Own input packets and drained transport batches through native reentry; a caller mutation or disconnect cannot change the in-flight packet's values.
+- [x] PD6: Traverse a snapshot of drive identities and apply owned records, with no live-map references across native interpolation/query/park callbacks.
+- [x] PD7: Reconcile a replacement mesh even while its predecessor is still live; bind velocity and render continuations to the current component incarnation.
+- [x] PD8: Exclude recursive drive ticks with a stack-owned guard; new input stays queued for the next outer tick, including callbacks that disconnect.
+- [x] PD9: Bind pose/tick completion to its application revision, preserving a newer packet even when it has the same stream generation.
+- [x] PD10: Use the canonical grab/gravity/holding/last-held/hand-axis predicate and commit hand-yield watermarks before callbacks can install a successor.
+
+## Tower row ownership audit (4 November 2026)
+
+T01-T45 / K01-K30 are implemented and included in the current joint verification. Rows retain recipient-generation/revision debt; delivery rotates at eight packets per pump. Apply receipts distinguish native effects from declarative repaint debt. Native solvers fill their puzzle arrays: canonical fuse values are staged before repair and exact cells reasserted afterwards. Radio setBroken emits stateChanged and starts its timer, so it is admitted once rather than replayed on repaint.
+
+PASS actual row/kind coordinators, compiled RefusedTold/FIFO and cooked contracts; 18 independently compiled fault controls are rejected. Native execution, reflection and transport are doubled. Evidence: `build/tower-2164/fault-controls-final.log`. Host operation queue/claim/spend/refund, lower-level timeline schemas and native multiplayer acceptance remain UP4 follow-ups. Tower wrappers are recorded above.
+
+| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
+| --- | --- | --- | --- | --- | --- |
+| T01: Clear tower rows when the installed Session pointer changes.<br>T07: Clear delivery debt and diagnostics for all 32 slots independently of roster teardown. | T02: Clear tower rows on same-pointer session serial replacement.<br>T08: Accept rows only for the installed running connected client. | T03: Clear tower rows on a changed session stop counter.<br>T09: Validate row admission inside OnRows, independently of its router. | T04: Clear tower discovery/state on world-generation replacement.<br>T10: Reject oversized row payload counts before indexing. | T05: Clear tower host/client state on role replacement.<br>T11: Reject flags that the specified tower kind does not own. | T06: Clear the installed tower-row session pointer at disconnect.<br>T12: Reject negative coordinate tower identities. |
+| T13: Reject nonzero radio tower identities.<br>T19: Own discovery output across callback-driven state reset. | T14: Reject light bits outside the declared puzzle width.<br>T20: Discard discovery results invalidated by session/world replacement. | T15: Discard duplicate kind/id rows deterministically.<br>T21: Commit class-version/discovery cache metadata only for its captured scope. | T16: Reclaim kept entries omitted from a newer full snapshot.<br>T22: Own the tower list while reading native rows. | T17: Validate cached tower incarnations by slot/serial instead of probing old raw pointers.<br>T23: Refuse a row read whose tower incarnation changed. | T18: Clamp discovery counts before reading a native discovery buffer.<br>T24: Commit host row snapshots only after all captured authority checks pass. |
+| T25: Keep broadcast retry debt when the transport refuses the packet.<br>T31: Wait for connected world-ready peers before delivering join state. | T26: Do not clear a successor session dirty latch after an old send.<br>T32: Do not clear newly queued join debt after an older successful send. | T27: Exclude recursive host sends without losing newly requested work.<br>T33: Bind refused-claim answer delivery to sender generation. | T28: Preserve a dirty revision created while an earlier send is running.<br>T34: Consume only the refused sequence actually carried by a successful send. | T29: Prevent an older broadcast result from replacing a newer sent snapshot.<br>T35: Bound and fairly rotate per-tick refused-answer sends. | T30: Bind join delivery debt to the intended sender generation.<br>T36: Preserve new answer debt created inside an older transport callback. |
+| T37: Own kept row/apply-context data through native callbacks.<br>T43: Bind panel retry clocks to tower identity rather than payload row position. | T38: Do not complete a newer kept revision from an older apply result.<br>T44: Refuse stale panel player/tower/results after native callbacks. | T39: Retain pending rows after refused reads or declarative writes.<br>T45: Reconcile session/world scope before exposing drill state. | T40: Prevent recursive application and cancel stale native continuations.<br>K01: Refuse coordinate state reads invalidated by actor retirement. | T41: Keep the apply guard scoped through disconnect/reset and exceptions.<br>K02: Bound coordinate light/fuse counts before local array access. | T42: Commit application counters/warnings only into their captured scope.<br>K03: Retain retry debt after a coordinate light-write refusal. |
+| K04: Admit the coordinate repair native effect once per target revision.<br>K10: Consume the coordinate pull sound before native dispatch. | K05: Stop coordinate repair painters after authority retires.<br>K11: Consume the coordinate insert sound before native dispatch. | K06: Stop coordinate break painters after authority retires.<br>K12: Consume the coordinate failed-lever sound before native dispatch. | K07: Admit a coordinate click sound once across interrupted retries.<br>K13: Admit a coordinate lever movement once per target revision. | K08: Stop coordinate fuse writes at the first refused or retired operation.<br>K14: Guard the final coordinate lever-moving field update. | K09: Stop coordinate fuse painters after authority retires.<br>K15: Refuse radio tower reads invalidated by actor retirement. |
+| K16: Bound radio cell/fuse counts before local array access.<br>K22: Consume the radio pull sound before native dispatch. | K17: Retain retry debt after a radio cell-write refusal.<br>K23: Consume the radio insert sound before native dispatch. | K18: Admit radio repair completion once and retain declarative convergence.<br>K24: Consume the radio damaged-fuse alert before native dispatch. | K19: Consume the radio broken alert before native dispatch.<br>K25: Guard radio confirm/failure sounds against stale continuation. | K20: Stop radio puzzle/fuse painters at refusal or authority retirement.<br>K26: Admit the radio confirm timeline once per target revision. | K21: Stop radio fuse writes at the first refused or retired operation.<br>K27: Consume the radio reset-lever sound before native dispatch. |
+| K28: Admit the radio reset timeline once per target revision. | K29: Guard the final radio animation field update. | K30: Bind panel convergence to the captured row, tower and player scope. | ? |  |  |
+
+## Optional EmoteWheel integration (4 November 2026)
+
+Implemented optional native adapter; supplied mod scripts/assets are unchanged. Current joint verification includes run_emote, adjacent hand/ragdoll/seat suites and reliable routing. Three emote fault controls are rejected; additional native held-item regression evidence: `build/emote-held-regression-final.log` and `build/emote-check/results.log`.
+
+- [x] EW1: all 316 emotes / 442 manifest-order phases and variants, with exact animation lengths, loops and sound associations; metadata only.
+- [x] EW2: actual local Mesh montage/SpawnSound2D observation. The orbit camera can stop the first-person mesh ticking, so the source uses Mesh first.
+- [x] EW3: a 64-byte kind 267 payload, owner/occupant/generation validation, finite bounded values, canonical host sequences and no blind relay.
+- [x] EW4: exact remote phases/variants, current playback positions, drift correction and independent spatial music clocks. Missing animation and music channels commit separately instead of restarting the successful channel.
+- [x] EW5: refused-send retries, current-state join replay and bounded 32-peer delivery; solo-host observation survives the first connection edge.
+- [x] EW6: owned montage/audio cleanup, source lease expiry, body and animation instance replacement, world/session/stop/role/occupant retirement.
+- [x] EW7: missing-pak and missing-resource caching, ordinary player/hand fallback and forwarding through a host without EmoteWheel resources.
+- [x] EW8: production-controller/native-wrapper fixtures, injected faults and stable-source Release/ABI verification.
+- [x] EW9: generation-matched visible held-component bone pose. The display actor moves while preserving its component-relative transform. Retired native continuations cannot fall through into ordinary puppet dereferences.
+
+Reflection, roster, transport and engine execution are doubled. Function signatures are derived from declarations and captured encoding controls; no fresh live census is established. Mixed installations, model/hand/cigarette, ATV/ragdoll/sleep and phase/audio behavior require native acceptance.
+
+## Radio ownership audit (4 November 2026)
+
+R01-R45 / M01-M30 are implemented and included in the current joint verification. Bounds remain 256 discovery/dirty/cache entries, 64 requests/UI notes, 10000 catalogue entries, 256 reflected bytes, 32768 UTF-16 path units and one-day playback. A full dedupe cache does not prevent broadcasting an admitted state.
+
+PASS controller, actual wrapper/ParamFrame, cooked contract and slot-31/32 cases; four retained and 18 additional fault controls are rejected. Scoped compiler/hash evidence: `build/radio-ownership-check/qualification.log` and `build/radio-ownership-check/production-compile.json`. The newer complete linked DLL verification is recorded above. Native playback/rendered acceptance is pending.
+
+| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
+| --- | --- | --- | --- | --- | --- |
+| R01: Fill canonical radio acknowledgements for all 32 peers.<br>R07: Retain actor incarnation while capturing a radio key. | R02: Clear every peer acknowledgement/attempt on world replacement.<br>R08: Reject identity captures invalidated while resolving element IDs. | R03: Clear every peer acknowledgement/attempt at disconnect.<br>R09: Refuse conflicting key and element-ID actor resolutions. | R04: Accept valid request senders 4 through 31 and reject slot 32.<br>R10: Retire state on installed Session pointer replacement. | R05: Consume host acknowledgements for local peer IDs 4 through 31.<br>R11: Retire state on same-pointer session serial replacement. | R06: Reject empty/None/non-ASCII/embedded-null malformed wire keys.<br>R12: Retire state on session stop-count replacement. |
+| R13: Retire state when the session role changes.<br>R19: Retain the resolved actor incarnation through reach authorization. | R14: Retire callback results across world replacement.<br>R20: Refuse application after authorization retires sender/controller authority. | R15: Disable all radio hooks immediately at disconnect.<br>R21: Carry controller authority through the complete native radio apply. | R16: Require a running host and a connected world-ready request sender.<br>R22: Own host attempt snapshots across native callbacks. | R17: Bind acknowledgements and pending host attempts to sender transport generation.<br>R23: Prevent recursive admission of an in-flight request from the same slot. | R18: Revalidate sender scope after native body-availability queries.<br>R24: Keep receive exclusion active through occupant/controller replacement. |
+| R25: Prevent an old apply result from acknowledging a successor occupant.<br>R31: Own canonical paint snapshots across recursive receives. | R26: Prevent an old publish result from replacing a newer sent-state cache.<br>R32: Cancel an older paint when a newer canonical revision arrives. | R27: Keep sent-cache references out of transport callbacks.<br>R33: Snapshot tick work instead of retaining map iterators through native calls. | R28: Bound discovered radio entries without evicting a live owner.<br>R34: Exclude recursive Tick while preserving admission through reset. | R29: Bound locally dirty radio entries without evicting a live edit.<br>R35: Own the pending request packet across transport callbacks. | R30: Bound sent-state cache entries.<br>R36: Never stamp a successor pending head with an old send result. |
+| R37: Refuse cumulative acknowledgements newer than any offered request sequence.<br>R43: Validate the radio resolved from a UI widget before marking it dirty. | R38: Do not reset a newer host retry attempt with an older request.<br>R44: Discard cancelled UI permissions and validate scope after end-track queries. | R39: Keep the host retry deadline tied to its owned request across callbacks.<br>R45: Clamp canonical playback extrapolation before signed tick arithmetic. | R40: Track user-radio body permission by a live script invocation.<br>M01: Validate actor incarnation throughout radio-class classification. | R41: Preserve outer user-radio invocations through nested callbacks.<br>M02: Validate resolved radio-class incarnations before classification succeeds. | R42: Refuse stale widget/function/session observations in UI POST.<br>M03: Keep ATV radio exclusion closed while its class is unresolved. |
+| M04: Refuse object-field reads after their source actor retires.<br>M10: Use overflow-safe link/url/stride bounds for radio data. | M05: Validate an object-valued field before exposing it to callers.<br>M11: Reject malformed local FString lengths/capacities before hashing. | M06: Bind reflected radio layout to the actor class incarnation.<br>M12: Reject unterminated or embedded-null catalog paths. | M07: Bind reflected radio layout to the data struct incarnation.<br>M13: Retain gamemode/catalog-owner incarnation through catalog lookup. | M08: Bind reflected radio layout to the openLink function incarnation.<br>M14: Own the selected catalog bytes instead of returning an engine-array pointer. | M09: Commit layout metadata atomically after native resolution.<br>M15: Use a per-operation layout snapshot through nested class resolution. |
+| M16: Retain the media query target through dispatch-function lookup.<br>M22: Stop radio reads when its mediaPlayer binding changes during a query. | M17: Retain media query class/function incarnations through ParamFrame preparation.<br>M23: Commit a complete read State only while actor/player/controller remain current. | M18: Check caller authority immediately before each media query dispatch.<br>M24: Prepare every openLink argument before changing pause/mode fields. | M19: Leave query output unchanged when the target retires during dispatch.<br>M25: Own the selected path string through openLink frame preparation and dispatch. | M20: Free a returned GetUrl FString even when authority retires.<br>M26: Refuse a malformed openLink frame without changing the actor pause/mode. | M21: Validate returned GetUrl FString capacity and terminator.<br>M27: Guard Seek through player/function/class/caller retirement. |
+| M28: Do not run Play/Pause after a Seek callback retires ownership. | M29: Validate playback-command ownership after its native attempt. | M30: Bound playback ticks before seeking and comparing native times. | ? |  |  |
+
+## Queue and coffee ownership audit (4 November 2026)
+
+The 75 reviewed boundaries below are included in the current joint verification. Q01-Q12, C01-C23, W01-W06 and A01-A07 were retained implementations verified by production fixtures; S01-S27, the final C20 key check and function-incarnation capture were completed in this audit. These are review boundaries rather than 75 separate newly reproduced defects.
+
+Actual queue/bucket, coffee intent/state and coffee/appliance wrappers with real ParamFrame pass; 11 independent fault controls are rejected: `build/coffee-2164/fault-controls.log`. Publication retains at most 128 debts, retries eight per tick after 250 ms and preserves successor revisions. Native transport/roster/reflection are doubled; simultaneous presses, bag/cup fill, join, disconnect and world replacement still need multiplayer acceptance.
+
+| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
+| --- | --- | --- | --- | --- | --- |
+| Q01: initialize a token bucket exactly once even when its first clock is zero.<br>Q07: do not pop a successor occupant's head when an old callback returns Done. | Q02: do not move the refill clock backwards and credit the same elapsed interval twice.<br>Q08: do not refund an old Wait into the successor occupant's bucket. | Q03: apply a reduced burst ceiling before a same-clock spend.<br>Q09: cancel service when its clock callback replaces the queued head. | Q04: reject non-finite/negative token budgets instead of admitting a NaN stream.<br>Q10: consume an uncertain callback attempt on exception, without replaying it next tick. | Q05: prevent recursive service of the same pending intent.<br>Q11: release the service guard on callback/copy/clock exceptions. | Q06: own the served payload across occupant reset and native callbacks.<br>Q12: keep service admission closed through in-callback queue replacement. |
+| C01: reject coffee press frames with null function/locals.<br>C07: reject malformed incoming device keys at the handler boundary. | C02: bound the action parameter read by the function frame.<br>C08: require the installed, running host and a world-ready connected sender at ingress. | C03: refuse unreadable client action frames instead of brewing locally.<br>C09: bind queued presses to the sender's transport generation. | C04: cancel a client press if key lookup retires its actor.<br>C10: clear coffee intents when the installed Session pointer changes. | C05: cancel a client send after session/world retirement during key lookup.<br>C11: clear them on same-pointer session serial changes. | C06: reject non-ASCII, empty, None and oversized outgoing device keys.<br>C12: clear them on world changes. |
+| C13: clear the coffee intent session pointer at disconnect.<br>C19: refuse a recycled puppet incarnation after reach callbacks. | C14: clear queued presses at disconnect independently of roster teardown order.<br>C20: refuse a rekeyed/rebound device before native action admission. | C15: refuse a Tick argument belonging to another session.<br>C21: do not write old action results into successor-session counters. | C16: stop the slot drain after a callback retires the host scope.<br>C22: do not clear a successor occupant's wait state after an old callback. | C17: retain the authorized device incarnation through native action preparation.<br>C23: expire a press waiting indefinitely for the sender's body. | C18: pass the same puppet body that supplied the reach verdict.<br>S01: match coffee PRE/POST notes by invocation, not actor address alone. |
+| S02: preserve an outer brew/hit note across nested watched calls.<br>S08: reject notes after a host/client role change. | S03: reject notes whose actor incarnation changed before POST.<br>S09: retire PRE snapshots invalidated by native flag/other-actor reads. | S04: reject notes whose UFunction incarnation changed before POST.<br>S10: consume a POST note before callbacks so duplicate POST cannot publish twice. | S05: reject notes from an earlier installed session pointer.<br>S11: retain the bag's exact incarnation while capturing PRE amounts. | S06: reject notes from an earlier same-pointer session serial.<br>S12: own the POST snapshot across recursive publication. | S07: reject notes from an earlier world.<br>S13: cancel publication when POST maker-flag reads retire the actor. |
+| S14: stop the bag branch after maker publication retires the session.<br>S20: drop retry debt whose actor/session/world ownership expired. | S15: do not update new-session publication counters from an old callback.<br>S21: clear old notes and retry debt on Install context replacement. | S16: guard the publisher's key read against actor retirement.<br>S22: disable coffee state callbacks immediately at disconnect. | S17: reject rekeyed actors during publication/retry.<br>S23: bound cancelled-hit diagnostics and distinguish recycled maker addresses. | S18: keep controller authority through record capture/chunk delivery.<br>S24: bound class tallies and distinguish recycled class addresses. | S19: retain bounded retry debt for refused guarded publications.<br>S25: settle refused coffee state watch registrations once. |
+| S26: validate OtherActor frame bounds before reading its pointer.<br>W05: cancel bag-field reads invalidated during offset resolution. | S27: bind awaited client-record admission to the current host/sender/actor scope.<br>W06: retry missing coffee bool metadata without requiring a new class address. | W01: guard coffee classification through class lookup and actor replacement.<br>A01: refuse appliance actions when the player parameter write fails. | W02: invalidate hasCup offsets on class serial replacement.<br>A02: refuse appliance actions when the action parameter write fails. | W03: invalidate hasCoffee offsets on class serial replacement.<br>A03: validate the appliance actor incarnation through function lookup. | W04: invalidate coffeeReady offsets on class serial replacement.<br>A04: validate the player incarnation through frame preparation. |
+| A05: validate class/function incarnations through frame preparation. | A06: check the caller's authority immediately before native dispatch. | A07: report caller retirement after an attempted native action without replaying it. | ? |  |  |
+
+## Real upstream history merge (4 November 2026)
+
+Merge `a3632a687` has parents `353debaff` and upstream `4fbf1acf0e0ec7d14350132cd3de01d6a86aa552`, recording the formerly missing 436-commit ancestry. Eighty conflicts were reconciled while retaining fork wire IDs, 16-bit reliable kinds, 32 peers and transaction/lifetime guarantees. The fork cord owner remains authoritative; the alternate upstream cord lane was excluded to avoid duplicate ownership. Container acts retain IDs 264/265/266; EmoteState uses 267, with compile-time table coverage through that final ID. The earlier claim that source transfer alone completed history integration is superseded by this merge. UP2/UP4/UP5/UP6 semantic reviews remain open.
+
+Historical verification retained for provenance:
+
+| Evidence | Original scope |
+| --- | --- |
+| `build/upstream-history-2164/verification-final/verification.json` | b2219; 133 groups, Release/ABI and 1232 entries. |
+| `build/coffee-2164/verification/verification.json` | b2219; 134 groups and stable source/Release verification. |
+| `build/tower-2164/verification-complete/verification.json` | b2220 before the 5 November physics/marker changes; 137 groups. |
+
+Their original DLL/source hashes remain in those JSON records; the latest build identity is stated only in Current development verification above.
+
+## Integration error audit (30 October 2026)
+
+UP1 documentation conflict reconciliation and UP7 fixture/build repairs are complete. The formerly failed supplemental fixtures were repaired; run_2134 is an alias of run_2136, not an independent suite. Their old failure lists and interrupted/combined qualification totals are superseded by the current full run. Original audit evidence: `build/work-todo-audit/recheck/audit-summary.json` and `build/work-todo-audit/server-tests.log` (132 server tests at that audit). The later source-sync server check also passed 132 tests; this cleanup reruns neither the server nor engine tests.
+
+## Upstream integration b2215 (25 October 2026)
+
+Retained reference for the test catalogue's integration boundaries. Published fork reliable IDs, coin admission, checked container writes, hold arbitration, server delivery, laptop/screen leases and native/extraction ownership were preserved through the later imports and real history merge. The current full run covers maintained upstream integration/refresh/container fixtures. Remaining semantic work belongs to UP2/UP4/UP5/UP6 in WORK.
+
+## Joined-client prop physics report (29 October 2026)
+
+The host appears stable while a joining client sees objects vibrate, launch or penetrate boxes, desks and workbenches. Exact versions, other mods, network conditions and whether client displacement reaches the host remain unknown. This has not been reproduced or closed. Prop-drive lifetime/end repairs do not establish the report's root cause; no dedicated stack-physics setting is present.
+
+- [ ] Capture matching host/client builds, mod lists, network conditions and logs.
+- [ ] Compare resting objects/stacks, pickup/drop and late join on both roles;
+  trace pose/drive/park/end ownership and native simulation state.
+
+## Open reports and unique diagnostic evidence
+
+These remain open despite passing offline fixtures. Implementation constraints stay in TODO/WORK; the table retains report identity, observations and evidence.
+
+| Report | Established boundary and remaining acceptance |
+| --- | --- |
+| Remote flashlight | Capture/reader/join/replacement fixtures pass. Verify live beam, modes, battery, clicks, initial join and same-component drift on matching peers. |
+| Ragdoll 5/50 | C-key/faint/fall entry, selected-model pose transfer and recovery need current all-role acceptance, including slopes, crouch, repeated use and custom rigs. |
+| PC boot 54/55 | The old shared-screen fixture reproduced rootswitch being reset to 0 during native boot; desktop-only traversal passes. Verify repeated power, input/handoff, power loss and join/reconnect. |
+| Tutorial crash/icons | A local 28 October inspection found 2471 empty item .vimg files. Cache/profile-placement fixtures pass; regeneration and Tutorial/campaign transitions need native acceptance. |
+| Tutorial stack overflow | Crashes B7D06444... and E90A44A5... record EXCEPTION_STACK_OVERFLOW; E90A44A5 has 11939 chained FFrames, 11937 on one node. `build/tutorial-crash-20261028.txt`. |
+| Native VM recursion | Isolated launches proved recursive lib_C.end. Untitled_1.CustomEvent's borders guard is a candidate initiating caller, requiring confirmation. `build/requested-events-native/crash-analysis-20261024.md`; no guard suppression is recorded. |
+| Bench58 host rifle | Reproduce disappearance after placement; capture class/key/destruction caller with VOTVCOOP_PROP_BIRTH_KEY_PROBE=1. prop_rifle_C remains a candidate. |
+| Token52 | Identify the original UI and observe credit/spend/refusal/join. Shared saveSlot.Points remains a hypothesis. |
+| Trowel | Capture an actual stock/key mismatch through hand/slot/drop. Native graphs preserve non-None keys; the report does not justify inventing a repair. |
+| Item-copy report (2) | Build and copy trigger were unidentified. Images show shovel/noodle packaging without class/key/EID or transition evidence: `build/report-bugs/item-copy.png`, `item-copy-other-peer.png`. |
+| Warp/blank-email report (6.1) | arirShipAppear's delayed email loop is a candidate; its phase adapter does not close reputation/email or Vanishing variants. Image and native dumps: `build/report-bugs/warp-event.png`, `arirShipAppear.txt`. |
+
+Recorded historical native experiments on b2184 (22 October) covered NullRHI entry/recovery, momentum, camera, dynamic-platform contact, installed models, remote transitions and impaired LAN. They applied to DLL SHA-256 `7bf4a68037a384605ae54fd9c8939564ba531f274d9b94fb6fc5f99617f647d2`. Their old build directories are absent; this retained observation does not qualify current rendered/input behavior or b2220 gameplay.
+
+## Pending native multiplayer acceptance
+
+All items below remain unperformed for the current development DLL. Implemented routes and incomplete adapters are distinguished in TODO/WORK.
+
+- [ ] Real 2?32-player admission, full/reused slots, selector/input and master capacity; no deployed-master qualification is recorded.
+- [ ] Switches, doors, transformer repair, lamps/ambient and drone contents after join, concurrent use and replacement.
+- [ ] Shared prop contact/blast motion, hold handoff and late observers; attached glowstick constraints/hooks and ordinary/wall-attachable behavior.
+- [ ] Companion ATV creation, saved rigs, steering/honk, driver/carrier/seat handoffs, save/reload and reconnect, without duplicate vehicles.
+- [ ] Seated body/head/light/chair angles, tilted supports, banked vehicles, IK recovery, custom rigs and 32-player presentation load.
+- [ ] Sleep unanimity, awake/joining/dreaming vetoes, wake input, personal nightmares and rewards across replacement/reconnect. Per-mattress capacity remains deferred.
+- [ ] Inventory/profile/container join, ejection/extraction and concurrent use; repair/resource/food/package/grill debit, output and refund through refusal, handoff, disconnect and save/reload.
+- [ ] Console simultaneous input, history/clear/busy state and native command effects; laptop/shared-screen inherited-state handoff and slow-loading UI.
+- [ ] Held/world toy and watoy timing, audio, physics and variant schemas; original-dab sponge/window foam, cleaning stock, stains and save/join parity.
+- [ ] Event triggers/outcomes/repeats, loading, rate changes and current-state joins; personal dreams/endings/calendar gates, shared sky/audio/email consequences.
+- [ ] Wisp grab/release/tear/kill with source disappearance, body/world/AnimInstance replacement and movement/camera recovery; remaining entity attacks/effects.
+- [ ] Current manager archive startup, menu branding and combined mod profiles.
+
+## Requested third-party mod compatibility (28 October 2026 audit)
+
+Eleven pinned archives were statically inspected with recorded SHA-256 values; `audit_requested_mods.py --offline` passed. Evidence: `build/requested-mods-audit`. Reports retain runtime_verified=false. The audit was performed before installation; it establishes no native compatibility pass. EmoteWheel subsequently gained the optional adapter described above.
+
+| Mod | Remaining profile/native acceptance |
+| --- | --- |
+| EmoteWheel 1.0.1 | Mixed installations, variants/phases/audio, visible hands and movement/death/ragdoll/body interruption. |
+| Fusion 0.8108.3 | One merged table output, all six dependants' rows/classes and launch paths with spaces. Older-target text is a risk to verify. |
+| VEmu 1.1.0 | Shared console/cartridge/control ownership and emulator AV/state; upstream explicitly excludes SmartTV AV. |
+| Female Skin 1.0.0 | Resolve original Multivoid dependency; verify one active DLL, lowpoly_girl appearance/reconnect/material/animation/ragdoll and missing-asset fallback. |
+| JeepMod 0.11.1 | Custom keys/trunk/container/upgrades/decals, fuel/damage, save/rejoin and one vehicle/inventory. Cooked Jeep_C derives from ATV_C. |
+| FireTower 1.0.4 | Matching scenery/collision, remote door use, late join/save-load and ModActor lifetime. |
+| PhotographyPlus 0.10.3 | Task/bestiary/photo submission, remote camera, personal progress, one reward and persistence. |
+| unreal_shimloader 1.1.7 | Managed VFS/manual loader paths, matching PAKs/modules and no duplicate multiplayer DLL. |
+| SmartTV 0.9.6 | Source/mode/play/pause/seek/join; personal device/OBS access. VEmu AV needs an explicit adapter. |
+| BuyableJetpacks 1.0.0 | Store row, one delivery, equip/fuel/flight/drop, remote appearance and resource-preserving save/rejoin. |
+| BuyableShovels 1.0.0 | Store row, one delivery, equip/dig/hit/drop, shared outcomes and save/rejoin. |
+
+## Retained native research
+
+| Evidence | Scope |
+| --- | --- |
+| `build/requested-events-audit/summary.json` and `reclassified-graphs.json` | 1621 relevant packages / 22691 functions / 69 scheduled rows; successful decode is not complete semantic event coverage. |
+| `build/priority-level-scripts` | 263 extracted headers, 52 scripted maps and 172 functions; map adapters remain unfinished. |
+| `build/backlog-20261105/native-unfinished-events.txt` | Current treeSpawner/walkingTree/blackFog/arirShipVanishing graphs and input hashes; mapping evidence only. |
+| `build/report-bugs` | Original item-copy/warp images and native graph extracts used to investigate reports. |
+| `build/glowstick-grab-check/verification/verification.json` | Original UG1 exact releaseGlowstick/inherited-variant proof and scoped verification; later full regression is recorded above. |
+
+## Documentation check
+
+Recheck: `build/omega-command-verification/prebuild/public_prose_gate.log`. 14 counters remain above baseline; other.agent is 290. TESTLOG remains below its 600-line cap (575 lines). The 267 comment-document rows, 23 uncalled declarations and 156 unswept source files remain open. This failing gate is separate from passing regression groups; its baseline has not been changed.

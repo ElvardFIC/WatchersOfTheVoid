@@ -6,6 +6,7 @@
 // npc_pose_host.cpp, the install in npc_sync_install.cpp, the world walk in npc_world_enum.cpp.
 
 #include "coop/creatures/npc_sync.h"
+#include "coop/creatures/npc_join_delivery.h"
 #include "coop/creatures/npc_class_policy.h"
 #include "npc_sync_internal.h"  // install/state seam (impl-private, src-local): shared globals + callback decls
 
@@ -374,6 +375,7 @@ void MarkIncomingNpcSpawn(void* npcClass) {
 }
 
 void OnDisconnect() {
+    coop::npc_join_delivery::OnDisconnect();
     // One drain for both roles: npc_mirror::DrainClientMirrors empties the manager, destroying only
     // the IsMirror() elements (client mirrors) and releasing the host's real Elements (their actors
     // stay in the world). Drain first, then clear the reverse map: a POST racing on a worker can

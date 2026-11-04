@@ -1,5 +1,52 @@
 # WORK — unfinished implementation
 
+BO1-BO3 build-order corrections are recorded in TESTLOG; the owner's required
+tests-before-Release workflow is in README and AGENTS.md.
+
+
+## Upstream continuation
+
+- [x] HD01-HD25 / HX01-HX50: retained HandTaken recipient delivery, bounded
+  FIFO reservations and guarded client cleanup/native inventory, refresh and grab
+  release are implemented. Individual fixes and offline checks are in TESTLOG.
+
+- [x] OC01-OC25 / OX01-OX50: Omega execution, compare-and-set service
+  assignment/rollback, startKill and temporary-hand/native replay ownership are
+  implemented. Individual fixes and offline verification are in TESTLOG.
+
+- [ ] Finish exact HandTaken item/operation correlation: its current wire notice
+  names only a class, so a delayed notice can still match a newer same-class item.
+  Reconcile uncertain native debit/output results and remaining latent routes.
+  Native multiplayer acceptance of the owned cleanup/delivery remains open.
+
+- [x] SF01-SF25 / SM01-SM50: follow/service leases, recipient/context
+  ownership, native player-result guards and insert-read schemas are implemented.
+  Individual fixes and offline checks are in TESTLOG; native acceptance remains open.
+
+- [x] KA01-KA25 / KB01-KB50: Kerfus command admission, client refusal retry,
+  bounded PRE capture and guarded native action dispatch are implemented.
+  Individual fixes and verification are in TESTLOG. Follow/service ownership is
+  recorded above; native gameplay and remaining upstream review stay open.
+
+- [x] KD01-KD25 / KX01-KX50: Kerfus recipient state/current-state joins,
+  checkpointed mirror application and native refresh ownership are implemented.
+  Individual fixes and offline verification are in TESTLOG. Native gameplay
+  acceptance and the wider upstream continuation review remain open.
+
+- [x] LS01-LS25 / LX01-LX50: independent mechanism claim leases and
+  owner-specific release are implemented. Hook, carry, Kerfus, watoy and starter
+  routes use canonical sources; native constraint/transform priority and contact
+  acceptance remain open. Individual fixes and offline evidence are in TESTLOG.
+
+- [x] VA01-VA25 / VX01-VX50: drive admission and host verb handoff
+  continuations are implemented. Individual fixes and offline evidence are in
+  TESTLOG. Independent source leases are recorded above; native contact acceptance remains open.
+
+- [x] NH01-NH25 / NX01-NX50: ordinary NPC pose and robot-hold ownership
+  guards are implemented. Individual fixes, replacement cells and offline
+  verification are recorded in TESTLOG. Source lease integration is recorded above; native contact,
+  materialization and the wider upstream continuation audit remain open.
+
 ## Upstream gap review — 29 October 2026
 
 Seven remaining implementation candidates are tracked as UG2–UG8 in
@@ -26,92 +73,114 @@ This file contains implementation work and the constraints needed to finish it.
 Checks, completed-change reports and release evidence belong in
 [TESTLOG.md](TESTLOG.md).
 
-## Active queue and appliance review — 4 November 2026
 
-The next implementation batch first owns these concrete defects:
-
-- [ ] Q01: initialize a token bucket exactly once even when its first clock is zero.
-- [ ] Q02: do not move the refill clock backwards and credit the same elapsed interval twice.
-- [ ] Q03: apply a reduced burst ceiling before a same-clock spend.
-- [ ] Q04: reject non-finite/negative token budgets instead of admitting a NaN stream.
-- [ ] Q05: prevent recursive service of the same pending intent.
-- [ ] Q06: own the served payload across occupant reset and native callbacks.
-- [ ] Q07: do not pop a successor occupant's head when an old callback returns Done.
-- [ ] Q08: do not refund an old Wait into the successor occupant's bucket.
-- [ ] Q09: cancel service when its clock callback replaces the queued head.
-- [ ] Q10: consume an uncertain callback attempt on exception, without replaying it next tick.
-- [ ] Q11: release the service guard on callback/copy/clock exceptions.
-- [ ] Q12: keep service admission closed through in-callback queue replacement.
-
-The appliance part owns these individually named repairs:
-
-- [ ] C01: reject coffee press frames with null function/locals.
-- [ ] C02: bound the action parameter read by the function frame.
-- [ ] C03: refuse unreadable client action frames instead of brewing locally.
-- [ ] C04: cancel a client press if key lookup retires its actor.
-- [ ] C05: cancel a client send after session/world retirement during key lookup.
-- [ ] C06: reject non-ASCII, empty, None and oversized outgoing device keys.
-- [ ] C07: reject malformed incoming device keys at the handler boundary.
-- [ ] C08: require the installed, running host and a world-ready connected sender at ingress.
-- [ ] C09: bind queued presses to the sender's transport generation.
-- [ ] C10: clear coffee intents when the installed Session pointer changes.
-- [ ] C11: clear them on same-pointer session serial changes.
-- [ ] C12: clear them on world changes.
-- [ ] C13: clear the coffee intent session pointer at disconnect.
-- [ ] C14: clear queued presses at disconnect independently of roster teardown order.
-- [ ] C15: refuse a Tick argument belonging to another session.
-- [ ] C16: stop the slot drain after a callback retires the host scope.
-- [ ] C17: retain the authorized device incarnation through native action preparation.
-- [ ] C18: pass the same puppet body that supplied the reach verdict.
-- [ ] C19: refuse a recycled puppet incarnation after reach callbacks.
-- [ ] C20: refuse a rekeyed/rebound device before native action admission.
-- [ ] C21: do not write old action results into successor-session counters.
-- [ ] C22: do not clear a successor occupant's wait state after an old callback.
-- [ ] C23: expire a press waiting indefinitely for the sender's body.
-- [ ] S01: match coffee PRE/POST notes by invocation, not actor address alone.
-- [ ] S02: preserve an outer brew/hit note across nested watched calls.
-- [ ] S03: reject notes whose actor incarnation changed before POST.
-- [ ] S04: reject notes whose UFunction incarnation changed before POST.
-- [ ] S05: reject notes from an earlier installed session pointer.
-- [ ] S06: reject notes from an earlier same-pointer session serial.
-- [ ] S07: reject notes from an earlier world.
-- [ ] S08: reject notes after a host/client role change.
-- [ ] S09: retire PRE snapshots invalidated by native flag/other-actor reads.
-- [ ] S10: consume a POST note before callbacks so duplicate POST cannot publish twice.
-- [ ] S11: retain the bag's exact incarnation while capturing PRE amounts.
-- [ ] S12: own the POST snapshot across recursive publication.
-- [ ] S13: cancel publication when POST maker-flag reads retire the actor.
-- [ ] S14: stop the bag branch after maker publication retires the session.
-- [ ] S15: do not update new-session publication counters from an old callback.
-- [ ] S16: guard the publisher's key read against actor retirement.
-- [ ] S17: reject rekeyed actors during publication/retry.
-- [ ] S18: keep controller authority through record capture/chunk delivery.
-- [ ] S19: retain bounded retry debt for refused guarded publications.
-- [ ] S20: drop retry debt whose actor/session/world ownership expired.
-- [ ] S21: clear old notes and retry debt on Install context replacement.
-- [ ] S22: disable coffee state callbacks immediately at disconnect.
-- [ ] S23: bound cancelled-hit diagnostics and distinguish recycled maker addresses.
-- [ ] S24: bound class tallies and distinguish recycled class addresses.
-- [ ] S25: settle refused coffee state watch registrations once.
-- [ ] S26: validate OtherActor frame bounds before reading its pointer.
-- [ ] S27: bind awaited client-record admission to the current host/sender/actor scope.
-- [ ] W01: guard coffee classification through class lookup and actor replacement.
-- [ ] W02: invalidate hasCup offsets on class serial replacement.
-- [ ] W03: invalidate hasCoffee offsets on class serial replacement.
-- [ ] W04: invalidate coffeeReady offsets on class serial replacement.
-- [ ] W05: cancel bag-field reads invalidated during offset resolution.
-- [ ] W06: retry missing coffee bool metadata without requiring a new class address.
-- [ ] A01: refuse appliance actions when the player parameter write fails.
-- [ ] A02: refuse appliance actions when the action parameter write fails.
-- [ ] A03: validate the appliance actor incarnation through function lookup.
-- [ ] A04: validate the player incarnation through frame preparation.
-- [ ] A05: validate class/function incarnations through frame preparation.
-- [ ] A06: check the caller's authority immediately before native dispatch.
-- [ ] A07: report caller retirement after an attempted native action without replaying it.
-
-These 75 boundaries are queue/bucket and appliance repairs, not wire or package changes.
 
 ## Upstream integration in progress
+
+- [x] NJ01-NJ25 / NK01-NK50: recipient-owned NPC join rows and independent
+  snapshot-completion delivery are implemented. They retain refused/unbound work,
+  guard native reads by registry/actor/session/recipient ownership, and preserve
+  newer brackets without replaying native creation. Individual completed boundaries
+  and verification are in TESTLOG. Native materialization and remaining phase joins
+  stay open.
+
+Active full-upstream review requested on 7 November. Name work before implementation:
+
+UI03 follow-up implemented: bound the client's sequence distance from its oldest
+unanswered claim while uncertain refunds withhold acknowledgement.
+UI01 follow-up implemented: retain owned client tower requests until ACK,
+reserve claim capacity through POST callbacks, and detach acknowledged claims before native reap.
+UI03 follow-up implemented: bind refused-pull cleanup to the captured
+output actor rather than the item currently held; retain unknown cleanup receipts.
+UI03 follow-up implemented: admit only one paid insert until its ACK so
+client-side native spending cannot outrun the host's spend receipts behind a blocked request.
+UI09 follow-up implemented: validate spawn parameter frames and retain
+caller/world/actor proofs between deferred begin and finish; clean up only a proven unfinished actor.
+UI06 follow-up implemented: ensure a recipient-owned NPC birth
+precedes that recipient's Geom decision, retaining refused birth work and actor/class,
+world/session, recipient-generation and native-pose continuation proofs. Aggregate
+broadcast success must not authorize another recipient's events.
+UI06 follow-up implemented: bind birth receipts and in-flight
+birth reads/sends to each recipient's world-ready reset revision, including a
+false/true transition entirely between game-thread pumps.
+
+| ID | Implementation/review status |
+| --- | --- |
+| UI01 | Implemented tower PRE/POST actor/class/function/session proofs, nested invocation matching, abandoned-capture retirement, reserved POST capacity and owned FIFO delivery until ACK. Native ACK cleanup detaches claims before callbacks and preserves newer requests. |
+| UI02 | Implemented parameter-cache incarnation checks and bounded/null-safe frame reads. |
+| UI03 | Implemented committed write receipts, easy-repair confirmation, one paid insert transaction at a time until ACK, bounded sequence distance and retained refund work. Refused pulls target only a captured output; unknown cleanup receipts remain bounded and recorded. Unattempted spawns retry; uncertain attempts remain recorded and withhold acknowledgement without being repeated. Native reconciliation of uncertain outcomes remains open. |
+| UI04 | Implemented per-recipient canonical cord state/join convergence, independent retry/heartbeat and world-ready handling. |
+| UI05 | Implemented cord drag/head component, caller and sender continuations; nested newer poses/releases survive. Native multiplayer acceptance remains unperformed. |
+| UI06 | Implemented retained host decisions, FIFO per recipient, supersession, session reconstruction guards and recipient-owned NPC birth admission before decisions. Birth refusal retries; actor/class/recipient/world-ready revision replacement cancels old receipts. Native transform snapshots retain root/function/caller ownership and commit all outputs together. Exact current-phase/audio/effect joins remain open; transport admission is not native mirror creation acknowledgement. |
+| UI07 | Implemented Present/Destroy serialization through native present and protected counters. GPU quiescence remains the engine caller contract; no extra queue-idle call is made outside its queue lock. Device/context replacement recovery and complete backend-resource retirement remain open. |
+| UI08 | Original jitter cause is not established. Requested exact reproduction steps and host-side displacement observations. Read-only local inspection found four older stack-overflow crash contexts, without a fresh jitter trace; no native acceptance or root-cause claim. |
+| UI09 | Repaired same-pointer session/stop/role retirement in tower and Geom host/client routes, plus spawn schema/caller/world/actor continuations and owned unfinished cleanup. NJ/NK now own NPC join identities, native reads and completion receipts. NH/NX now guard ordinary NPC pose/hold continuations; LS/LX now own independent source claims; native transform/constraint arbitration and the remaining 436-commit semantic audit stay open; regression does not prove all transferred routes. |
+
+- [x] CP01-CP25 / CQ01-CQ50: cord publication, outbox and release work now
+  own their receipts across callbacks. Session/world/stop/role, sender/recipient
+  generation and actor/class/endpoint proofs cancel stale continuations;
+  nested successors and refused work survive. Same-world reconnect preserves
+  the actor index and partial scan. Individual boundaries and offline evidence
+  are in TESTLOG. UI04/UI05 implement per-recipient state delivery and native
+  drag/head continuation guards; native multiplayer acceptance remains open.
+
+- [x] EH01-EH25 / EX01-EX50: publisher and controller Ends now share
+  recipient-owned delivery debt, retained after row retirement. Accepted slots
+  are not resent; generation/departure, session/world, actor/class/EID and newer
+  episodes cancel stale work. Retries do not repeat native release/physics.
+  Invalid reserved fields are rejected before client-End retirement/release.
+  Individual boundaries and offline evidence are in TESTLOG; native contacts remain open.
+
+- [x] GD01-GD25 / GX01-GX50: grant/revoke answers retain recipient-owned
+  debt, preserve newer requests and validate actor/class/EID/episode lifetime.
+  Retries wait for world-ready and preserve kind/sequence through host takeback;
+  death notices do not read dead actors. Individual boundaries and offline
+  evidence are in TESTLOG. Native handoff/support-contact acceptance remains open.
+
+- [x] SJ01-SJ25 / SD01-SD50: host swinger joins retain per-recipient/key
+  delivery until accepted or invalidated. Retries wait for world-ready, read the
+  current pose, preserve newer requests and cancel replaced session/world/
+  actor/class/recipient work. Individual boundaries and offline evidence are in
+  TESTLOG. Native handoff/support-contact acceptance remains open.
+
+- [x] SG01-SG15 / SX01-SX60: actor-bound caller proofs now reach native stream,
+  park/unpark and parity operations. Stored episode lifetime survives ordinary
+  admission revisions; invalid sources suspend rendering while retaining park
+  debt for an authoritative End. Individual boundaries and offline evidence are
+  in TESTLOG. Native handoff/support-contact acceptance remains open.
+
+- [x] HP01-HP25 / HT01-HT50: host publisher Tick/Pump now own row receipts
+  across contact, pose, velocity and send callbacks. Session/world/row/root/hand
+  replacement cancels old publication; newer resend/coast updates survive.
+  Individual boundaries and offline evidence are in TESTLOG. Native
+  handoff/support-contact acceptance remains open.
+
+- [x] PH01-PH15 / HS01-HS60: host prop-syncer input/pass/departure snapshots,
+  row/occupant receipts and detached ending continuations are implemented.
+  Individual boundaries and offline evidence are in TESTLOG. End delivery is
+  retained per recipient; native prop-contact acceptance is unperformed.
+
+Review of the selected integration seams, 6 November: SI01-SI08, CI01-CI02
+and VI01-VI02 are implemented; individual boundaries and test scope are in
+TESTLOG. These fixes do not complete the umbrella items below.
+
+| Item | Confirmed boundary | Concrete remaining implementation |
+| --- | --- | --- |
+| UP2 | The compiled message policy admits CordIntent/CoffeeActionIntent/FuseTowerState/PropSyncClaim only to host validation; CordState/PropSyncAnswer/SwingerRestPose/GeomOctaEvent are host-authored. None is blindly relayed; capacity remains 32. | Audit each native continuation against sender generation and world/session identity. Protocol classification does not validate the callbacks or transactions below, nor all 436 transferred commits. |
+| UP4 | UI01-UI05 implement tower capture/function-frame proofs, committed writes/refund debt, owned client FIFO requests until ACK and captured refused-pull cleanup, plus recipient-owned cord state/join convergence and guarded native drag/head work. Earlier coffee, CP/CQ and TQ/TO guards remain exercised. | Finish reconciliation of uncertain native spawn/pull outputs and the remaining tower timeline/effect review. Unknown receipts remain recorded without guessing a target or replaying native work; native multiplayer acceptance remains unperformed. |
+| UP5 | Swinger join applies owned actor/class/world receipts; failed velocity zeroing retains debt and timeouts work without an advancing index. Park supports retain 32 rider leases. Client PC01-PC25 / PS01-PS50, host controller PH01-PH15 / HS01-HS60 and publisher HP01-HP25 / HT01-HT50 own their continuations. SG01-SG15 / SX01-SX60 propagate caller proof through native application and retain episode/park ownership. SJ01-SJ25 / SD01-SD50 retain guarded host join delivery; GD01-GD25 / GX01-GX50 retain grant/revoke recipient debt; EH01-EH25 / EX01-EX50 retain End delivery across publisher/controller retirement. | Finish native handoff/support-contact ownership review and the original prop-jitter investigation. Trace ordinary hand-drive/support contacts in the original jitter report; offline continuation checks do not establish its root cause. |
+| UP6 | UI06 retains host decisions per recipient with FIFO, supersession, target/class/session proofs, pacing and ordered recipient-owned NPC birth admission. UI07 keeps native Present/Destroy serialized through native present, preserving the engine caller's GPU-quiescence contract. Earlier G01-G11 and VI01-VI02 remain exercised. | Finish exact Ramiel current-phase/audio/effect joins and native mirror creation acceptance. Finish full Vulkan device/context replacement recovery and complete backend-resource retirement; native beam/attack/graphics acceptance remains unperformed. |
+
+- [x] Native tower wrapper continuation: CW01-CW37 / RW01-RW38 implemented.
+  The individual boundaries and offline checks are in TESTLOG. Reconciliation
+  of uncertain operation/debit/output receipts, lower-level
+  timeline schemas and gameplay remain open.
+
+- [x] TQ01-TQ20 / TO01-TO55: own tower operation/overflow receipts and
+  spend reservations; cancel native continuations after world/session/sender/
+  tower/class replacement. Individual boundaries and offline evidence are
+  recorded in TESTLOG. UI01-UI03 implement client PRE/POST capture, committed
+  output and retained refund debt. Uncertain native output reconciliation remains open.
 
 - [ ] UP2: finish semantic review of source integration through upstream
   `4fbf1acf0` (436 graph commits after `ad5315611`; 130 after the previous
@@ -121,31 +190,49 @@ These 75 boundaries are queue/bucket and appliance repairs, not wire or package 
   tower adapters against existing fork routes and 32-player capacity.
 - [ ] UP5: finish prop syncer/swinger handoff review, including parked supports,
   bind-wait replacement, join ordering, hand arbitration and container recovery.
-- [ ] UP6: finish Geom Octa authority/effect and Vulkan teardown review across
+
+- [x] PC01-PC25 / PS01-PS50: own client prop-syncer episodes, guarded pose/End
+  capture and retained End delivery. Native callbacks cannot overwrite a
+  successor episode; root/hand and session/world replacements cancel old
+  publication. Individual boundaries and offline evidence are in TESTLOG.
+
+- [ ] UP6: finish remaining Geom Octa phases/delivery and Vulkan teardown across
   device, window and world replacement.
 
 UP1 documentation conflict resolution and UP7 fixture/build verification are
 recorded in [TESTLOG.md](TESTLOG.md#integration-error-audit-30-october-2026).
-The development DLL uses b2219 and is not a newly qualified release package.
+Earlier joint b2220 source, including the swinger/cord and Vulkan context fixes, passed
+142 offline groups across the full run and scoped recheck, the stable-source
+guard and Release/ABI inspection; see TESTLOG.
+UI01-UI09 changes follow that build and have separate evidence in TESTLOG;
+the earlier DLL/ABI inspection does not qualify them. This is development
+verification, not a newly qualified release package.
 The published fork IDs remain reserved; the renamed HitIntent keeps ID 242,
 and the new container request/reply/commit use 264/265/266. The PvP throw nonce,
 Kerfur release marker, food state and placement request IDs remain separate.
-Source transfer does not add upstream ancestry to Git; no commit was requested.
-
-- [ ] UP8: finish actual upstream history integration. At `2131fa9cc`, the latest
-  fork merge has parents `6604633bf` and `f9ad5ef9c`, neither the upstream tip.
-  The last common ancestor remains `ad5315611`; Git reports 632 fork-only and
-  436 upstream-only commits. A real merge preview against `4fbf1acf0` conflicts
-  in 80 paths. Reconcile those changes with the existing fork adaptations and
-  record the upstream parent through a genuine merge; do not clear the count
-  by declaring unreviewed upstream changes already merged.
+UP8 history integration is recorded in TESTLOG under the real upstream merge.
+It resolves the 436-commit ancestry gap; the semantic/gameplay reviews above
+remain open independently of Git ancestry.
+The completed 75 queue/coffee boundaries are listed in TESTLOG's queue and coffee
+audit. UP4 still owns cord/tower implementation review and native coffee gameplay.
+Radio R01-R45/M01-M30 and tower T01-T45/K01-K30 are completed in TESTLOG.
+UP4 still owns uncertain native output reconciliation, remaining lower-level
+timeline schemas and native acceptance. Tower wrapper CW01-CW37 / RW01-RW38
+are recorded in TESTLOG.
 
 ## Fork follow-ups — reviewed 4 November 2026
+
+- [x] FC01-FC75: own floppy-claim, client sweep and laptop-settled continuations
+  through world, session, actor/class and peer replacement. Individual boundaries
+  and 75 passing cases are recorded in TESTLOG. Retain newer canonical answers,
+  nested requests and corrections after uncertain native writes.
 
 - [ ] Own concurrent disc inserts with exact device occupancy, sender generation,
   admitted eject/output completion and bounded retry/refund state. Ghezra
   `1bc4675d1` demonstrates the race; its fixed-delay, unbounded swap queue is not
-  sufficient. Preserve canonical ordering and checked writes.
+  sufficient. Preserve canonical ordering and checked writes. FC01-FC75 cover
+  continuation ownership; occupied-disc arbitration, debit/output and refunds
+  remain unfinished.
 - [ ] Add host-admitted module purchases separately from level upgrades,
   including exact row, reach, debit/output and duplicate/refusal behavior.
   Ghezra `13b120e67` is a reference; the current module branch still runs locally.
@@ -158,6 +245,10 @@ The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
 
 ## Client prop physics
 
+- [x] NP01-NP45 / CR01-CR30: native physics frame/lifetime checks and deferred
+  child-release ownership implemented. Per-item results are in TESTLOG. A surviving
+  unheld child now unparks when its parent retires; failed pose writes retain debt.
+
 - [ ] Fix joined-client object vibration, ejection and support penetration on
   boxes, desks and workbenches while host physics appears stable. Trace ordinary
   prop pose application, drive/park/end handoffs and simulation reactivation;
@@ -166,6 +257,11 @@ The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
   not yet establish the responsible route or whether client displacement reaches
   the host. Current config exposes no dedicated user-facing stack-physics fix;
   do not substitute arbitrary network tuning for a confirmed implementation.
+  PD1-PD10 now protect prop-drive pose/end/tick callbacks, host end generations,
+  component replacement and hand transitions; TESTLOG records their offline proof.
+  NP01-NP45 / CR01-CR30 cover native physics frames/component discovery and
+  deferred child releases. Ordinary hand-drive, parked supports and host/client
+  publisher ownership still need review; rendered stack acceptance remains open.
 
 ## Player presentation and toys
 
@@ -209,6 +305,10 @@ The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
 - [ ] Finish Random event effects, including shared black fog beyond client
   producer suppression. Keep bp7Spawner's camera/roll/pause/quit owner-local;
   its ten-second eligible-roll scaling is already implemented.
+  blackFog needs separate fade/hold state: its graph uses `a` for the fade and
+  the 180-second hold. `set()` also controls birber.noBirb and ambience volumes;
+  reverb/event accounting, the 40-second ghost timer (except mode 6), owner-camera
+  whispers and the five-second thump loop need distinct ownership/cleanup.
 - [ ] Map Signal processing/playback triggers, funny-rule gates and selected
   outcomes, then implement phases/effects and current-state joins.
 - [ ] Implement level/map-script routes from the extracted headers. Use
@@ -218,14 +318,35 @@ The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
   scale, movement and lifetime; finish client producer suppression and late join.
   Then scale only the native 600–900-second spawn wait, preserving mode,
   rendering and proximity gates.
-- [ ] serverBreaker: finish protected-floppy consumption delivery to every
-  recipient, protection/repair audio and delegate consequences. Retain the
+  Native ReceiveTick enters the spawner graph at 742 (modes 0/1); the wait is
+  selected at 10 and written at 48. walkingTree Begin at 1473 selects component
+  mesh scale 1–2 and hides it. OnLanded enters at 1418, then reaches reveal at
+  1251/1246. Preserve its separate 1/.25/3/60-second latent work, move-proxy
+  delegates and render/distance/time-dilation conditions when suppressing mirrors.
+- [ ] serverBreaker: finish protection/repair audio and delegate consequences.
+  Protected-floppy canonical delivery is covered by SB1-SB5 below. Retain the
   selected box, native day/difficulty/upgrade probabilities, slot-canonical ordering
   and retry ownership. Then scale only the native 1200–600-second eligible wait.
+- [x] SB1: deliver floppy-slot canonicals to every connected, world-ready client.
+- [x] SB2: retain refused canonical delivery until a later sweep succeeds.
+- [x] SB3: bind publication completion to the captured bytes and digest.
+- [x] SB4: cancel host publication/join continuations after world, session,
+  actor/class or recipient-generation replacement; retain nested requests.
+- [x] SB5: retain join delivery across transport refusals with paced retries,
+  recipient ownership and disconnect cleanup. Verification is in TESTLOG.
 - [ ] Finish shared sky-event phases/cues, audio, delayed email/accounting,
   six pre-session latent continuations and remaining custom effects/creatures.
 - [ ] Finish arirShipVanishing_C and other appearance/event variants beyond the
   arirShipAppear_C phase adapter; include shared reputation consequences.
+  Vanishing uses a separate `vanishTimeline` alpha and `vanishradius` overlap
+  query; begin/end overlaps delay checkVanish by 1/5 seconds. Its initial
+  one-second physics pulse and zero-delay continuation must not re-enable
+  simulation under a mirror park. It cannot reuse the Appear actor's schema.
+
+Native event sites above were redecoded from the current local asset corpus on
+5 November. Function bodies and input hashes are recorded in
+`build/backlog-20261105/native-unfinished-events.txt`; this is mapping evidence,
+not implementation or gameplay acceptance.
 
 Frequency changes must preserve eligibility, probabilities, personal dream rolls
 and story dates. Scale eligible-roll waits without changing AI/animation cadence,
@@ -239,7 +360,8 @@ effect durations or sleep needs.
 - [ ] Finish llama marker/save/event-accounting lifecycle beyond the existing
   PlacedSave marker route and invocation-bound Begin recovery. Keep native host
   contributions authoritative; do not infer latent age from an absent sender or
-  replay uncertain timer creation. Refused cleanup needs an owned retry path.
+  replay uncertain timer creation. LM1-LM4 now retain refused failed-marker
+  cleanup on the frame tail, including outside a session; see TESTLOG.
 - [ ] Finish atomic paid wall/cement repair request/result and exact personal
   stock across hand/slot/drop, refusal and disconnect. Keep the current no-spend
   client refusal until debit, accepted output and refund form one transaction.
@@ -259,6 +381,11 @@ effect durations or sleep needs.
   scorch provenance through full save/world reconstruction.
 
 ## Entity implementation
+
+- [x] G01-G11 / R01-R40 / P01-P24: Ramiel decision ownership, roach snapshot/
+  consumption reconciliation and Great Pyramid replay/pose lifetimes implemented.
+  Individual boundaries: [test coverage](tests/README.md#entity-adapter-boundaries-6-november-2026).
+  Offline checks are in TESTLOG; remaining behavior/effects below stay open.
 
 - [ ] Grayboar: complete join/audio/time coordination, host targets, turn/pitch,
   helper/delegate retirement, held-item handoffs, weapon/collision damage, one
@@ -303,8 +430,9 @@ effect durations or sleep needs.
 
 ## Requested mod integrations
 
-- [ ] EmoteWheel 1.0.1: replace the upstream empty network bridge with owned
-  emote/variant/phase/music state, interruption, late join and body/world cleanup.
+- [ ] EmoteWheel 1.0.1: native multiplayer acceptance of the implemented optional
+  phase/variant/music/hand adapter. Include mixed installations and live census;
+  implementation and offline boundaries are recorded above and in TESTLOG.
 - [ ] VEmu 1.1.0: define shared console/cartridge/AV/input ownership and emulator
   state/audio/video transport. Upstream AV output excludes SmartTV; an explicit
   adapter is required to support that combination.

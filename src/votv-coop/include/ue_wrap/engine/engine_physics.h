@@ -1,8 +1,8 @@
 // ue_wrap/engine/engine_physics.h -- a primitive component's rigid body: simulation on or off,
 // whether it simulates, its linear and angular velocity, and its centre of mass. Engine-wrapper layer (principle 7):
 // each call is one reflected UFunction call on the component, with a stack parameter frame and no
-// allocation, so the held-prop drive can make one every tick. Each UFunction resolves once; one
-// that does not resolve is said once and its call is a no-op from then on. Game thread.
+// allocation in a warmed call. Functions and their schemas are cached by incarnation;
+// unavailable or invalid schemas refuse dispatch and can resolve on a later call. Game thread.
 // Implementation: src/ue_wrap/engine/engine_physics.cpp.
 
 #pragma once
@@ -33,8 +33,9 @@ bool IsComponentSimulatingPhysics(void* component);
 bool GetComponentCenterOfMass(void* component, FVector& out);
 
 // Every primitive component the actor's Blueprint chain declares as a member (a component variable) that
-// simulates is stopped; returns how many were. For an actor driven from elsewhere, which must not also
-// simulate. The members are found once per class name, a Blueprint's layout being the same in every world.
+// simulates is stopped; returns the number of successful current setters. For an actor driven from elsewhere,
+// which must not also simulate. Bounded member layouts are cached by class/ancestor incarnation;
+// each traversal owns its offset snapshot and rechecks actor, component and field binding.
 // Null-safe.
 int StopActorSimulating(void* actor);
 

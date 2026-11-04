@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2219;  // host container acts and throw sequence; retained fork IDs
+inline constexpr uint16_t kProtocolVersion = 2220;  // optional EmoteWheel owner state; retained fork IDs
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1109,10 +1109,24 @@ enum class ReliableKind : uint16_t {
     ContainerActRequest = 264,
     ContainerActReply = 265,
     ContainerActCommit = 266,
+    // Owner -> host validation -> world-ready peers, no blind relay. Current
+    // animation variant/phase and music clocks; absent assets are optional.
+    EmoteState = 267,
 };
-inline constexpr size_t kReliableKindCount = 264;
+inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::EmoteState) + 1;
 
 #pragma pack(push, 1)
+
+struct EmoteStatePayload {
+    uint32_t sequence, episode, musicEpisode;
+    float position, musicPosition;
+    uint16_t playerNo, part, music;
+    uint8_t slot, reserved;
+    uint32_t handGeneration;
+    float handPose[7]; // bone-local XYZ / quaternion XYZW, display only
+    uint8_t handBone, handReserved[3];
+};
+static_assert(sizeof(EmoteStatePayload)==64);
 
 struct PlayerBloodPayload {
     uint32_t sequence;

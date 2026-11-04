@@ -12,6 +12,7 @@
 #pragma once
 
 #include "ue_wrap/core/types.h"
+#include <functional>
 
 #include "ue_wrap/engine/engine_attach.h"        // attach, detach, root-body physics
 #include "ue_wrap/engine/engine_audio.h"         // a sound at a world location
@@ -58,6 +59,9 @@ bool TryGetWorldTimeSeconds(float& seconds);
 using BeforeFinishFn = void (*)(void* ctx, void* actor);
 void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn = false,
                  BeforeFinishFn beforeFinish = nullptr, void* ctx = nullptr);
+// Set attempted before the first native spawn call. A null result with attempted
+// still true is uncertain and must not be retried as a refused preflight.
+void* SpawnActorTracked(void* actorClass, const FVector& location, bool& attempted, const std::function<bool()>& current = {});
 
 // The split form: BeginDeferredSpawn, write class-specific fields before Init and BeginPlay,
 // FinishDeferredSpawn with the same transform (the engine re-applies it). A wire-spawned entity
@@ -71,6 +75,11 @@ bool  FinishDeferredSpawn(void* actor, const FVector& location, const FRotator& 
 // (reflection::CallFunction reports it). `out` is then the world origin, an ordinary position, so
 // every caller decides what an unread location means. Game thread.
 bool TryGetActorLocation(void* actor, FVector& out);
+
+// Publish all three native transform reads together, retaining actor/root/function,
+// world and optional caller ownership between calls. Outputs are unchanged on failure.
+bool TryGetActorTransform(void* actor, FVector& location, FRotator& rotation, FVector& scale,
+                          const std::function<bool()>& current = {});
 
 // AActor::GetActorScale3D (root world scale); unit scale on failure, since callers stamp it into
 // spawn transforms. Game thread.

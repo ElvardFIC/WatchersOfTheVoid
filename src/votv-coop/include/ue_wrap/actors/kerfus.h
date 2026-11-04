@@ -1,14 +1,14 @@
 // ue_wrap/actors/kerfus.h -- engine substrate for the plain kerfur (the Kerfus: p_kerfus_C and its
 // colour variants): the fields its sync reads and writes, and its refresh, E-press and possess verbs.
-// Pure reflection and UFunction access; no net or gameplay logic (principle 7). The variants inherit
-// every field and function named here, so the group of fields resolves once, off the first Kerfus seen,
-// and a field this build lacks is said once, naming it, and not looked up again. Every accessor takes a
-// Kerfus (IsKerfus): once the group has resolved it reads whatever pointer it is handed. The kerfurOmega
-// NPC is ue_wrap/actors/kerfur. Game thread, every function.
+// Pure reflection and UFunction access; no net or gameplay logic (principle 7).
+// State layouts follow live class incarnations; missing layouts retry. Guarded
+// accessors also retain the caller's lifetime proof through reflection work.
+// The kerfurOmega NPC is ue_wrap/actors/kerfur. Game thread, every function.
 
 #pragma once
 
 #include "ue_wrap/core/types.h"
+#include <functional>
 
 #include <cstdint>
 
@@ -41,9 +41,21 @@ void* NavPawn(void* k);
 // The game's own refresh after `active` changes: upd(skipFace) -- the face, the sounds, the camera.
 bool RunUpd(void* k, bool skipFace);
 
+// Writes expose a committed active bit; upd exposes dispatch even if its body fails.
+bool IsKerfusWhile(void* k, const std::function<bool()>& current);
+bool ReadActiveWhile(void* k, bool& value, const std::function<bool()>& current);
+bool ReadChargingWhile(void* k, bool& value, const std::function<bool()>& current);
+bool ReadEnergyWhile(void* k, float& value, const std::function<bool()>& current);
+bool WriteActiveWhile(void* k, bool value, const std::function<bool()>& current, bool* committed = nullptr);
+bool WriteChargingWhile(void* k, bool value, const std::function<bool()>& current);
+bool WriteEnergyWhile(void* k, float value, const std::function<bool()>& current);
+bool RunUpdWhile(void* k, bool skipFace, const std::function<bool()>& current, bool* dispatched);
+
 // Its E-press as `player` makes it: actionOptionIndex(player, action), action 8 the on/off. The verbs
 // read no player, so a null one runs too. False when the call did not resolve or its body faulted.
 bool RunActionOptionIndex(void* k, void* player, uint8_t action);
+bool RunActionOptionIndexWhile(void* k, void* player, uint8_t action,
+                              const std::function<bool()>& current, bool* dispatched);
 
 // The haunting's verb (kerfusPossessor_C calls it on every Kerfus): possess(at) turns it on, drops its
 // task and drives it to `at`, where its own arrival test turns it off again.

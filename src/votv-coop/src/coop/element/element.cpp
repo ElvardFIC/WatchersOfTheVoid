@@ -28,12 +28,14 @@ namespace coop::element {
 // so subsequent ~Element() calls skip the Registry call rather than use freed memory -- safe in
 // either teardown order.
 std::atomic<bool> g_registryShuttingDown{false};
+namespace { std::atomic<uint64_t> g_nextIncarnation{1}; }
 
 void NotifyRegistryShuttingDown() {
     g_registryShuttingDown.store(true, std::memory_order_release);
 }
 
 Element::Element(ElementType type) : m_type(type) {
+    m_incarnation = g_nextIncarnation.fetch_add(1, std::memory_order_relaxed);
     // No Registry call -- the subsystem allocates explicitly after construction.
     // m_id stays kInvalidId until then.
 }
@@ -51,7 +53,7 @@ void Element::SetActor(void* a, int32_t internalIdx) {
     void* old = m_actor;
     m_actor       = a;
     m_internalIdx = internalIdx;
-    if (m_id != kInvalidId && old != a &&
+    if (m_id != kInvalidId &&
         !g_registryShuttingDown.load(std::memory_order_acquire)) {
         Registry::Get().NoteActorRebind(m_id, old, a, internalIdx);
     }

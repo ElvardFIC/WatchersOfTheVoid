@@ -45,7 +45,11 @@ void* ZeroGravityOwner(void*){return test::componentOwner;}
 }
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}void* GetStaticMesh(void*){return &test::ui;}}
 namespace coop::prop_element_tracker {void* FindLiveActorByKey(const std::wstring& key){return test::found && key==test::key?&test::actor:nullptr;}}
-namespace coop::prop_drive_host {void Claim(void*,const char*){++test::claims;}void Release(void*){++test::releases;}}
+namespace coop::prop_drive_host {
+ClaimLease ClaimOwned(void*,ClaimSource source,const char*,const std::function<bool()>& current){if(current&&!current())return {};++test::claims;ClaimLease lease;lease.eid=1;lease.token=1;lease.source=source;return lease;}
+bool ReleaseOwned(const ClaimLease&,const std::function<bool()>& current){if(current&&!current())return false;++test::releases;return true;}
+bool OwnsClaim(const ClaimLease& lease){return bool(lease);}
+}
 namespace coop::hand_item {
 void* LocalHandActor(){return test::localHand;}
 void* MirrorActorForSlot(uint8_t){return test::mirror;}

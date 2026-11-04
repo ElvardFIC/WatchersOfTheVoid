@@ -4,6 +4,7 @@
 // for a prop adopted into tracking after the join. Interface: coop/props/prop_snapshot.h.
 
 #include "coop/props/prop_snapshot.h"
+#include "coop/creatures/npc_join_delivery.h"
 
 #include "coop/config/config.h"  // ReadEnv, the dedupe-bypass drill
 #include "coop/element/prop.h"
@@ -11,6 +12,7 @@
 #include "coop/creatures/kerfur_entity.h"  // IsKerfurActor; a kerfur's only signal is KerfurConvert
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_save_data.h"
 #include "coop/props/pile_look.h"
@@ -75,6 +77,18 @@ uint32_t g_snapshotSkipped[static_cast<size_t>(Skip::kCount)]{};
 uint32_t g_snapshotDropped = 0;
 // The slot being drained (-1 = none) and the slots waiting their turn.
 int g_currentTargetSlot = -1;
+uint64_t g_drainCompletionToken = 0;
+struct DrainRecipient {
+    coop::net::Session* session=nullptr;
+    uint32_t generation=0,serial=0;
+    uint64_t stops=0;
+    bool Current(int slot)const {
+        return session&&session==g_session_ptr.load(std::memory_order_acquire)&&
+            serial==coop::net::session_serial::Current()&&session->StopCount()==stops&&
+            session->running()&&session->role()==coop::net::Role::Host&&
+            session->IsSlotConnected(slot)&&session->peerGenerationForSlot(slot)==generation;
+    }
+} g_drainRecipient;
 std::vector<int> g_pendingSlots;
 
 // Slots whose bracket was deferred: the lanes are not configured yet, the registry does not yet
@@ -153,6 +167,11 @@ constexpr size_t kSnapshotChunkSize = 100;
 // array walk), sets the target slot and opens the bracket. The caller ensures no drain is in
 // progress. Per-candidate liveness is re-checked in DrainChunk.
 void StartEnumerationFor(int peerSlot) {
+    auto* session=g_session_ptr.load(std::memory_order_acquire);
+    const auto token=coop::npc_join_delivery::BeginSnapshot(peerSlot,session);
+    if(!token){DeferSlot_(peerSlot,DeferReason::LanesNotReady,"world-ready gate is closed");return;}
+    g_drainRecipient={session,session->peerGenerationForSlot(peerSlot),coop::net::session_serial::Current(),session->StopCount()};
+    g_drainCompletionToken=token;
     g_currentTargetSlot = peerSlot;
     g_deferLogged[peerSlot] = DeferReason::None;  // it got through; a later defer is news again
     // The generation this drain expresses: TriggerForSlot dedupes a re-trigger of the same slot for
@@ -213,6 +232,7 @@ void ClearDrainState_() {
     g_snapshotCandidates.clear(); g_snapshotCandidates.shrink_to_fit();
     g_snapshotCandidateIdx = 0;
     g_currentTargetSlot = -1;
+    g_drainCompletionToken = 0;
     g_snapshotSentTotal = 0;
     std::fill(std::begin(g_snapshotSkipped), std::end(g_snapshotSkipped), 0u);
     g_snapshotDropped = 0;
@@ -261,6 +281,9 @@ void DequeuePending_() {
 
 void CompleteDrainForCurrentSlot(coop::net::Session* s) {
     if (s && g_currentTargetSlot >= 1) {
+        if(s!=g_session_ptr.load(std::memory_order_acquire))return;
+        const int slot=g_currentTargetSlot;
+        const auto token=g_drainCompletionToken;
         coop::net::SnapshotEndPayload e{};
         e.propSent = g_snapshotSentTotal;
         // SnapshotComplete closes the bracket as the last message of the snapshot, so the joiner lifts
@@ -274,17 +297,20 @@ void CompleteDrainForCurrentSlot(coop::net::Session* s) {
         const int budget = coop::net::kMaxReliablePayload - static_cast<int>(sizeof(e));
         coop::snapshot_census::BuildHostTail(tail, budget);
         buf.insert(buf.end(), tail.begin(), tail.end());
-        // Sent outside any scope, so the slot's join gate holds it last in the queue; closing the gate
-        // puts the queue on the lane, and the wire order is Begin, the spawns, the held sends, Complete:
-        // the joiner's cover lifts on a world that already holds its seeds. The close comes before
-        // CloseBracket_, whose latch reads the flushed queue (join_beacon). The gate lives as long as
-        // the slot's snapshots: a drain queued or deferred behind this one keeps it open for its own
-        // Complete, and a failed Complete send closes it too, since no later drain would.
-        const bool sent = s->SendReliableToSlot(g_currentTargetSlot,
-                                                coop::net::ReliableKind::SnapshotComplete,
-                                                buf.data(), static_cast<int>(buf.size()));
-        if (!QueuedBehind_(g_currentTargetSlot)) s->CloseJoinGate(g_currentTargetSlot);
-        if (sent) CloseBracket_(g_currentTargetSlot);
+        // Completion owns these bytes and this bracket token until the recipient's NPC births
+        // and the marker are admitted. Other slots can enumerate while this one waits. The callback
+        // closes its gate only after acceptance, preserving any newer bracket for the same slot.
+        const auto seed=g_drainSeedGen;
+        if(s!=g_session_ptr.load(std::memory_order_acquire))return;
+        const bool queued = coop::npc_join_delivery::CompleteSnapshot(slot,token,buf,
+            [](coop::net::Session* session,int slot) {
+                if (!HasSnapshotFor(slot)) session->CloseJoinGate(slot);
+                CloseBracket_(slot);
+            },[seed]{return PT::SeedGeneration()==seed&&PT::IsRegistrySeededForCurrentWorld()&&!PT::InPurgeEpisode();},
+            [](coop::net::Session*,int slot) {
+                DeferSlot_(slot,DeferReason::RegistryIncoherent,"registry changed while NPC join delivery was pending");
+            });
+        if (!queued) return;
     }
     // Every candidate is accounted for: sent, skipped for a named reason, or dropped as gone.
     uint32_t skippedTotal = 0;
@@ -504,6 +530,17 @@ void DrainChunk() {
     if (g_currentTargetSlot == -1) return;
     auto* s = g_session_ptr.load(std::memory_order_acquire);
     if (!s) return;
+    const int drainingSlot=g_currentTargetSlot;
+    const auto drainingToken=g_drainCompletionToken;
+    const auto recipient=g_drainRecipient;
+    const auto current=[&]{return g_currentTargetSlot==drainingSlot&&g_drainCompletionToken==drainingToken&&
+        coop::npc_join_delivery::SnapshotCurrent(drainingSlot,drainingToken);};
+    if(!current()) {
+        CancelForSlot(drainingSlot);
+        if(recipient.Current(drainingSlot))DeferSlot_(drainingSlot,DeferReason::RegistryIncoherent,"snapshot identity changed");
+        return;
+    }
+    if(!s->IsSlotWorldReady(drainingSlot))return;
     // A target that disconnected mid-drain aborts now, or every remaining candidate pays its
     // reflection reads to send into a closed connection.
     if (!s->IsSlotConnected(g_currentTargetSlot)) {
@@ -561,7 +598,9 @@ void DrainChunk() {
         // -1: liveness was just re-validated. The target slot makes this the join drain, so a pile
         // gets its save-time match key.
         Skip why = Skip::kNone;
-        if (!BuildPropSpawnPayload_(obj, eid, -1, p, g_currentTargetSlot, &why)) {
+        const bool built=BuildPropSpawnPayload_(obj,eid,-1,p,drainingSlot,&why);
+        if(!current())return;
+        if (!built) {
             ++g_snapshotSkipped[static_cast<size_t>(why)];
             // A failed read is a dispatch that faulted, which a retry repeats: the row is left out,
             // named here and counted in the completion line.
@@ -577,13 +616,16 @@ void DrainChunk() {
         s->SendReliableToSlot(g_currentTargetSlot,
                               coop::net::ReliableKind::PropSpawn,
                               &p, sizeof(p));
+        if(!current())return;
         // A clump's row says what the actor is; its carry generation rides behind it, on the same
         // lane, or the joiner holds every pose of it for good.
         if (ue_wrap::prop::IsGarbageClump(obj))
             coop::trash_channel::ExpressClumpGeneration(*s, eid, obj, g_currentTargetSlot);
+        if(!current())return;
         // The prop's own save record to the same slot, behind its spawn row: a prop whose state
         // changed after the transferred save was written is not in that save.
         coop::prop_save_data::PublishWithSpawn(s, obj, p.key, g_currentTargetSlot);
+        if(!current())return;
         ++sent;
     }
     g_snapshotSentTotal += static_cast<uint32_t>(sent);
@@ -688,6 +730,7 @@ void DeliverLateRegisteredProps(const std::vector<void*>& lateProps) {
 }
 
 void CancelForSlot(int peerSlot) {
+    coop::npc_join_delivery::CancelCompletion(peerSlot);
     // A slot that disconnects while deferred is not retried; cleared before the in-progress check.
     if (peerSlot >= 1 && peerSlot < coop::players::kMaxPeers) {
         g_deferredSlots[peerSlot] = false;
@@ -717,6 +760,7 @@ size_t OnDisconnect() {
     // No deferred slot survives into the next session, and no closed bracket either.
     g_deferredSlots.fill(false);
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
+        coop::npc_join_delivery::CancelCompletion(slot);
         OpenBracket_(slot);
         g_deferRetryAtMs[slot] = 0;
         g_deferLogged[slot] = DeferReason::None;
@@ -732,7 +776,7 @@ bool IsBracketClosed(int peerSlot) {
 
 bool HasSnapshotFor(int peerSlot) {
     return peerSlot >= 1 && peerSlot < coop::players::kMaxPeers &&
-           (g_currentTargetSlot == peerSlot || QueuedBehind_(peerSlot));
+           (g_currentTargetSlot == peerSlot || QueuedBehind_(peerSlot) || coop::npc_join_delivery::HasCompletion(peerSlot));
 }
 
 }  // namespace coop::prop_snapshot

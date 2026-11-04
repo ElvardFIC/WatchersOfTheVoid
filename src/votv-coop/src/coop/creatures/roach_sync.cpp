@@ -1,488 +1,331 @@
-// coop/creatures/roach_sync.cpp -- see coop/creatures/roach_sync.h for the
-// design + the bytecode ground truth. Shapes reused: serverbox_sync (lazy
-// resolve + 1 Hz host poll + client apply of the host's row + connect
-// replay), prop lanes (IsLiveByIndex liveness on a tracked set).
-
 #include "coop/creatures/roach_sync.h"
-
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
-#include "coop/player/players_registry.h"  // kMaxPeers
-
+#include "coop/net/net_clock.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/game_thread.h"
-#include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
-
+#include <array>
 #include <atomic>
-#include <chrono>
+#include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstring>
 #include <vector>
 
 namespace coop::roach_sync {
 namespace {
+namespace R=ue_wrap::reflection;
+namespace N=coop::net;
+using Ref=ue_wrap::CachedObjRef;
+struct Vec3 {float x,y,z;};
+struct SnapEntry {Vec3 loc;float scale;};
+struct FArrayRaw {void* Data;int32_t Num,Max;};
+struct RoachSlot {Ref comp;int32_t rawIdx;};
+constexpr int kMaxRawSlots=65536;
+constexpr uint64_t kPollMs=1000,kKeepaliveMs=10000;
+std::atomic<N::Session*> g_session{nullptr};
+uint64_t g_epoch=0,g_nextResolve=0,g_lastPoll=0,g_lastSend=0,g_revision=0;
+uint32_t g_world=0,g_sequence=0;
+bool g_ticking=false,g_applying=false;
+Ref g_gmClass,g_masterClass,g_add,g_del,g_getLoc,g_getScale,g_setLoc,g_setScale;
+int32_t g_offMaster=-1,g_offRoaches=-1;
+Ref g_polledMaster;
+std::vector<SnapEntry> g_lastSample;
 
-namespace R  = ue_wrap::reflection;
-namespace GT = ue_wrap::game_thread;
-
-std::atomic<coop::net::Session*> g_session{nullptr};
-
-constexpr long long kPollIntervalMs     = 1000;   // host poll + client liveness scan
-constexpr long long kKeepaliveMs        = 10000;  // periodic full resend (join/loss convergence)
-constexpr float     kDriftResendDist    = 25.f;   // any roach moved this far -> resend
-constexpr float     kApplyMoveEpsilon   = 1.f;    // skip SetWorldLocation under this delta
-constexpr float     kApplyScaleEpsilon  = 0.05f;
-constexpr float     kAdjudicateRadius   = 200.f;  // RoachConsumed nearest-match cap
-constexpr int       kMaxIntentsPerTick  = 4;      // client consumption-intent send cap
-
-// ---- resolution (lazy, 2 s retry, capped LOUD latch -- the serverbox pattern) ----
-void*   g_gmCls        = nullptr;  // mainGamemode_C
-int32_t g_offMaster    = -1;       // AcockroachMaster_C* cockroachMaster (0x910 in the dump)
-void*   g_masterCls    = nullptr;  // cockroachMaster_C
-int32_t g_offRoaches   = -1;       // TArray<UStaticMeshComponent*> roaches (0x238)
-void*   g_addRoachFn   = nullptr;  // addRoach(FVector Location, FVector Size, bool bypassCheck)
-void*   g_delRoachFn   = nullptr;  // deleteRoach(int32 IndexToRemove, bool crush)
-void*   g_getLocFn     = nullptr;  // USceneComponent::K2_GetComponentLocation
-void*   g_getScaleFn   = nullptr;  // USceneComponent::K2_GetComponentScale
-void*   g_setLocFn     = nullptr;  // USceneComponent::K2_SetWorldLocation
-void*   g_setScaleFn   = nullptr;  // USceneComponent::SetWorldScale3D
-std::chrono::steady_clock::time_point g_nextResolve{};
-int  g_postClassAttempts = 0;
-bool g_resolveLatched = false;
-constexpr int kMaxPostClassAttempts = 5;
-
-struct Vec3 { float x, y, z; };
-
+bool Finite(const Vec3& v) {
+    return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&
+        std::fabs(v.x)<=1.e8f&&std::fabs(v.y)<=1.e8f&&std::fabs(v.z)<=1.e8f;
+}
+bool Valid(const SnapEntry& e) {return Finite(e.loc)&&std::isfinite(e.scale)&&e.scale>0&&e.scale<=10000.f;}
+float Dist2(const Vec3& a,const Vec3& b) {
+    const float x=a.x-b.x,y=a.y-b.y,z=a.z-b.z;return x*x+y*y+z*z;
+}
+bool Current(N::Session* s) {
+    return s&&g_session.load(std::memory_order_acquire)==s&&s->running()&&s->connected()&&
+        g_world==ue_wrap::world_identity::Generation();
+}
 bool Resolved() {
-    return g_offMaster >= 0 && g_offRoaches >= 0 && g_addRoachFn && g_delRoachFn &&
-           g_getLocFn && g_getScaleFn && g_setLocFn && g_setScaleFn;
+    return g_gmClass.Get()&&g_masterClass.Get()&&g_offMaster>=0&&g_offRoaches>=0&&
+        g_add.Get()&&g_del.Get()&&g_getLoc.Get()&&g_getScale.Get()&&g_setLoc.Get()&&g_setScale.Get();
 }
-
 void ResolvePass() {
-    if (g_resolveLatched) return;
-    const auto now = std::chrono::steady_clock::now();
-    if (now < g_nextResolve) return;
-    g_nextResolve = now + std::chrono::seconds(2);
-    if (!g_gmCls)     g_gmCls     = R::FindClass(L"mainGamemode_C");
-    if (!g_masterCls) g_masterCls = R::FindClass(L"cockroachMaster_C");
-    if (!g_gmCls || !g_masterCls) return;  // world not loaded yet
-    if (g_offMaster  < 0) g_offMaster  = R::FindPropertyOffset(g_gmCls, L"cockroachMaster");
-    if (g_offRoaches < 0) g_offRoaches = R::FindPropertyOffset(g_masterCls, L"roaches");
-    if (!g_addRoachFn) g_addRoachFn = R::FindFunction(g_masterCls, L"addRoach");
-    if (!g_delRoachFn) g_delRoachFn = R::FindFunction(g_masterCls, L"deleteRoach");
-    if (void* sceneCls = R::FindClass(L"SceneComponent")) {
-        if (!g_getLocFn)   g_getLocFn   = R::FindFunction(sceneCls, L"K2_GetComponentLocation");
-        if (!g_getScaleFn) g_getScaleFn = R::FindFunction(sceneCls, L"K2_GetComponentScale");
-        if (!g_setLocFn)   g_setLocFn   = R::FindFunction(sceneCls, L"K2_SetWorldLocation");
-        if (!g_setScaleFn) g_setScaleFn = R::FindFunction(sceneCls, L"SetWorldScale3D");
-    }
-    if (Resolved()) {
-        g_resolveLatched = true;
-        UE_LOGI("roach_sync: resolved (master@0x%X roaches@0x%X addRoach=%p deleteRoach=%p "
-                "loc/scale get+set=ok)", g_offMaster, g_offRoaches, g_addRoachFn, g_delRoachFn);
-        return;
-    }
-    if (++g_postClassAttempts >= kMaxPostClassAttempts) {
-        g_resolveLatched = true;
-        UE_LOGW("roach_sync: resolution INCOMPLETE after %d passes (master@0x%X roaches@0x%X "
-                "addRoach=%s deleteRoach=%s) -- latched OFF; game version mismatch?",
-                g_postClassAttempts, g_offMaster, g_offRoaches,
-                g_addRoachFn ? "yes" : "no", g_delRoachFn ? "yes" : "no");
-    }
+    if(Resolved())return;
+    const auto now=N::NowMs();if(now<g_nextResolve)return;g_nextResolve=now+2000;
+    g_gmClass.Set(R::FindClass(L"mainGamemode_C"));
+    g_masterClass.Set(R::FindClass(L"cockroachMaster_C"));
+    auto* scene=R::FindClass(L"SceneComponent");
+    g_offMaster=g_gmClass.Get()?R::FindPropertyOffset(g_gmClass.Get(),L"cockroachMaster"):-1;
+    g_offRoaches=g_masterClass.Get()?R::FindPropertyOffset(g_masterClass.Get(),L"roaches"):-1;
+    auto bind=[](Ref& ref,void* cls,const wchar_t* name){ref.Set(cls?R::FindFunction(cls,name):nullptr);};
+    bind(g_add,g_masterClass.Get(),L"addRoach");bind(g_del,g_masterClass.Get(),L"deleteRoach");
+    bind(g_getLoc,scene,L"K2_GetComponentLocation");bind(g_getScale,scene,L"K2_GetComponentScale");
+    bind(g_setLoc,scene,L"K2_SetWorldLocation");bind(g_setScale,scene,L"SetWorldScale3D");
 }
-
-// ---- the live master, read off the world's gamemode ----
-
 void* Master() {
-    void* gm = ue_wrap::world_singleton::Gamemode();
-    if (!gm || g_offMaster < 0) return nullptr;
-    void* m = *reinterpret_cast<void* const*>(reinterpret_cast<uint8_t*>(gm) + g_offMaster);
-    if (!m || !R::IsLive(m)) return nullptr;
-    return m;
+    void* gm=ue_wrap::world_singleton::Gamemode();
+    if(!gm||!R::IsLive(gm)||!g_gmClass.Get()||R::ClassOf(gm)!=g_gmClass.Get()||g_offMaster<0)return nullptr;
+    void* master=nullptr;std::memcpy(&master,static_cast<uint8_t*>(gm)+g_offMaster,sizeof(master));
+    return master&&R::IsLive(master)&&g_masterClass.Get()&&R::ClassOf(master)==g_masterClass.Get()?master:nullptr;
 }
-
-struct FArrayRaw { void* Data; int32_t Num; int32_t Max; };
-
-// Valid (non-null, live) roach components in array order, with their RAW index
-// (deleteRoach takes the raw index; the wire carries the ORDINAL order).
-struct RoachSlot { void* comp; int32_t rawIdx; };
-
-void ReadRoaches(void* master, std::vector<RoachSlot>& out) {
-    out.clear();
-    if (!master || g_offRoaches < 0) return;
-    const FArrayRaw* arr = reinterpret_cast<const FArrayRaw*>(
-        reinterpret_cast<uint8_t*>(master) + g_offRoaches);
-    if (!arr->Data || arr->Num <= 0) return;
-    void* const* elems = reinterpret_cast<void* const*>(arr->Data);
-    for (int32_t i = 0; i < arr->Num && out.size() < coop::net::kRoachSnapshotCap; ++i) {
-        void* c = elems[i];
-        if (c && R::IsLive(c)) out.push_back({c, i});
+struct Receipt {
+    N::Session* session;uint64_t epoch;N::Role role;Ref master,gm;
+    explicit Receipt(void* m):session(g_session.load()),epoch(g_epoch),role(session->role()) {
+        master.Set(m);gm.Set(ue_wrap::world_singleton::Gamemode());
     }
+    bool Current()const {
+        return epoch==g_epoch&&roach_sync::Current(session)&&session->role()==role&&
+            master.Get()&&gm.Get()&&ue_wrap::world_singleton::Gamemode()==gm.Raw()&&Master()==master.Raw();
+    }
+};
+bool Array(void* master,FArrayRaw& arr) {
+    if(!master||!R::IsLive(master)||g_offRoaches<0)return false;
+    std::memcpy(&arr,static_cast<uint8_t*>(master)+g_offRoaches,sizeof(arr));
+    return arr.Num>=0&&arr.Max>=arr.Num&&arr.Max<=kMaxRawSlots&&(!arr.Num||arr.Data);
 }
-
-bool GetCompLocation(void* comp, Vec3& out) {
-    ue_wrap::ParamFrame f(g_getLocFn);
-    if (!f.valid() || !ue_wrap::Call(comp, f)) return false;
-    return f.GetRaw(L"ReturnValue", &out, sizeof(out));
-}
-
-bool GetCompScale(void* comp, Vec3& out) {
-    ue_wrap::ParamFrame f(g_getScaleFn);
-    if (!f.valid() || !ue_wrap::Call(comp, f)) return false;
-    return f.GetRaw(L"ReturnValue", &out, sizeof(out));
-}
-
-void SetCompLocation(void* comp, const Vec3& v) {
-    ue_wrap::ParamFrame f(g_setLocFn);
-    if (!f.valid()) return;
-    f.SetRaw(L"NewLocation", &v, sizeof(v));
-    f.Set<bool>(L"bSweep", false);
-    f.Set<bool>(L"bTeleport", true);
-    ue_wrap::Call(comp, f);
-}
-
-void SetCompScale(void* comp, float s) {
-    Vec3 v{s, s, s};
-    ue_wrap::ParamFrame f(g_setScaleFn);
-    if (!f.valid()) return;
-    // SetWorldScale3D's parameter is NewScale (SetRelativeScale3D's is NewScale3D). The frame is
-    // zeroed, so a call after a failed write would scale the roach to nothing.
-    if (!f.SetRaw(L"NewScale", &v, sizeof(v))) return;
-    ue_wrap::Call(comp, f);
-}
-
-float Dist2(const Vec3& a, const Vec3& b) {
-    const float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-    return dx * dx + dy * dy + dz * dz;
-}
-
-long long NowMs() {
-    using namespace std::chrono;
-    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-}
-
-long long g_lastPollMs = 0;
-
-// ---- HOST: snapshot + change detection + paged send ----
-struct SnapEntry { Vec3 loc; float scale; };
-std::vector<SnapEntry> g_lastSent;    // baseline for drift detection
-uint32_t  g_seq = 0;
-long long g_lastSendMs = 0;
-void*     g_polledMaster = nullptr;   // re-prime on world/save reload
-
-bool ReadSnapshot(void* master, std::vector<SnapEntry>& out) {
-    std::vector<RoachSlot> slots;
-    ReadRoaches(master, slots);
-    out.clear();
-    out.reserve(slots.size());
-    for (const auto& s : slots) {
-        SnapEntry e{};
-        if (!GetCompLocation(s.comp, e.loc)) continue;
-        Vec3 sc{1.f, 1.f, 1.f};
-        GetCompScale(s.comp, sc);
-        e.scale = sc.x;  // uniform (the game scales roaches uniformly)
-        out.push_back(e);
+bool ReadRoaches(void* master,std::vector<RoachSlot>& out) {
+    out.clear();FArrayRaw arr{};if(!Array(master,arr))return false;
+    auto** data=static_cast<void**>(arr.Data);
+    for(int32_t i=0;i<arr.Num;++i)if(data[i]&&R::IsLive(data[i])) {
+        if(out.size()>=N::kRoachSnapshotCap)return false;
+        Ref ref;ref.Set(data[i]);if(!ref.Get())return false;out.push_back({ref,i});
     }
     return true;
 }
-
-bool SnapshotChanged(const std::vector<SnapEntry>& cur) {
-    if (cur.size() != g_lastSent.size()) return true;
-    const float d2 = kDriftResendDist * kDriftResendDist;
-    for (size_t i = 0; i < cur.size(); ++i) {
-        if (Dist2(cur[i].loc, g_lastSent[i].loc) > d2) return true;
-        if (std::fabs(cur[i].scale - g_lastSent[i].scale) > kApplyScaleEpsilon) return true;
+bool Bound(const Receipt& receipt,const RoachSlot& slot) {
+    if(!receipt.Current()||!slot.comp.Get())return false;
+    FArrayRaw arr{};
+    return Array(receipt.master.Get(),arr)&&slot.rawIdx>=0&&slot.rawIdx<arr.Num&&
+        static_cast<void**>(arr.Data)[slot.rawIdx]==slot.comp.Raw();
+}
+bool ReadVector(const Receipt& receipt,const RoachSlot& slot,const Ref& function,Vec3& out) {
+    if(!Bound(receipt,slot)||!function.Get())return false;
+    const Ref fn=function;ue_wrap::ParamFrame frame(fn.Get());
+    if(!frame.valid()||!ue_wrap::Call(slot.comp.Get(),frame)||!Bound(receipt,slot)||!fn.Get())return false;
+    return frame.GetRaw(L"ReturnValue",&out,sizeof(out))&&Finite(out);
+}
+bool ReadSnapshot(const Receipt& receipt,std::vector<SnapEntry>& out) {
+    std::vector<RoachSlot> slots;out.clear();if(!ReadRoaches(receipt.master.Get(),slots))return false;
+    for(const auto& slot:slots) {
+        SnapEntry entry{};Vec3 scale{};
+        if(!ReadVector(receipt,slot,g_getLoc,entry.loc)||!ReadVector(receipt,slot,g_getScale,scale))return false;
+        entry.scale=scale.x;if(!Valid(entry))return false;out.push_back(entry);
     }
+    std::vector<RoachSlot> after;if(!receipt.Current()||!ReadRoaches(receipt.master.Get(),after)||after.size()!=slots.size())return false;
+    for(size_t i=0;i<slots.size();++i)if(after[i].rawIdx!=slots[i].rawIdx||after[i].comp.Get()!=slots[i].comp.Get())return false;
+    return true;
+}
+bool Changed(const std::vector<SnapEntry>& snap) {
+    if(snap.size()!=g_lastSample.size())return true;
+    for(size_t i=0;i<snap.size();++i)if(Dist2(snap[i].loc,g_lastSample[i].loc)>625.f||
+        std::fabs(snap[i].scale-g_lastSample[i].scale)>.05f)return true;
     return false;
 }
-
-// Send the full snapshot as pages; toSlot < 0 broadcasts to every client.
-void SendSnapshot(coop::net::Session* s, const std::vector<SnapEntry>& snap, int toSlot) {
-    ++g_seq;
-    const int total = static_cast<int>(snap.size());
-    const int pages = total == 0 ? 1
-                                 : (total + coop::net::kRoachEntriesPerPage - 1) /
-                                       coop::net::kRoachEntriesPerPage;
-    for (int pg = 0; pg < pages; ++pg) {
-        coop::net::RoachStatePayload p{};
-        p.seq        = g_seq;
-        p.page       = static_cast<uint8_t>(pg);
-        p.pageCount  = static_cast<uint8_t>(pages);
-        p.totalCount = static_cast<uint8_t>(total);
-        const int base = pg * coop::net::kRoachEntriesPerPage;
-        int n = 0;
-        for (; n < coop::net::kRoachEntriesPerPage && base + n < total; ++n) {
-            const SnapEntry& e = snap[base + n];
-            p.entries[n] = {e.loc.x, e.loc.y, e.loc.z, e.scale};
+struct Delivery {
+    std::vector<SnapEntry> rows;Ref master;uint32_t sequence=0,generation=0;uint8_t page=0;
+    uint64_t revision=0,expires=0;
+};
+std::array<Delivery,N::kMaxPeers> g_delivery{};
+int g_deliveryNext=1;
+void QueueSnapshot(const Receipt& receipt,const std::vector<SnapEntry>& rows,int only=-1) {
+    if(!receipt.Current())return;
+    if(++g_sequence==0)++g_sequence;
+    for(int slot=1;slot<N::kMaxPeers;++slot) {
+        if(only>=0&&slot!=only)continue;
+        const auto generation=receipt.session->peerGenerationForSlot(slot);
+        if(!generation||!receipt.session->IsSlotWorldReady(slot))continue;
+        g_delivery[slot]={rows,receipt.master,g_sequence,generation,0,++g_revision,N::NowMs()+15000};
+    }
+}
+void Flush() {
+    auto* session=g_session.load();const auto epoch=g_epoch;
+    if(!Current(session)||session->role()!=N::Role::Host)return;
+    int budget=4;
+    for(int scanned=0;scanned<N::kMaxPeers-1&&budget>0;++scanned) {
+        const int slot=g_deliveryNext;g_deliveryNext=g_deliveryNext%(N::kMaxPeers-1)+1;
+        auto row=g_delivery[slot];if(!row.sequence)continue;
+        if(!row.master.Get()||Master()!=row.master.Raw()||N::NowMs()>row.expires||
+            row.generation!=session->peerGenerationForSlot(slot)||!session->IsSlotWorldReady(slot)) {
+            g_delivery[slot]={};continue;
         }
-        p.entryCount = static_cast<uint8_t>(n);
-        const bool ok = toSlot < 0
-            ? s->SendReliable(coop::net::ReliableKind::RoachState, &p, sizeof(p))
-            : s->SendReliableToSlot(toSlot, coop::net::ReliableKind::RoachState, &p, sizeof(p));
-        if (!ok) {
-            UE_LOGW("roach_sync: RoachState send FAILED (seq=%u page %d/%d, toSlot=%d)",
-                    g_seq, pg + 1, pages, toSlot);
-            return;  // partial snapshot: receiver's seq/page assembly discards it
+        N::RoachStatePayload p{};p.seq=row.sequence;p.page=row.page;p.totalCount=static_cast<uint8_t>(row.rows.size());
+        p.pageCount=static_cast<uint8_t>(std::max(1,(int(row.rows.size())+N::kRoachEntriesPerPage-1)/N::kRoachEntriesPerPage));
+        const size_t base=size_t(row.page)*N::kRoachEntriesPerPage;
+        for(size_t i=base;i<row.rows.size()&&i<base+N::kRoachEntriesPerPage;++i) {
+            const auto& e=row.rows[i];p.entries[p.entryCount++]={e.loc.x,e.loc.y,e.loc.z,e.scale};
         }
+        --budget;const bool sent=session->SendReliableToSlot(slot,N::ReliableKind::RoachState,&p,sizeof(p));
+        if(epoch!=g_epoch||!Current(session)||session->role()!=N::Role::Host)return;
+        auto& current=g_delivery[slot];
+        if(current.revision!=row.revision||session->peerGenerationForSlot(slot)!=row.generation)continue;
+        if(sent&&++current.page>=p.pageCount)current={};
     }
 }
 
-// ---- CLIENT: page assembly + ordinal apply + local-consumption tracking ----
-uint32_t g_asmSeq = 0;
-uint16_t g_asmPagesGot = 0;      // bitmask (pageCount <= 11 for 128 roaches)
-uint8_t  g_asmPageCount = 0;
-uint8_t  g_asmTotal = 0;
-SnapEntry g_asmEntries[coop::net::kRoachSnapshotCap];
+uint32_t g_asmSeq=0;uint16_t g_pages=0;uint8_t g_pageCount=0,g_total=0;
+std::array<SnapEntry,N::kRoachSnapshotCap> g_assembly{};
+struct Pending {std::vector<SnapEntry> rows;Ref master;uint64_t revision=0;bool active=false,uncertain=false;};
+Pending g_pending;
+struct Tracked {Ref comp;Vec3 loc;};
+std::vector<Tracked> g_tracked;Ref g_trackedMaster;bool g_haveApplied=false;uint64_t g_tracking=0;
 
-// The tracked mirror set: component + internal index + last applied position.
-// Liveness on THIS set is the local-consumption detector (a native eat/stomp
-// K2_DestroyComponent's the entry -- no polling dispatches needed).
-struct TrackedRoach { void* comp; int32_t idx; Vec3 loc; };
-std::vector<TrackedRoach> g_tracked;
-bool  g_haveApplied = false;
-void* g_trackedMaster = nullptr;  // the master the tracked set belongs to (teardown guard)
-
-void RebuildTracked(void* master) {
-    g_tracked.clear();
-    g_trackedMaster = master;
-    std::vector<RoachSlot> slots;
-    ReadRoaches(master, slots);
-    for (const auto& s : slots) {
-        Vec3 loc{};
-        if (!GetCompLocation(s.comp, loc)) continue;
-        g_tracked.push_back({s.comp, R::InternalIndexOf(s.comp), loc});
+bool SetLocation(const Receipt& receipt,const RoachSlot& slot,const Vec3& location) {
+    if(!Bound(receipt,slot)||!g_setLoc.Get())return false;
+    const Ref fn=g_setLoc;ue_wrap::ParamFrame f(fn.Get());
+    return f.valid()&&f.SetRaw(L"NewLocation",&location,sizeof(location))&&f.Set<bool>(L"bSweep",false)&&
+        f.Set<bool>(L"bTeleport",true)&&ue_wrap::Call(slot.comp.Get(),f)&&Bound(receipt,slot)&&fn.Get();
+}
+bool SetScale(const Receipt& receipt,const RoachSlot& slot,float scale) {
+    if(!Bound(receipt,slot)||!g_setScale.Get())return false;
+    const Vec3 value{scale,scale,scale};const Ref fn=g_setScale;ue_wrap::ParamFrame f(fn.Get());
+    return f.valid()&&f.SetRaw(L"NewScale",&value,sizeof(value))&&ue_wrap::Call(slot.comp.Get(),f)&&Bound(receipt,slot)&&fn.Get();
+}
+bool DeleteFrame(ue_wrap::ParamFrame& f,int32_t index) {
+    return f.valid()&&f.Set<int32_t>(L"IndexToRemove",index)&&f.Set<bool>(L"crush",false);
+}
+bool AddFrame(ue_wrap::ParamFrame& f,const SnapEntry& entry) {
+    const Vec3 size{entry.scale,entry.scale,entry.scale};
+    return f.valid()&&f.SetRaw(L"Location",&entry.loc,sizeof(entry.loc))&&f.SetRaw(L"Size",&size,sizeof(size))&&
+        f.Set<bool>(L"bypassCheck",true);
+}
+void ApplyPending() {
+    if(g_applying||!g_pending.active||g_pending.uncertain)return;
+    void* master=Master();if(!master)return;
+    auto pending=g_pending;
+    if(pending.master.Raw()&&pending.master.Get()!=master) {g_pending={};return;}
+    if(!pending.master.Raw()){g_pending.master.Set(master);pending.master=g_pending.master;}
+    const Receipt receipt(master);
+    auto current=[&]{return receipt.Current()&&g_pending.active&&g_pending.revision==pending.revision;};
+    struct Guard {Guard(){g_applying=true;}~Guard(){g_applying=false;}} guard;
+    std::vector<RoachSlot> slots;if(!ReadRoaches(master,slots))return;
+    int budget=4;
+    while(slots.size()!=pending.rows.size()&&budget-->0) {
+        const bool deleting=slots.size()>pending.rows.size();
+        const Ref fn=deleting?g_del:g_add;ue_wrap::ParamFrame frame(fn.Get());
+        if(deleting) {
+            if(!Bound(receipt,slots.back())||!DeleteFrame(frame,slots.back().rawIdx))return;
+        } else if(!AddFrame(frame,pending.rows[slots.size()]))return;
+        // Once native mutation is admitted, an uncertain result may not be retried.
+        // Reconcile an observed population change; otherwise await a fresh host row.
+        g_pending.uncertain=true;
+        ue_wrap::Call(master,frame);
+        if(!current()||!fn.Get())return;
+        std::vector<RoachSlot> after;if(!ReadRoaches(master,after))return;
+        if(after.size()!=(deleting?slots.size()-1:slots.size()+1))return;
+        if(deleting&&slots.back().comp.Get()) {
+            for(const auto& row:after)if(row.comp.Get()==slots.back().comp.Get())return;
+        }
+        g_pending.uncertain=false;slots=std::move(after);
     }
+    if(slots.size()!=pending.rows.size())return;
+    std::vector<Tracked> tracked;tracked.reserve(slots.size());
+    for(size_t i=0;i<slots.size();++i) {
+        Vec3 location{},scale{};const auto& want=pending.rows[i];
+        if(!ReadVector(receipt,slots[i],g_getLoc,location)||!current())return;
+        if(Dist2(location,want.loc)>1.f&&(!SetLocation(receipt,slots[i],want.loc)||!current()))return;
+        if(!ReadVector(receipt,slots[i],g_getScale,scale)||!current())return;
+        if(std::fabs(scale.x-want.scale)>.05f&&(!SetScale(receipt,slots[i],want.scale)||!current()))return;
+        tracked.push_back({slots[i].comp,want.loc});
+    }
+    if(!current())return;
+    g_tracked=std::move(tracked);g_trackedMaster=receipt.master;g_haveApplied=true;++g_tracking;g_pending={};
+}
+void DetectConsumption(N::Session* session) {
+    if(!g_haveApplied||g_pending.active||g_tracked.empty())return;
+    void* master=Master();
+    if(!g_trackedMaster.Get()||g_trackedMaster.Get()!=master){g_tracked.clear();g_haveApplied=false;return;}
+    const Receipt receipt(master);const auto tracking=g_tracking;
+    auto rows=g_tracked;std::vector<Tracked> retained;int budget=4;
+    for(const auto& row:rows) {
+        if(row.comp.Get()){retained.push_back(row);continue;}
+        if(budget<=0){retained.push_back(row);continue;}
+        --budget;N::RoachConsumedPayload p{row.loc.x,row.loc.y,row.loc.z};
+        const bool sent=session->SendReliable(N::ReliableKind::RoachConsumed,&p,sizeof(p));
+        if(!receipt.Current()||tracking!=g_tracking||g_pending.active)return;
+        if(!sent)retained.push_back(row);
+    }
+    g_tracked=std::move(retained);
+}
+bool Ready() {
+    auto* session=g_session.load();
+    if(!session)return false;
+    if(g_world!=ue_wrap::world_identity::Generation())Install(session);
+    return Current(session);
+}
 }
 
-void ApplySnapshot(const SnapEntry* entries, int total) {
-    void* master = Master();
-    if (!master) return;  // no world/master yet; the next snapshot re-delivers
-    std::vector<RoachSlot> slots;
-    ReadRoaches(master, slots);
-
-    if (static_cast<int>(slots.size()) == total) {
-        // Ordinal drive: k-th local valid slot <- k-th snapshot entry.
-        for (int i = 0; i < total; ++i) {
-            Vec3 cur{};
-            const Vec3 want{entries[i].loc.x, entries[i].loc.y, entries[i].loc.z};
-            if (GetCompLocation(slots[i].comp, cur) &&
-                Dist2(cur, want) > kApplyMoveEpsilon * kApplyMoveEpsilon) {
-                SetCompLocation(slots[i].comp, want);
-            }
-            Vec3 sc{1.f, 1.f, 1.f};
-            if (GetCompScale(slots[i].comp, sc) &&
-                std::fabs(sc.x - entries[i].scale) > kApplyScaleEpsilon) {
-                SetCompScale(slots[i].comp, entries[i].scale);
-            }
-        }
-    } else {
-        // Population rebuild via the game's OWN mutators (array/Count/collision
-        // stay SP-consistent). deleteRoach nulls the slot (no index shift), so
-        // deleting in array order is safe; addRoach appends.
-        for (const auto& s : slots) {
-            ue_wrap::ParamFrame del(g_delRoachFn);
-            if (!del.valid()) break;
-            del.Set<int32_t>(L"IndexToRemove", s.rawIdx);
-            del.Set<bool>(L"crush", false);
-            ue_wrap::Call(master, del);
-        }
-        for (int i = 0; i < total; ++i) {
-            ue_wrap::ParamFrame add(g_addRoachFn);
-            if (!add.valid()) break;
-            const Vec3 loc{entries[i].loc.x, entries[i].loc.y, entries[i].loc.z};
-            const Vec3 size{entries[i].scale, entries[i].scale, entries[i].scale};
-            add.SetRaw(L"Location", &loc, sizeof(loc));
-            add.SetRaw(L"Size", &size, sizeof(size));
-            add.Set<bool>(L"bypassCheck", true);
-            ue_wrap::Call(master, add);
-        }
-        UE_LOGI("roach_sync: client REBUILT population (%zu local -> %d host roaches)",
-                slots.size(), total);
-    }
-    RebuildTracked(master);
-    g_haveApplied = true;
+void Install(N::Session* session) {
+    const auto world=ue_wrap::world_identity::Generation();
+    if(g_session.load()!=session||g_world!=world){OnDisconnect();g_world=world;g_session.store(session);}
 }
-
-// Client 1 Hz: any tracked component that died locally (and not via our own
-// apply, which rebuilds g_tracked) was consumed by the LOCAL player's native
-// eat/stomp event -> forward the intent.
-void DetectLocalConsumption(coop::net::Session* s) {
-    if (!g_haveApplied || g_tracked.empty()) return;
-    // Master-liveness gate. A client WORLD TEARDOWN while the session is still
-    // connected -- an idle death dropping to the menu does it -- kills every tracked
-    // component at once, and without this gate that mass death would stream false
-    // RoachConsumed intents at host-correct positions and WIPE the host's live
-    // population. A dead or REPLACED master means the deaths were structural, not
-    // consumption.
-    void* master = Master();
-    if (!master || master != g_trackedMaster) {
-        g_tracked.clear();
-        g_haveApplied = false;
-        return;
-    }
-    int sent = 0;
-    size_t w = 0;
-    for (size_t r = 0; r < g_tracked.size(); ++r) {
-        TrackedRoach& t = g_tracked[r];
-        if (R::IsLiveByIndex(t.comp, t.idx)) { g_tracked[w++] = t; continue; }
-        if (sent < kMaxIntentsPerTick) {
-            coop::net::RoachConsumedPayload p{t.loc.x, t.loc.y, t.loc.z};
-            if (s->SendReliable(coop::net::ReliableKind::RoachConsumed, &p, sizeof(p))) {
-                ++sent;
-                UE_LOGI("roach_sync: local roach consumed at (%.0f,%.0f,%.0f) -> intent to host",
-                        t.loc.x, t.loc.y, t.loc.z);
-            } else {
-                g_tracked[w++] = t;  // send failed -> keep, retry next tick
-            }
-        } else {
-            g_tracked[w++] = t;      // over the per-tick cap -> retry next tick
-        }
-    }
-    g_tracked.resize(w);
-}
-
-}  // namespace
-
-void Install(coop::net::Session* session) {
-    g_session.store(session, std::memory_order_release);
-}
-
 void Tick() {
-    if (!GT::IsGameThread()) return;
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
-    const long long now = NowMs();
-    if (now - g_lastPollMs < kPollIntervalMs) return;
-    g_lastPollMs = now;
-    ResolvePass();
-    if (!Resolved()) return;
-
-    if (s->role() != coop::net::Role::Host) {
-        DetectLocalConsumption(s);
-        return;
+    if(!ue_wrap::game_thread::IsGameThread()||g_ticking||!Ready())return;
+    struct Guard {Guard(){g_ticking=true;}~Guard(){g_ticking=false;}} guard;
+    auto* session=g_session.load();ResolvePass();if(!Resolved())return;
+    if(session->role()==N::Role::Client) {
+        ApplyPending();if(!Current(session))return;
+        const auto now=N::NowMs();if(now-g_lastPoll<kPollMs)return;g_lastPoll=now;DetectConsumption(session);return;
     }
-
-    // HOST: poll -> paged broadcast on change / drift / keepalive.
-    void* master = Master();
-    if (!master) return;
-    std::vector<SnapEntry> snap;
-    ReadSnapshot(master, snap);
-    if (master != g_polledMaster) {
-        // World/save reload minted a new master -- re-prime silently (the
-        // serverbox re-prime rule: a prime never masquerades as an edge).
-        g_polledMaster = master;
-        g_lastSent = snap;
-        g_lastSendMs = now;
-        return;
+    if(session->role()!=N::Role::Host)return;
+    Flush();if(!Current(session))return;
+    const auto now=N::NowMs();if(now-g_lastPoll<kPollMs)return;g_lastPoll=now;
+    void* master=Master();if(!master)return;const Receipt receipt(master);
+    std::vector<SnapEntry> snap;if(!ReadSnapshot(receipt,snap))return;
+    if(g_polledMaster.Get()!=master||Changed(snap)||now-g_lastSend>=kKeepaliveMs) {
+        QueueSnapshot(receipt,snap);g_polledMaster=receipt.master;g_lastSample=std::move(snap);g_lastSend=now;
     }
-    const bool changed   = SnapshotChanged(snap);
-    const bool keepalive = (now - g_lastSendMs >= kKeepaliveMs) &&
-                           (!snap.empty() || !g_lastSent.empty());
-    if (!changed && !keepalive) return;
-    g_lastSent = snap;
-    g_lastSendMs = now;
-    SendSnapshot(s, snap, -1);
-    if (changed)
-        UE_LOGI("roach_sync: host broadcast %zu roach(es) (seq=%u)", snap.size(), g_seq);
 }
-
-void OnState(const coop::net::RoachStatePayload& payload) {
-    if (!GT::IsGameThread()) { UE_LOGW("roach_sync: OnState off-game-thread -- dropping"); return; }
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
-    ResolvePass();
-    if (!Resolved()) return;  // the keepalive re-delivers post-resolve
-    if (payload.pageCount == 0 || payload.page >= payload.pageCount ||
-        payload.pageCount > (coop::net::kRoachSnapshotCap + coop::net::kRoachEntriesPerPage - 1) /
-                                coop::net::kRoachEntriesPerPage ||
-        payload.totalCount > coop::net::kRoachSnapshotCap ||
-        payload.entryCount > coop::net::kRoachEntriesPerPage) {  // entries[] is Entry[12] -- OOB read otherwise
-        UE_LOGW("roach_sync: malformed RoachState (page %u/%u entries=%u total=%u) -- dropping",
-                payload.page, payload.pageCount, payload.entryCount, payload.totalCount);
-        return;
-    }
-    if (payload.seq != g_asmSeq) {  // new snapshot -> restart assembly
-        g_asmSeq = payload.seq;
-        g_asmPagesGot = 0;
-        g_asmPageCount = payload.pageCount;
-        g_asmTotal = payload.totalCount;
-    }
-    const int base = payload.page * coop::net::kRoachEntriesPerPage;
-    for (int i = 0; i < payload.entryCount && base + i < coop::net::kRoachSnapshotCap; ++i) {
-        const auto& e = payload.entries[i];
-        g_asmEntries[base + i] = SnapEntry{{e.x, e.y, e.z}, e.scale};
-    }
-    g_asmPagesGot |= static_cast<uint16_t>(1u << payload.page);
-    const uint16_t want = static_cast<uint16_t>((1u << g_asmPageCount) - 1u);
-    if ((g_asmPagesGot & want) != want) return;  // more pages coming (in-order lane)
-    ApplySnapshot(g_asmEntries, g_asmTotal);
+void OnState(const N::RoachStatePayload& p) {
+    if(!ue_wrap::game_thread::IsGameThread()||!Ready()||g_session.load()->role()!=N::Role::Client||!p.seq)return;
+    const int pages=std::max(1,(int(p.totalCount)+N::kRoachEntriesPerPage-1)/N::kRoachEntriesPerPage);
+    const int base=int(p.page)*N::kRoachEntriesPerPage;
+    if(p.totalCount>N::kRoachSnapshotCap||p.pageCount!=pages||p.page>=pages||
+        p.entryCount!=std::max(0,std::min(N::kRoachEntriesPerPage,int(p.totalCount)-base)))return;
+    for(int i=0;i<p.entryCount;++i)if(!Valid({{p.entries[i].x,p.entries[i].y,p.entries[i].z},p.entries[i].scale}))return;
+    if(p.seq!=g_asmSeq) {
+        if(g_asmSeq&&static_cast<int32_t>(p.seq-g_asmSeq)<=0)return;
+        g_asmSeq=p.seq;g_pages=0;g_pageCount=p.pageCount;g_total=p.totalCount;
+    } else if(p.pageCount!=g_pageCount||p.totalCount!=g_total)return;
+    const uint16_t bit=static_cast<uint16_t>(1u<<p.page);if(g_pages&bit)return;
+    for(int i=0;i<p.entryCount;++i)g_assembly[base+i]={{p.entries[i].x,p.entries[i].y,p.entries[i].z},p.entries[i].scale};
+    g_pages|=bit;if(g_pages!=static_cast<uint16_t>((1u<<g_pageCount)-1))return;
+    g_pending={};g_pending.rows.assign(g_assembly.begin(),g_assembly.begin()+g_total);
+    g_pending.revision=++g_revision;g_pending.active=true;g_pending.master.Set(Master());
+    g_haveApplied=false;++g_tracking;
 }
-
-void OnConsumedIntent(const coop::net::RoachConsumedPayload& payload, int senderPeerSlot) {
-    if (!GT::IsGameThread()) { UE_LOGW("roach_sync: OnConsumedIntent off-game-thread -- dropping"); return; }
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() != coop::net::Role::Host) return;
-    if (senderPeerSlot <= 0) {
-        UE_LOGW("roach_sync: RoachConsumed from slot=%d (not a client) -- dropping", senderPeerSlot);
-        return;
+void OnConsumedIntent(const N::RoachConsumedPayload& p,int slot) {
+    if(!ue_wrap::game_thread::IsGameThread()||!Ready())return;
+    auto* session=g_session.load();const Vec3 at{p.x,p.y,p.z};
+    if(session->role()!=N::Role::Host||slot<=0||slot>=N::kMaxPeers||!Finite(at)||!session->IsSlotWorldReady(slot))return;
+    const auto generation=session->peerGenerationForSlot(slot);if(!generation)return;
+    ResolvePass();if(!Resolved())return;void* master=Master();if(!master)return;const Receipt receipt(master);
+    auto current=[&]{return receipt.Current()&&session->IsSlotWorldReady(slot)&&session->peerGenerationForSlot(slot)==generation;};
+    std::vector<RoachSlot> rows;if(!ReadRoaches(master,rows))return;
+    RoachSlot best{};float bestDistance=200.f*200.f;
+    for(const auto& row:rows) {
+        Vec3 location{};const bool read=ReadVector(receipt,row,g_getLoc,location);if(!current())return;
+        if(!read)continue;const auto distance=Dist2(location,at);
+        if(distance<=bestDistance){best=row;bestDistance=distance;}
     }
-    ResolvePass();
-    if (!Resolved()) return;
-    void* master = Master();
-    if (!master) return;
-    std::vector<RoachSlot> slots;
-    ReadRoaches(master, slots);
-    const Vec3 at{payload.x, payload.y, payload.z};
-    int32_t bestIdx = -1;
-    float bestD2 = kAdjudicateRadius * kAdjudicateRadius;
-    for (const auto& slot : slots) {
-        Vec3 loc{};
-        if (!GetCompLocation(slot.comp, loc)) continue;
-        const float d2 = Dist2(loc, at);
-        if (d2 <= bestD2) { bestD2 = d2; bestIdx = slot.rawIdx; }
-    }
-    if (bestIdx < 0) {
-        // Already gone (host trim raced the intent) or a stale/duplicate
-        // intent -- benign; the periodic snapshot has converged everyone.
-        UE_LOGI("roach_sync: consumed-intent from slot %d matched no roach within %.0f -- no-op",
-                senderPeerSlot, kAdjudicateRadius);
-        return;
-    }
-    ue_wrap::ParamFrame del(g_delRoachFn);
-    if (!del.valid()) return;
-    del.Set<int32_t>(L"IndexToRemove", bestIdx);
-    del.Set<bool>(L"crush", false);
-    ue_wrap::Call(master, del);
-    UE_LOGI("roach_sync: slot %d consumed roach rawIdx=%d (d=%.0f) -- deleted; next poll broadcasts",
-            senderPeerSlot, bestIdx, std::sqrt(bestD2));
+    if(!best.comp.Get()||!Bound(receipt,best)||!current())return;
+    ue_wrap::ParamFrame frame(g_del.Get());if(!DeleteFrame(frame,best.rawIdx)||!Bound(receipt,best)||!current())return;
+    ue_wrap::Call(master,frame);
 }
-
 void QueueConnectBroadcastForSlot(int slot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    if (!Resolved()) return;  // no world yet -> the keepalive delivers state
-    void* master = Master();
-    if (!master) return;
-    std::vector<SnapEntry> snap;
-    ReadSnapshot(master, snap);
-    if (snap.empty()) return;  // joiner starts at zero roaches natively
-    SendSnapshot(s, snap, slot);
-    UE_LOGI("roach_sync: connect-snapshot -- %zu roach(es) to slot %d", snap.size(), slot);
+    if(!ue_wrap::game_thread::IsGameThread()||!Ready())return;
+    auto* session=g_session.load();if(session->role()!=N::Role::Host||slot<=0||slot>=N::kMaxPeers||!session->IsSlotWorldReady(slot))return;
+    const auto generation=session->peerGenerationForSlot(slot);if(!generation)return;
+    ResolvePass();if(!Resolved())return;void* master=Master();if(!master)return;const Receipt receipt(master);
+    std::vector<SnapEntry> rows;if(!ReadSnapshot(receipt,rows)||!receipt.Current()||session->peerGenerationForSlot(slot)!=generation)return;
+    QueueSnapshot(receipt,rows,slot);
 }
-
 void OnDisconnect() {
-    g_polledMaster = nullptr;
-    g_lastSent.clear();
-    g_lastSendMs = 0; g_lastPollMs = 0;
-    g_asmSeq = 0; g_asmPagesGot = 0; g_asmPageCount = 0; g_asmTotal = 0;
-    g_tracked.clear();
-    g_trackedMaster = nullptr;
-    g_haveApplied = false;
-    g_session.store(nullptr, std::memory_order_release);
+    ++g_epoch;g_session.store(nullptr);g_world=0;g_nextResolve=g_lastPoll=g_lastSend=0;
+    g_sequence=g_asmSeq=0;g_pages=0;g_pageCount=g_total=0;
+    g_pending={};g_delivery={};g_deliveryNext=1;g_lastSample.clear();g_polledMaster.Reset();
+    g_tracked.clear();g_trackedMaster.Reset();g_haveApplied=false;++g_tracking;
+    g_gmClass.Reset();g_masterClass.Reset();g_add.Reset();g_del.Reset();g_getLoc.Reset();g_getScale.Reset();g_setLoc.Reset();g_setScale.Reset();
+    g_offMaster=g_offRoaches=-1;
 }
-
-}  // namespace coop::roach_sync
+}

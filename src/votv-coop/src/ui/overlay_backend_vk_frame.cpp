@@ -10,13 +10,14 @@
 // our submit waits on the present's one semaphore and signals a per-image "done" semaphore, and the present is
 // then made with that one in its wait list. A plain mutex guards the sets, because the swapchain's destroy
 // runs on the render thread at a resize while presents run on this one; the present path holds it from the
-// lookup through the submit and releases it before the engine's own present call.
+// lookup through the engine's present call, keeping its substituted semaphore alive until queued.
 
 // Any failing Vulkan call of ours raises (vk::Check); the outer function takes the mutex through RAII and the
 // inner one holds the __try and nothing with a destructor, so its handler can latch the overlay down
 // (IsDown) without leaving the mutex locked. A down overlay passes every later present through untouched.
 
 #include "overlay_backend_vk.h"
+#include "overlay_backend_vk_context.h"
 
 #include "ui/overlay_backend.h"
 #include "overlay_seams.h"
@@ -363,10 +364,7 @@ FrameResult RunFrameBody(void* viewport, VkQueue queue, const VkPresentInfoKHR* 
     const Context& c = Ctx();
     const uint64_t now = ::GetTickCount64();
     g_cur = {};
-    PollFences(now);
-    if (IsDown()) return {};
-    CheckSlots(now);
-    PrintVerdicts();
+    if (g_stopped.load(std::memory_order_acquire) || IsDown()) return {};
     if (!rhi::ReadViewport(viewport, g_cur.st)) {
         // Transient while the engine recreates the swapchain; a count that keeps climbing is a defect.
         if (++g_unreadPresents == 1 || g_unreadPresents % 300 == 0)
@@ -374,6 +372,14 @@ FrameResult RunFrameBody(void* viewport, VkQueue queue, const VkPresentInfoKHR* 
         return {};
     }
     const rhi::ViewportState& st = g_cur.st;
+    if (!SameRenderContext(c.st, st)) {
+        MarkDown("the Vulkan device or window context changed");
+        return {};
+    }
+    PollFences(now);
+    if (IsDown()) return {};
+    CheckSlots(now);
+    PrintVerdicts();
     // Only the viewport's own swapchain on the present queue is ours; anything else goes through untouched.
     if (st.vkSwapchain != reinterpret_cast<std::uintptr_t>(info->pSwapchains[0]) ||
         reinterpret_cast<std::uintptr_t>(queue) != c.st.vkQueue)
@@ -426,17 +432,13 @@ FrameResult RunFrameGuarded(void* viewport, VkQueue queue, const VkPresentInfoKH
     }
 }
 
-FrameResult RunFrameLocked(void* viewport, VkQueue queue, const VkPresentInfoKHR* info) {
-    std::lock_guard<std::mutex> lock(g_mu);
-    return RunFrameGuarded(viewport, queue, info);
-}
-
 VkResult SwappedPresent(VkQueue queue, const VkPresentInfoKHR* info) {
     void* const viewport = t_viewport;
     if (!viewport || !info || info->swapchainCount != 1 || !info->pSwapchains ||
         g_stopped.load(std::memory_order_relaxed) || IsDown())
         return g_savedPresent(queue, info);
-    const FrameResult fr = RunFrameLocked(viewport, queue, info);
+    std::lock_guard<std::mutex> lock(g_mu);
+    const FrameResult fr = RunFrameGuarded(viewport, queue, info);
     VkResult r;
     if (fr.wait) {
         // A copy of the engine's info with our semaphore as its one wait: pNext and the rest pass through.
@@ -462,14 +464,10 @@ void DestroyGuarded(VkDevice device, VkSwapchainKHR chain) {
     }
 }
 
-void DestroyLocked(VkDevice device, VkSwapchainKHR chain) {
-    std::lock_guard<std::mutex> lock(g_mu);
-    DestroyGuarded(device, chain);
-}
-
 // The engine has idled the device before it destroys a swapchain, so no frame of ours is using its set.
 void SwappedDestroy(VkDevice device, VkSwapchainKHR chain, const VkAllocationCallbacks* alloc) {
-    if (chain && !g_stopped.load(std::memory_order_relaxed)) DestroyLocked(device, chain);
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (chain && !g_stopped.load(std::memory_order_acquire)) DestroyGuarded(device, chain);
     g_savedDestroy(device, chain, alloc);
 }
 

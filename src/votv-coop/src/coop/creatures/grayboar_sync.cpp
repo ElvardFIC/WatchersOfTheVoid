@@ -272,7 +272,7 @@ SG::Verdict OnBodyTick(const SG::Call& call) {
     // ReceiveTick applies force/torque to the prop's StaticMesh. Streaming the
     // helper pawn would not reproduce that movement. Claim is idempotent and
     // already handles held-item arbitration, join repair and dead-body cleanup.
-    coop::prop_drive_host::Claim(call.object, "grayboar body");
+    (void)coop::prop_drive_host::ClaimOwned(call.object, coop::prop_drive_host::ClaimSource::Grayboar, "grayboar body");
     return SG::Verdict::Run;
 }
 

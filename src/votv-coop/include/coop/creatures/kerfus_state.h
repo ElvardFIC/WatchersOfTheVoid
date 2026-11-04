@@ -28,10 +28,10 @@ namespace coop::kerfus_state {
 // Game thread.
 void Install(coop::net::Session* session);
 
-// Per tick: settle the host's tick watch (it says once that the watch is live).
+// Settle the watch and drain bounded recipient delivery / client apply debt.
 void Tick();
 
-// HOST: a peer's world came up -- send it every Kerfus's state. Game thread.
+// HOST: queue current native states for this peer; refusal/unreadable state retries.
 void OnPeerWorldReady(int slot);
 
 // HOST: whether the tick watch has entered the Kerfus with this eid in its table, which a connect seed

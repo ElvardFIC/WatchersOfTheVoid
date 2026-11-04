@@ -26,7 +26,8 @@ namespace coop::geom_octa_relay {
 void OnEvent(const coop::net::GeomOctaEventPayload& payload);
 
 // Every pump tick, on a client: watches the refused notify, then serves each live Octa's held Aggro and paired verdicts.
-// The overlap hook is installed at the first Aggro this client applies, and the pairing runs without it. Game thread.
+// Missing overlap hooks retry once per second; verdicts wait and expire without
+// native replay when the host-answer hook is unavailable. Game thread.
 void Tick();
 
 // What this client has done, for a drill to read; the log lines carry the detail.

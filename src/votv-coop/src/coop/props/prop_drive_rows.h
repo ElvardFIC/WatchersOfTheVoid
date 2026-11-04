@@ -10,17 +10,31 @@
 #pragma once
 
 #include "coop/net/intent_bucket.h"
+#include "coop/props/prop_drive_host.h"
 #include "coop/net/protocol.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/types.h"
 
 #include <cstdint>
+#include <array>
+#include <functional>
 #include <vector>
 
 namespace coop::prop_drive_host {
 
 struct Driven {
     ue_wrap::CachedObjRef ref;
+    ue_wrap::CachedObjRef cls;
+    uint64_t revision = 0;
+    uint64_t episode = 0;
+    uint64_t handoffFrom = 0; // exact client revision whose completed retirement produced this host row
+    uint32_t claimMask = 1; // legacy for default host rows; admission/handoff/election set it explicitly
+    std::array<uint64_t, kClaimSourceCount> claimTokens{};
+    uint64_t claimEpoch = 0;
+    uint32_t claimWorld = 0, claimSerial = 0;
+    void* claimWorldObject = nullptr;
+    uint32_t ownerGeneration = 0;
+    uint64_t ownerDeparture = 0;
     ue_wrap::CachedObjRef rootComp;   // the actor's primitive root, resolved once for the per-row velocity read
     uint32_t              eid = 0;
     coop::net::WireKey    key{};
@@ -72,6 +86,9 @@ struct Driven {
 // The live row of the prop with element id `eid`, null if none. Game thread.
 Driven* FindByEid(uint32_t eid);
 
+// Monotonic local row identity; never reset while an old stack can resume.
+uint64_t NewRowRevision();
+
 // The next claim generation of `eid`, one counter per prop for both authors; 0 is skipped, the stream's
 // "no generation". Game thread.
 uint8_t BumpGen(uint32_t eid);
@@ -79,19 +96,21 @@ uint8_t BumpGen(uint32_t eid);
 // The PropDriveEnd of generation `gen` of `eid`, read off `actor` now and placed at `loc`/`rot`: this peer's
 // physics flags and the body's velocity, zero under kRestVelCmS. The one build for the host's End and a syncing
 // client's. `*speedCmS`, when given, gets the speed read (0 when unreadable). Game thread.
+// A cancelled caller guard stops further native reads and returns an empty payload.
 coop::net::PropDriveEndPayload EndFromBody(void* actor, uint32_t eid, uint8_t gen, const ue_wrap::FVector& loc,
-                                           const ue_wrap::FRotator& rot, float* speedCmS = nullptr);
+                                           const ue_wrap::FRotator& rot, float* speedCmS = nullptr,
+                                           const std::function<bool()>& current = {});
 
 // A row for `actor` authored by client `slot`, under the Open refusals (a keyed prop with a host element id,
 // in no hand, of a class peers hold); null otherwise. Fresh admission state: nothing admitted, a full
 // bucket, the silence clock at now. Game thread.
-Driven* OpenClientRow(void* actor, uint8_t slot, const char* why);
+Driven* OpenClientRow(void* actor, uint8_t slot, const char* why, const std::function<bool()>& current = {});
 
 // A client row for `actor` when a host row already stands on it (a release's override coasted a client's): that row
 // becomes the client's under a new generation, nothing admitted. A row a host verb holds (claimed, syncer 0) is not
 // converted: null, as OnClaim refuses it. Another client's row is ended HostVerb first, so that client is told
 // Revoked. With no row, OpenClientRow's. Null on the refusals Open has. Game thread.
-Driven* ElectClientRow(void* actor, uint8_t slot, const char* why);
+Driven* ElectClientRow(void* actor, uint8_t slot, const char* why, const std::function<bool()>& current = {});
 
 // Close `row`: it is skipped by every reader at once and swept after the tick's pass. Game thread.
 void EraseRow(Driven& row);
@@ -112,6 +131,9 @@ namespace coop::prop_syncer_host {
 // state when none was. So does every ending of an elected row but Died and Hand when nothing was admitted, SlotLeft of an elected row, and
 // Silence of an elected row (kThrowSilenceMs without an admitted row, met by prop_drive_host's Tick).
 enum class Ending : uint8_t { Hand, HostVerb, Died, Silence, Range, SlotLeft, FlightBound, RowsUntrusted, GrantTimeout, kCount };
+
+// A committed new episode invalidates older offers/retirements, even if it ends reentrantly.
+void OnRowOpened(uint32_t eid);
 
 // End client row `row` in the one order every ending uses: release the host's copy at the last admitted pose and
 // velocity, send the End built from it (none for an ending that hands the prop to the host, none with nothing

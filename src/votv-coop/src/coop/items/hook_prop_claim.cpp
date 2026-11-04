@@ -15,6 +15,8 @@
 #include "coop/items/hook_sync.h"           // PlayerHookHolders
 #include "coop/player/players_registry.h"   // kMaxPeers
 #include "coop/props/prop_drive_host.h"
+#include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "ue_wrap/actors/hook.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -23,6 +25,8 @@
 #include "ue_wrap/engine/world_identity.h"  // Generation: the scan's stamp
 
 #include <cstdint>
+#include <functional>
+#include <unordered_map>
 #include <vector>
 
 namespace coop::hook_sync::detail {
@@ -42,6 +46,9 @@ std::vector<ue_wrap::CachedObjRef> g_next;
 // (bit 0 the host). An anchored hook and a level hook are a tether, no player's hold, and set nothing.
 std::vector<uint8_t> g_tiedHolders;
 std::vector<uint8_t> g_nextHolders;
+std::unordered_map<void*,coop::prop_drive_host::ClaimLease> g_claimLeases;
+uint64_t g_claimEpoch=0;
+bool g_claimTicking=false;
 
 const ue_wrap::CachedObjRef* Known(void* p) {
     for (const auto& r : g_tied)
@@ -100,21 +107,23 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
 
 // The keyed props `hook` is tied to, appended to g_next without duplicates. `holders` is the player-slot bit
 // the hook stands for (0 for a tether); a prop another hook already collected takes the bit into its mask.
-void CollectTied(void* hook, uint8_t holders) {
+void CollectTied(void* hook, uint8_t holders, const std::function<bool()>& current) {
     void* a = nullptr;
     void* b = nullptr;
-    if (!H::AttachedActors(hook, a, b)) return;
+    if (!current() || !H::AttachedActors(hook, a, b) || !current()) return;
     for (void* p : {a, b}) {
+        if (!current()) return;
         if (!p) continue;
         if (const int at = NextIndex(p); at >= 0) {
             g_nextHolders[static_cast<size_t>(at)] |= holders;
             continue;
         }
         if (const ue_wrap::CachedObjRef* known = Known(p)) {
-            if (known->Alive()) PushNext(*known, holders);   // its own reference answers
+            const auto saved=*known;
+            if (saved.Alive() && current()) PushNext(saved, holders);   // its own reference answers
             continue;
         }
-        if (!R::IsLive(p) || !PR::IsDescendantOfProp(p)) continue;
+        if (!R::IsLive(p) || !PR::IsDescendantOfProp(p) || !current()) continue;
         ue_wrap::CachedObjRef r;
         r.Set(p);
         PushNext(r, holders);
@@ -129,30 +138,43 @@ uint8_t PlayerBit(uint8_t slot) {
 }  // namespace
 
 void TickPropClaims() {
-    g_next.clear();
-    g_nextHolders.clear();
-    for (const Owned& o : OwnedHooks())
-        if (void* h = o.ref.Get()) CollectTied(h, PlayerBit(0));
-    for (const Adopted& a : AdoptedHooks())
-        if (void* h = a.ref.Get()) CollectTied(h, 0);
-    for (const auto& kv : Mirrors())
-        if (kv.second.bitten)
-            if (void* h = kv.second.ref.Get()) CollectTied(h, kv.second.anchored ? uint8_t{0} : PlayerBit(SlotOf(kv.first)));
-    if (g_worldGen == ue_wrap::world_identity::Generation())
-        for (const WorldHook& w : g_world)
-            if (R::IsLiveByIndex(w.actor, w.idx)) CollectTied(w.actor, 0);
-    // Every tied prop is claimed every pass: the claim is idempotent, and the channel ends a claim
-    // on its own when a hand takes the prop, so a tie that outlives the hand is re-claimed here
-    // the pass after the hand lets go.
-    for (const auto& r : g_next)
-        coop::prop_drive_host::Claim(r.Raw(), "hook");
-    for (const auto& r : g_tied)
-        if (!InNext(r.Raw())) coop::prop_drive_host::Release(r.Raw());
-    g_tied.swap(g_next);
-    g_tiedHolders.swap(g_nextHolders);
+    if(g_claimTicking)return;
+    struct Busy{Busy(){g_claimTicking=true;}~Busy(){g_claimTicking=false;}} busy;
+    const auto epoch=g_claimEpoch;
+    const auto world=ue_wrap::world_identity::Generation(),serial=coop::net::session_serial::Current();
+    auto* session=Session();const auto stops=session?session->StopCount():0;
+    const auto current=[&]{return epoch==g_claimEpoch&&world==ue_wrap::world_identity::Generation()&&
+        serial==coop::net::session_serial::Current()&&session==Session()&&(!session||
+        (session->StopCount()==stops&&session->running()&&session->role()==coop::net::Role::Host));};
+    const auto owned=OwnedHooks();const auto adopted=AdoptedHooks();const auto mirrors=Mirrors();const auto worldHooks=g_world;
+    const auto previous=g_claimLeases;
+    g_next.clear();g_nextHolders.clear();
+    for(const auto& o:owned)if(void* h=o.ref.Get())CollectTied(h,PlayerBit(0),current);
+    for(const auto& a:adopted)if(void* h=a.ref.Get())CollectTied(h,0,current);
+    for(const auto& [key,mirror]:mirrors)if(mirror.bitten)
+        if(void* h=mirror.ref.Get())CollectTied(h,mirror.anchored?uint8_t{0}:PlayerBit(SlotOf(key)),current);
+    if(g_worldGen==world)for(const auto& w:worldHooks)
+        if(R::IsLiveByIndex(w.actor,w.idx))CollectTied(w.actor,0,current);
+    if(!current())return;
+    const auto next=g_next;const auto holders=g_nextHolders;
+    std::unordered_map<void*,coop::prop_drive_host::ClaimLease> leases;
+    for(const auto& ref:next){
+        if(!current())return;
+        if(void* actor=ref.Get()) {
+            const auto lease=coop::prop_drive_host::ClaimOwned(actor,coop::prop_drive_host::ClaimSource::Hook,"hook",current);
+            if(!current())return;
+            if(lease)leases[actor]=lease;
+        }
+    }
+    g_tied=next;g_tiedHolders=holders;g_claimLeases=std::move(leases);
+    for(const auto& [actor,lease]:previous){
+        if(!current())return;
+        if(!InNext(actor))(void)coop::prop_drive_host::ReleaseOwned(lease,current);
+    }
 }
 
 void ResetPropClaims() {
+    ++g_claimEpoch;g_claimLeases.clear();
     g_tied.clear();
     g_next.clear();
     g_tiedHolders.clear();

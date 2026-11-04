@@ -69,19 +69,39 @@ void* CordOf(void* a) {
 void* SocketOf(void* a) { return IsCord(a) ? Socket(a) : nullptr; }
 void* Parent(void* a) { static R::InstanceOffset f{L"parent"}; return Obj(a, f); }
 void* Socket(void* a) { static R::InstanceOffset f{L"socket"}; return Obj(a, f); }
-bool ReadHeadPose(void* a, FVector& location, FRotator& rotation) {
-    static R::InstanceOffset f{L"head"};
-    void* head = Obj(a, f);
-    if (!IsCord(a) || !Location(head, location)) return false;
-    rotation = engine::GetComponentWorldRotation(head);
-    return std::isfinite(rotation.Pitch) && std::isfinite(rotation.Yaw) && std::isfinite(rotation.Roll);
+struct HeadScope {
+    CachedObjRef actor,cls,head,headClass;
+    uint32_t world=world_identity::Generation();
+    const std::function<bool()>& allowed;
+    explicit HeadScope(void* a,const std::function<bool()>& guard):allowed(guard){
+        static R::InstanceOffset field{L"head"};
+        if(!a||!R::IsLive(a))return;
+        actor.Set(a);cls.Set(R::ClassOf(a));head.Set(Obj(a,field));
+        if(head.Get())headClass.Set(R::ClassOf(head.Raw()));
+    }
+    bool Current()const{
+        static R::InstanceOffset field{L"head"};
+        return (!allowed||allowed()) && world==world_identity::Generation() && actor.Get() && cls.Get() &&
+            R::ClassOf(actor.Raw())==cls.Raw() && head.Get() && headClass.Get() &&
+            R::ClassOf(head.Raw())==headClass.Raw() && Obj(actor.Raw(),field)==head.Raw();
+    }
+};
+bool ReadHeadPose(void* a, FVector& location, FRotator& rotation,const std::function<bool()>& current) {
+    if((current&&!current())||!IsCord(a))return false;
+    const HeadScope scope(a,current);
+    FVector where{};FRotator angle{};
+    if(!scope.Current()||!Location(scope.head.Raw(),where)||!scope.Current())return false;
+    angle=engine::GetComponentWorldRotation(scope.head.Raw());
+    if(!scope.Current()||!std::isfinite(angle.Pitch)||!std::isfinite(angle.Yaw)||!std::isfinite(angle.Roll))return false;
+    location=where;rotation=angle;return true;
 }
-bool WriteHeadPose(void* a, const FVector& location, const FRotator& rotation) {
-    static R::InstanceOffset f{L"head"};
-    if (!IsCord(a)) return false;
-    CachedObjRef actor, head; actor.Set(a); head.Set(Obj(a, f));
-    return head.Get() && SetLocation(head.Get(), location) && actor.Get() && head.Get() &&
-        engine::SetComponentWorldRotation(head.Get(), rotation);
+bool WriteHeadPose(void* a, const FVector& location, const FRotator& rotation,const std::function<bool()>& current) {
+    const auto where=location;const auto angle=rotation;
+    if((current&&!current())||!IsCord(a)||!std::isfinite(where.X)||!std::isfinite(where.Y)||!std::isfinite(where.Z)||
+        !std::isfinite(angle.Pitch)||!std::isfinite(angle.Yaw)||!std::isfinite(angle.Roll))return false;
+    const HeadScope scope(a,current);
+    return scope.Current() && SetLocation(scope.head.Raw(),where) && scope.Current() &&
+        engine::SetComponentWorldRotation(scope.head.Raw(),angle) && scope.Current();
 }
 void* Occupant(void* a) { static R::InstanceOffset f{L"cord"}; return Obj(a, f); }
 bool Dragging(void* a) { bool b = false; return Bit(a, L"drag", b) && b; }
@@ -89,11 +109,14 @@ bool Powered(void* a, bool& out) { return Bit(a, L"powered", out); }
 bool Disconnect(void* a) {
     return IsCord(a) && component_calls::CallParamlessNamed(a, L"disconnect");
 }
-bool Connect(void* a, void* socket) {
-    if (!IsCord(a) || !IsSocket(socket)) return false;
-    CachedObjRef cordRef, socketRef; cordRef.Set(a); socketRef.Set(socket);
+bool Connect(void* a, void* socket,const std::function<bool()>& allowed) {
+    if ((allowed&&!allowed()) || !IsCord(a) || !IsSocket(socket)) return false;
+    CachedObjRef cordRef, socketRef,cordClass,socketClass; cordRef.Set(a); socketRef.Set(socket);
+    cordClass.Set(R::ClassOf(a));socketClass.Set(R::ClassOf(socket));
     const auto world = world_identity::Generation();
-    auto current = [&] { return world == world_identity::Generation() && cordRef.Get() && socketRef.Get(); };
+    auto current = [&] { return (!allowed||allowed()) && world == world_identity::Generation() && cordRef.Get() && socketRef.Get() &&
+        cordClass.Get() && socketClass.Get() && R::ClassOf(a)==cordClass.Raw() && R::ClassOf(socket)==socketClass.Raw(); };
+    if(!current())return false;
     if (Socket(a) == socket && Occupant(socket) == a) return true;
     void* occupant = Occupant(socket);
     if (occupant && occupant != a) return false;
@@ -120,15 +143,21 @@ bool SetPower(void* socket, bool powered) {
     ParamFrame f(fn);
     return f.valid() && f.Set<bool>(L"active", powered) && Call(socket, f);
 }
-bool InCableReach(void* a, void* socket) {
+bool InCableReach(void* a, void* socket,const std::function<bool()>& allowed) {
     static R::InstanceOffset root{L"root"}, dir{L"dir"}, length{L"cordMaxLength"};
-    if (!IsCord(a) || !IsSocket(socket)) return false;
-    CachedObjRef cordRef, socketRef, rootRef, dirRef;
+    if ((allowed&&!allowed()) || !IsCord(a) || !IsSocket(socket)) return false;
+    CachedObjRef cordRef, socketRef, rootRef, dirRef,cordClass,socketClass,rootClass,dirClass;
     cordRef.Set(a); socketRef.Set(socket); rootRef.Set(Obj(a, root)); dirRef.Set(Obj(socket, dir));
+    cordClass.Set(R::ClassOf(a));socketClass.Set(R::ClassOf(socket));
+    if(rootRef.Get())rootClass.Set(R::ClassOf(rootRef.Raw()));
+    if(dirRef.Get())dirClass.Set(R::ClassOf(dirRef.Raw()));
     const auto world = world_identity::Generation();
     auto current = [&] {
-        return world == world_identity::Generation() && cordRef.Get() && socketRef.Get() &&
-            rootRef.Get() && dirRef.Get() && Obj(a, root) == rootRef.Get() && Obj(socket, dir) == dirRef.Get();
+        return (!allowed||allowed()) && world == world_identity::Generation() && cordRef.Get() && socketRef.Get() &&
+            rootRef.Get() && dirRef.Get() && cordClass.Get() && socketClass.Get() && rootClass.Get() && dirClass.Get() &&
+            R::ClassOf(a)==cordClass.Raw() && R::ClassOf(socket)==socketClass.Raw() &&
+            R::ClassOf(rootRef.Raw())==rootClass.Raw() && R::ClassOf(dirRef.Raw())==dirClass.Raw() &&
+            Obj(a, root) == rootRef.Get() && Obj(socket, dir) == dirRef.Get();
     };
     FVector from{}, to{}; float limit = 0;
     const int32_t off = length.Of(a);

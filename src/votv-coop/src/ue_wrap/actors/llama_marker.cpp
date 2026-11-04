@@ -5,6 +5,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/keyed_objects.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <optional>
@@ -20,10 +21,19 @@ struct Live {
     bool Current()const{return world&&world==world_identity::CurrentWorld()&&generation==world_identity::Generation()&&actor.Get()&&cls.Get()&&
         R::ClassOf(actor.Get())==cls.Get()&&world_identity::WorldOf(actor.Get())==world&&R::NameEquals(R::NameOf(cls.Get()),kClass)&&Ancestry(cls.Get(),L"actor_save_C");}
 };
-std::optional<Live> g_cleanup;bool g_cleaning=false;uint64_t g_cleanupRevision=0;
+std::optional<Live> g_cleanup;bool g_cleaning=false,g_spawning=false;uint64_t g_cleanupRevision=0;
+std::chrono::steady_clock::time_point g_cleanupNext{};
 bool Same(const Live& a,const Live& b){return a.actor.Is(b.actor.Get())&&a.cls.Is(b.cls.Get())&&a.world==b.world&&a.generation==b.generation;}
 void Cleanup(){if(g_cleaning||!g_cleanup)return;const auto owned=*g_cleanup;
-    if(!owned.Current()){g_cleanup.reset();return;}const auto revision=g_cleanupRevision;
+    if(!owned.Current()){
+        // A temporarily absent world is not proof that this owned body retired.
+        // Never destroy in that window, but retain the debt until the world returns
+        // or its generation/actor/class is conclusively replaced.
+        const auto world=world_identity::CurrentWorld();
+        if(!owned.actor.Get()||!owned.cls.Get()||R::ClassOf(owned.actor.Get())!=owned.cls.Get()||
+           owned.generation!=world_identity::Generation()||(world&&world!=owned.world))g_cleanup.reset();
+        return;
+    }const auto revision=g_cleanupRevision;
     struct Guard{Guard(){g_cleaning=true;}~Guard(){g_cleaning=false;}}guard;engine::DestroyActor(owned.actor.Get());
     if(g_cleanup&&revision==g_cleanupRevision&&!owned.actor.Get())g_cleanup.reset();}
 void Dispose(const Live& owned){if(!owned.Current())return;g_cleanup=owned;++g_cleanupRevision;Cleanup();}
@@ -119,7 +129,10 @@ bool Apply(void* actor,const S::SaveRecord& incoming){S::SaveRecord record;if(!N
     uint8_t accepted=0;if(!frame.GetRaw(L"return",&accepted,1)||accepted!=1||!SetKey(source.actor.Get(),record.key)||!source.Current())return false;
     std::wstring key;if(!ReadKey(source,key)||key!=record.key)return false;if(g_cleanup&&Same(*g_cleanup,source))g_cleanup.reset();return true;
 }
-void* Spawn(const S::SaveRecord& incoming){S::SaveRecord record;if(!Normalize(incoming,record)||!keyed_objects::Available())return nullptr;
+void* Spawn(const S::SaveRecord& incoming){
+    if(g_spawning||g_cleaning)return nullptr;
+    struct Guard{Guard(){g_spawning=true;}~Guard(){g_spawning=false;}}guard;
+    S::SaveRecord record;if(!Normalize(incoming,record)||!keyed_objects::Available())return nullptr;
     const auto world=world_identity::CurrentWorld();const auto generation=world_identity::Generation();if(!world)return nullptr;
     void* existing=keyed_objects::Resolve(record.key.c_str());if(existing)return Is(existing)&&Apply(existing,record)?existing:nullptr;
     Cleanup();if(g_cleanup||world!=world_identity::CurrentWorld()||generation!=world_identity::Generation())return nullptr;
@@ -131,6 +144,11 @@ void* Spawn(const S::SaveRecord& incoming){S::SaveRecord record;if(!Normalize(in
     if(!engine::FinishDeferredSpawn(actor,position,rotation)||!source.Current()||!cls.Is(source.cls.Get())||!Apply(actor,record)){
         Dispose(source);return nullptr;
     }return source.Current()?source.actor.Get():nullptr;
+}
+void Tick(){
+    if(!g_cleanup||g_cleaning||g_spawning)return;
+    const auto now=std::chrono::steady_clock::now();if(now<g_cleanupNext)return;
+    g_cleanupNext=now+std::chrono::milliseconds(250);Cleanup();
 }
 void OnDisconnect(){Cleanup();}
 }

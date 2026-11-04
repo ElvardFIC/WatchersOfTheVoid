@@ -9,11 +9,14 @@
 #include "ue_wrap/core/types.h"
 
 #include <vector>
+#include <functional>
 #include <cstdint>
 
 namespace ue_wrap::engine {
 
 bool ReleaseMainPlayerGrabIfHolding(void* localPlayer, void* actor);
+bool ReleaseMainPlayerGrabIfHoldingWhile(void* localPlayer, void* actor,
+                                        const std::function<bool()>& current, bool* dispatched=nullptr);
 
 // True iff `localPlayer`'s grabbing_actor slot holds `actor`; no mutation. A held prop is skipped
 // by the physics reconcile: forcing SimulatePhysics off mid-hold breaks the grab. Game thread.
@@ -71,6 +74,8 @@ bool ReadInputRun(void* mainPlayer, bool& out);
 // held before destroyed. A dev drill's equip, after ue_wrap/actors/inventory::WriteHeldItem.
 // False when the function does not resolve or the call fails. Game thread.
 bool CallMainPlayerUpdateHold(void* mainPlayer);
+bool CallMainPlayerUpdateHoldWhile(void* mainPlayer, const std::function<bool()>& current,
+                                   bool* dispatched);
 
 // The player's useSelectedAction, where the dispatch of E ends once its handler's own gating passes
 // (InpActEvt_use: nothing grabbed, a look-at actor that answers): the selected action sent to whatever

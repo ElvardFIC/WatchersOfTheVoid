@@ -49,8 +49,9 @@ void OnShortPayload(size_t got);
 void FillAcks(coop::net::FuseTowerPayload& p, int answerSlot);
 
 // HOST: the answer that carried `slot`'s oldest refused claim was taken by the send; it is told, and leaves. Whether
-// the slot has more to tell.
-void RefusedTold(uint8_t slot);
+// the slot has more to tell. The receipt must name the exact sequence sent;
+// a transport callback may have replaced the head or its occupant.
+void RefusedTold(uint8_t slot, uint16_t expectedSeq);
 bool RefusedPending(uint8_t slot);
 
 // CLIENT: the rows' answer to my ops: the claims they acknowledge leave, and the refused pull they tell of has its

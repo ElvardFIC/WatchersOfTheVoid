@@ -128,6 +128,11 @@ public:
 
     // True while a ragdoll display body is spawned: the peer is ragdolled (fainted, fell, died).
     bool IsRagdollDisplayed() const { return ragdoll_.Active(); }
+    bool CanPlayEmote() const {
+        return health_>0 && !ragdoll_.Active() &&
+            !(curStateBits_ & (net::kStateBitInAir | net::kStateBitSleeping |
+                               net::kStateBitRagdoll | net::kStateBitSitting | net::kStateBitComputer));
+    }
     bool IsSitting() const {
         return (curStateBits_ & net::kStateBitSitting) != 0 &&
             (curStateBits_ & (net::kStateBitSleeping | net::kStateBitRagdoll | net::kStateBitComputer)) == 0;

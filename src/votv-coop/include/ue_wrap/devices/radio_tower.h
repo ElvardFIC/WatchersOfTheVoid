@@ -36,7 +36,7 @@ struct State {
 
 // The gamemode's radiotower, or null while the gamemode or the tower is not there or the wrapper is latched off.
 // Resolves the class's members from the tower it finds; a member missing from the loaded class latches the
-// wrapper off with one warning naming it, since it will not appear later.
+// class incarnation off with one warning naming it. Replacement classes retry.
 void* Instance();
 
 // Whether `obj` is the radio tower. An unresolved wrapper resolves from the object's own class: a name compare and
@@ -47,6 +47,8 @@ bool Read(void* tower, State& out);
 
 // Raw writes: nothing repaints. WriteCells takes the tower's own count of cells and no other.
 bool WriteAnimation(void* tower, bool animation);
+// Direct canonical flag write; no stateChanged delegate or presentation effect.
+bool WriteBroken(void* tower, bool broken);
 bool WriteFuse(void* tower, int32_t slot, uint8_t value);
 bool WriteCells(void* tower, const bool* cells, int32_t count);
 

@@ -9,11 +9,13 @@
 #include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 
 #include "ue_wrap/actors/geom_octa.h"
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
@@ -49,6 +51,8 @@ constexpr int kTagFinish = 0x4F435437;   // 'OCT7'
 constexpr int32_t kEntryOverlap = 3766;
 constexpr int32_t kEntryAggro = 3592;
 constexpr int32_t kEntryFireFinish = 1092;
+// End of minSphere.IsOverlappingActor(targetActor) in the 0.9.0n graph.
+constexpr int32_t kFireOverlapEnd = 1227;
 
 // Divergence from MTA, which resends a syncer's ped state every pulse so a lost packet is replaced by the next
 // (reference/mtasa-blue/Server/mods/deathmatch/logic/CPedSync.cpp:220, :305): these decisions are one-shot and paired by
@@ -100,6 +104,8 @@ struct Kept {
 
 struct OctaState {
     uint32_t eid = 0;   // 0: free
+    ue_wrap::CachedObjRef actor;
+    uint64_t revision = 0;
 
     // An Aggro waiting to be replayed (the newest; an older one unreplayed is superseded).
     bool     aggroPending = false;
@@ -127,8 +133,35 @@ OctaState g_octas[kMaxOctas];
 Counters  g_counters{};
 
 bool g_watched = false;
-void* g_overlapFn = nullptr;   // IsOverlappingActor, once its post hook is installed
-bool  g_hookTried = false;     // tried once, at the first Aggro this client applies; a failure is latched
+ue_wrap::CachedObjRef g_overlapFn;
+uint64_t g_hookRetryAt = 0, g_epoch = 0, g_revision = 0;
+uint32_t g_world = 0;
+uint32_t g_serial=0;
+uint64_t g_stops=0;
+N::Role g_role=N::Role::Client;
+N::Session* g_session = nullptr;
+bool g_ticking = false;
+
+bool Current() {
+    return g_session && g_session == coop::npc_sync::GetSession() && g_session->running() &&
+        g_session->connected() && g_role==N::Role::Client && g_session->role() == N::Role::Client &&
+        g_world == ue_wrap::world_identity::Generation() && g_serial==N::session_serial::Current() && g_stops==g_session->StopCount();
+}
+
+bool EnterSession() {
+    auto* session = coop::npc_sync::GetSession();
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto serial=N::session_serial::Current();
+    if (session != g_session || world != g_world || g_serial!=serial ||
+        (session&&(g_stops!=session->StopCount() || g_role!=session->role()))) {
+        OnDisconnect();
+        g_session = session;
+        g_world = world;
+        g_serial=serial;g_stops=session?session->StopCount():0;
+        g_role=session?session->role():N::Role::Client;
+    }
+    return Current();
+}
 
 unsigned long long Now() { return static_cast<unsigned long long>(N::NowMs()); }
 
@@ -160,17 +193,40 @@ OctaState* Find(uint32_t eid) {
     return nullptr;
 }
 
-OctaState* Take(uint32_t eid) {
+void* OctaMirrorOf(uint32_t eid);
+
+bool Live(const OctaState& st) {
+    return st.eid && st.actor.Get() && OctaMirrorOf(st.eid) == st.actor.Raw();
+}
+
+OctaState* Take(uint32_t eid, void* actor) {
+    for (auto& o : g_octas) if (o.eid && !Live(o)) o = {};
     if (OctaState* o = Find(eid)) return o;
     for (OctaState& o : g_octas) {
         if (o.eid == 0) {
             o = OctaState{};
             o.eid = eid;
+            o.actor.Set(actor);
+            o.revision = ++g_revision;
             return &o;
         }
     }
     return nullptr;
 }
+
+// Native calls may disconnect, replace an actor or admit another attack. A
+// receipt belongs only to the binding and attack captured before that call.
+struct Receipt {
+    uint32_t eid;
+    uint64_t revision, epoch;
+    ue_wrap::CachedObjRef actor;
+    explicit Receipt(const OctaState& st) : eid(st.eid), revision(st.revision), epoch(g_epoch), actor(st.actor) {}
+    bool Valid() const {
+        if (epoch != g_epoch || !Current() || !actor.Get()) return false;
+        const auto* st = Find(eid);
+        return st && st->revision == revision && st->actor.Get() == actor.Raw() && Live(*st);
+    }
+};
 
 void TargetText(uint8_t kind, uint32_t v, char (&out)[40]) {
     if (kind == N::kGeomOctaTargetSlot) std::snprintf(out, sizeof(out), "slot:%u", static_cast<unsigned>(v));
@@ -218,8 +274,9 @@ bool ResolveTarget(uint8_t kind, uint32_t v, void*& out) {
 
 struct Overwrite {
     bool    armed = false;
-    void*   minSphere = nullptr;
-    void*   graph = nullptr;
+    ue_wrap::CachedObjRef actor, minSphere, graph, function;
+    uint64_t epoch = 0, revision = 0;
+    uint32_t eid = 0;
     uint8_t refire = 0;
     uint32_t writes = 0;   // the answers written during the armed replay
 };
@@ -228,11 +285,18 @@ Overwrite g_ow;
 // After a native IsOverlappingActor: writes the host's answer into the result, one byte (the native's bool), only for
 // the call the replayed notify makes on this Octa's minSphere from its own graph in the frame the pass ran. Any other
 // call passes untouched, and so does any call off the game thread: natives are reached from other threads.
-void OnOverlapPost(void* context, void* /*source*/, void* /*result*/) {
+void OnOverlapPost(void* context, void* source, void* /*result*/) {
     if (!ue_wrap::game_thread::IsGameThread()) return;
-    if (!g_ow.armed || context != g_ow.minSphere) return;
+    if (!g_ow.armed || g_ow.epoch != g_epoch || !Current() ||
+        !g_ow.actor.Get() || source != g_ow.actor.Raw() ||
+        !g_ow.minSphere.Get() || context != g_ow.minSphere.Raw() ||
+        !g_ow.graph.Get() || !g_ow.function.Get() || UH::CurrentNativeFunction() != g_ow.function.Raw()) return;
+    const auto* st = Find(g_ow.eid);
+    if (!st || st->revision != g_ow.revision || !Live(*st) ||
+        GO::MinSphere(source) != context || GO::GraphFunction(source) != g_ow.graph.Raw()) return;
     const UH::CallerFrame frame = UH::CurrentCallerFrame();
-    if (frame.function != g_ow.graph || !frame.locals || frame.locals != B::ScopedEntryPass::Frame()) return;
+    if (frame.function != g_ow.graph.Raw() || !frame.locals || frame.locals != B::ScopedEntryPass::Frame() ||
+        frame.codeOffset != kFireOverlapEnd || g_ow.writes != 0) return;
     if (void* r = UH::CurrentResult()) {
         *static_cast<uint8_t*>(r) = g_ow.refire;
         ++g_ow.writes;
@@ -240,31 +304,52 @@ void OnOverlapPost(void* context, void* /*source*/, void* /*result*/) {
     }
 }
 
-// Arms the overwrite for one replay and disarms it on every way out. With no hook installed there is nothing to arm,
-// and the replay's overlap read is the client's own.
+// Never replace an outer replay's overwrite. The captured hook is disarmed even
+// if a disconnect clears the lane while the native call is running.
 class ArmScope {
 public:
-    ArmScope(void* octa, uint8_t refire) {
-        g_ow = Overwrite{true, GO::MinSphere(octa), GO::GraphFunction(octa), refire, 0};
-        if (g_overlapFn) UH::SetArmed(g_overlapFn, &OnOverlapPost, true);
+    ArmScope(const OctaState& st, uint8_t refire) {
+        if (g_ow.armed || !Current() || !Live(st) || !g_overlapFn.Get()) return;
+        Overwrite next{};
+        next.actor = st.actor;
+        next.minSphere.Set(GO::MinSphere(st.actor.Get()));
+        next.graph.Set(GO::GraphFunction(st.actor.Get()));
+        next.function = g_overlapFn;
+        if (!next.minSphere.Get() || !next.graph.Get()) return;
+        next.epoch = g_epoch; next.revision = st.revision; next.eid = st.eid;
+        next.refire = refire; next.armed = true;
+        if (!UH::SetArmed(next.function.Get(), &OnOverlapPost, true)) return;
+        function_ = next.function;
+        owns_ = true;
+        g_ow = next;
     }
     ~ArmScope() {
-        if (g_overlapFn) UH::SetArmed(g_overlapFn, &OnOverlapPost, false);
-        g_ow = Overwrite{};
+        if (!owns_) return;
+        if (function_.Get()) UH::SetArmed(function_.Get(), &OnOverlapPost, false);
+        g_ow = {};
     }
+    bool Ready() const { return owns_; }
     ArmScope(const ArmScope&) = delete;
     ArmScope& operator=(const ArmScope&) = delete;
+private:
+    bool owns_ = false;
+    ue_wrap::CachedObjRef function_;
 };
 
-// The disarmed post hook on the overlap read, tried once, at the first Aggro this client applies: a client that never
-// sees an Octa pays nothing for it. A failure is latched and said; the verdict replays then run without the answer.
-void EnsureHook() {
-    if (g_hookTried) return;
-    g_hookTried = true;
+// Retry unavailable metadata/hooks at most once per second. No verdict may run
+// against the client's local overlap answer while this hook is unavailable.
+bool EnsureHook() {
+    if (g_overlapFn.Get()) return true;
+    const auto now = N::NowMs();
+    if (now < g_hookRetryAt) return false;
+    g_hookRetryAt = now + 1000;
     const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowIsOverlappingActor);
-    if (fn && UH::InstallPostHook(fn, &OnOverlapPost, /*armed=*/false)) g_overlapFn = fn.Fn();
-    else UE_LOGE("geom_octa_relay: the IsOverlappingActor hook did not install -- a verdict is replayed without the host's "
-                 "answer written into the overlap read");
+    if (fn && UH::InstallPostHook(fn, &OnOverlapPost, false)) {
+        g_overlapFn.Set(fn.Fn());
+        return g_overlapFn.Get() != nullptr;
+    }
+    if (!SaidOnce("hook", "unavailable")) UE_LOGW("geom_octa_relay: overlap hook unavailable; verdicts wait for retry");
+    return false;
 }
 
 // ---- the refused notify, counted ----
@@ -273,10 +358,10 @@ void EnsureHook() {
 // serves it with one of the host's kept verdicts (latest wins) or times it out. The lane's own replay of the same function is not counted, or a re-fire's
 // replay would shift every later pairing by one.
 sg::Verdict OnFinishPre(const sg::Call& call) {
-    if (call.fromOurCode || !GO::IsFinishNotify(call) || !B::IsMarkedMirror(call.object)) return sg::Verdict::Run;
+    if (!Current() || call.fromOurCode || !GO::IsFinishNotify(call) || !B::IsMarkedMirror(call.object)) return sg::Verdict::Run;
     const EL::ElementId eid = EL::Registry::Get().EidForActor(call.object);
     OctaState* st = eid == EL::kInvalidId ? nullptr : Find(static_cast<uint32_t>(eid));
-    if (!st || !st->haveBase) return sg::Verdict::Run;
+    if (!st || !st->haveBase || !Live(*st) || st->actor.Get() != call.object) return sg::Verdict::Run;
     if (st->waitCount == kMaxWaiting) {   // sixteen unanswered notifies: unreachable at one a 1.8 s with a 4.2 s wait
         LogDroppedVerdict(st->eid, 0, "too many refused notifies awaiting a verdict");
         return sg::Verdict::Run;
@@ -292,7 +377,6 @@ sg::Verdict OnFinishPre(const sg::Call& call) {
 void SetBase(OctaState& st, uint32_t base) {
     st.haveBase = true;
     st.base = base;
-    EnsureHook();   // the verdicts of this attack will need it, whether or not its own look is replayed
     st.done = 0;
     st.waitHead = st.waitCount = 0;
     for (bool& s : st.pendingSaid) s = false;
@@ -331,6 +415,8 @@ void SkipAggro(OctaState& st, const char* why) {
 }
 
 void ServeAggro(OctaState& st, void* octa, uint64_t now) {
+    const Receipt receipt(st);
+    if (!receipt.Valid()) return;
     if (!st.aggroPending) return;
     if (GO::IsAnim(octa)) {   // busy: the previous attack's close has not finished here yet
         if (!st.heldSaid) {
@@ -353,6 +439,7 @@ void ServeAggro(OctaState& st, void* octa, uint64_t now) {
         B::ScopedEntryPass pass(octa, {kEntryOverlap, kEntryAggro});
         ran = GO::CallMinSphereBeginOverlap(octa, other);
     }
+    if (!receipt.Valid()) return;
     if (ran) {
         ++g_counters.aggroReplayed;
         LogAggro("replayed", st, nullptr);
@@ -368,20 +455,36 @@ struct Replay {
     bool     ran = false;
     uint32_t wrote = 0;
 };
-Replay ReplayFinish(void* octa, uint8_t refire) {
-    ArmScope arm(octa, refire);
+Replay ReplayFinish(const OctaState& st, const ArmScope& arm) {
+    const Receipt receipt(st);
+    if (!receipt.Valid()) return {};
     Replay r;
+    if (!arm.Ready()) return r;
     {
+        void* octa = receipt.actor.Get();
         B::ScopedEntryPass pass(octa, {kEntryFireFinish});
         r.ran = GO::CallFireFinishNotify(octa);
     }
-    r.wrote = g_ow.writes;
+    if (receipt.Valid()) r.wrote = g_ow.writes;
     return r;
 }
 
 void ServeVerdicts(OctaState& st, void* octa, uint64_t now) {
+    const Receipt receipt(st);
+    if (!receipt.Valid()) return;
     if (!st.haveBase) return;
-    while (st.waitCount > 0) {
+    size_t budget = kMaxWaiting;
+    while (st.waitCount > 0 && budget--) {
+        const bool ready = EnsureHook() && GO::MinSphere(octa) && GO::GraphFunction(octa);
+        if (!receipt.Valid()) return;
+        if (!ready) {
+            if (now - st.waitAt[st.waitHead] <= kVerdictWaitMs) return;
+            ++st.done;
+            st.waitHead = (st.waitHead + 1) % kMaxWaiting;
+            --st.waitCount;
+            LogDroppedVerdict(st.eid, st.base + st.done, "host-answer hook or replay binding unavailable at timeout");
+            continue;
+        }
         // The kept verdicts numbered past `done` (relative to the base, modular), ascending by that number.
         size_t order[kMaxKept];
         size_t k = 0;
@@ -405,6 +508,8 @@ void ServeVerdicts(OctaState& st, void* octa, uint64_t now) {
             const size_t at = order[retire];
             gone[at] = true;
             const Kept v = st.kept[at];
+            ArmScope arm(st, v.refire);
+            if (!arm.Ready() && now - st.waitAt[slot] <= kVerdictWaitMs) return;
             size_t w = 0;
             for (size_t i = 0; i < st.keptCount; ++i)
                 if (!gone[i]) st.kept[w++] = st.kept[i];
@@ -413,14 +518,15 @@ void ServeVerdicts(OctaState& st, void* octa, uint64_t now) {
             st.done = v.n - st.base;
             st.waitHead = (st.waitHead + 1) % kMaxWaiting;
             --st.waitCount;
-            const Replay r = ReplayFinish(octa, v.refire);
-            if (r.ran) {
+            const Replay r = ReplayFinish(st, arm);
+            if (!receipt.Valid()) return;
+            if (r.ran && r.wrote == 1) {
                 ++g_counters.verdictApplied;
                 UE_LOGI("[OCTA] verdict applied eid=%u n=%u refire=%u wrote=%u t=%llu", static_cast<unsigned>(st.eid),
                         static_cast<unsigned>(v.n), static_cast<unsigned>(v.refire), static_cast<unsigned>(r.wrote),
                         Now());
             } else {
-                LogDroppedVerdict(st.eid, v.n, "the notify did not run");
+                LogDroppedVerdict(st.eid, v.n, "the notify did not confirm one host answer");
             }
             continue;
         }
@@ -431,15 +537,18 @@ void ServeVerdicts(OctaState& st, void* octa, uint64_t now) {
         }
         if (now - st.waitAt[slot] <= kVerdictWaitMs) return;
         // No verdict in time: the look ends with the Octa idle (refire 0), and the next Aggro starts clean.
+        ArmScope arm(st, 0);
         ++st.done;
         st.waitHead = (st.waitHead + 1) % kMaxWaiting;
         --st.waitCount;
-        if (ReplayFinish(octa, 0).ran) {
+        const Replay replay = ReplayFinish(st, arm);
+        if (!receipt.Valid()) return;
+        if (replay.ran && replay.wrote == 1) {
             ++g_counters.verdictTimeout;
             UE_LOGI("[OCTA] verdict timeout eid=%u n=%u t=%llu", static_cast<unsigned>(st.eid),
                     static_cast<unsigned>(want), Now());
         } else {
-            LogDroppedVerdict(st.eid, want, "the notify did not run at its timeout");
+            LogDroppedVerdict(st.eid, want, "the timeout notify did not confirm one host answer");
         }
     }
 }
@@ -459,6 +568,7 @@ void EnsureWatched() {
 }  // namespace
 
 void OnEvent(const N::GeomOctaEventPayload& p) {
+    if (!EnterSession()) return;
     const Reject why = Check(p);
     if (why != Reject::None) {
         const uint32_t n = ++g_rejected[static_cast<int>(why)];
@@ -469,11 +579,12 @@ void OnEvent(const N::GeomOctaEventPayload& p) {
     }
     // The host sends none before the Octa's EntitySpawn, which rides the same lane: an Octa that is no live, marked
     // mirror here is destroyed, or the host is wrong. Nothing is reflected on anything else.
-    if (!OctaMirrorOf(p.octaEid)) {
+    void* actor = OctaMirrorOf(p.octaEid);
+    if (!actor) {
         LogDroppedEvent(p, "no live Octa mirror");
         return;
     }
-    OctaState* st = Take(p.octaEid);
+    OctaState* st = Take(p.octaEid, actor);
     if (!st) {
         LogDroppedEvent(p, "more Octas than tracked");
         return;
@@ -487,6 +598,7 @@ void OnEvent(const N::GeomOctaEventPayload& p) {
     }
     if (p.op == N::kGeomOctaOpAggro) {
         if (st->aggroPending) SkipAggro(*st, "superseded by a newer Aggro");
+        st->revision = ++g_revision;
         st->aggroPending = true;
         st->targetKind = p.targetKind;
         st->target = p.target;
@@ -522,26 +634,35 @@ void OnEvent(const N::GeomOctaEventPayload& p) {
 }
 
 void Tick() {
-    N::Session* s = coop::npc_sync::GetSession();
-    if (!s || s->role() != N::Role::Client) return;
+    if (g_ticking || !EnterSession()) return;
+    struct Guard { Guard() { g_ticking = true; } ~Guard() { g_ticking = false; } } guard;
+    const auto epoch = g_epoch;
     EnsureWatched();
     uint64_t now = 0;   // read once, and only when an Octa is live
     for (OctaState& st : g_octas) {
         if (st.eid == 0) continue;
         void* octa = OctaMirrorOf(st.eid);
-        if (!octa) {   // the Octa ended: its holds and counts go with it
+        if (!octa || !Live(st)) {
             st = OctaState{};
             continue;
         }
         if (!now) now = N::NowMs();
+        const Receipt receipt(st);
         ServeAggro(st, octa, now);
+        if (epoch != g_epoch || !Current()) return;
+        if (!receipt.Valid()) continue;
         ServeVerdicts(st, octa, now);
+        if (epoch != g_epoch || !Current()) return;
     }
 }
 
 Counters GetCounters() { return g_counters; }
 
 void OnDisconnect() {
+    ++g_epoch;
+    g_session = nullptr;
+    g_world = 0;
+    g_hookRetryAt = 0;
     for (OctaState& o : g_octas) o = OctaState{};
     g_counters = Counters{};
 }

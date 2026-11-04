@@ -14,6 +14,7 @@
 #include "ue_wrap/core/types.h"  // FVector
 
 #include <cstdint>
+#include <functional>
 
 namespace ue_wrap::facts { class Function; }
 
@@ -71,15 +72,24 @@ struct ApplyCtx {
     uint8_t                          prevFlags = 0;
     coop::fuse_tower_rows::Edges*    edges = nullptr;
     bool*                            sizeWarned = nullptr;
+    std::function<bool()> current;
+    // Consume a presentation/native-effect attempt before calling into the engine.
+    // Declarative writes may retry; uncertain effects are not replayed.
+    std::function<bool(uint64_t)> firstAttempt;
+    // Return the owned mask after adding requested effects / updating paint debt.
+    std::function<uint64_t(uint64_t)> effects;
+    std::function<uint64_t(uint64_t,uint64_t)> writes;
 };
 
 // CLIENT: the tower brought to `row` (the host's row with my untaken claims), each change made as the tower's own
-// graph makes it.
-void ApplyRow(Kind kind, void* tower, const coop::net::FuseTowerRow& row, const ApplyCtx& ctx);
+// graph makes it. False retains declarative retry debt. Caller-owned effect
+// receipts are consumed before native dispatch and never replay uncertain attempts.
+bool ApplyRow(Kind kind, void* tower, const coop::net::FuseTowerRow& row, const ApplyCtx& ctx);
 
 // CLIENT: the panel brought toward the row's, through the tower's own retract. True when the retract was asked;
 // `opens` is the way it was asked, `ran` whether the retract ran. A kind with no panel asks nothing.
-bool ConvergePanel(Kind kind, void* tower, void* player, const coop::net::FuseTowerRow& row, bool& opens, bool& ran);
+bool ConvergePanel(Kind kind, void* tower, void* player, const coop::net::FuseTowerRow& row, bool& opens, bool& ran,
+                   const std::function<bool()>& current={});
 
 // ---- ops ---------------------------------------------------------------------------------------------------
 
@@ -115,17 +125,18 @@ bool EasyInsert();
 
 // HOST: the move on the host's copy; the fuse is already in or out of the player's hand (an insert's already
 // spent, above the two easiest difficulties).
-void TakePull(Kind kind, void* tower, int32_t slot);
-void TakeInsert(Kind kind, void* tower, int32_t slot);
+bool TakePull(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current = {});
+bool TakeInsert(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current = {});
 
 // HOST: the easy insert on the host's copy, as the game runs it with the fuse kept: the radio tower writes the
 // slot good and completes its minigame, the coordinate tower solves its puzzle and writes no fuse.
-void TakeEasyInsert(Kind kind, void* tower, int32_t slot);
+void TakeEasyInsert(Kind kind, void* tower, int32_t slot, const std::function<bool()>& current = {});
 
 // The fuse props every kind shares: a good fuse (what an insert takes), one spawned at `at`, and the plain prop a
 // pull hands the puller.
 bool IsFuse(void* actor);
 void* SpawnFuse(const ue_wrap::FVector& at);
+void* SpawnFuseTracked(const ue_wrap::FVector& at, bool& attempted, const std::function<bool()>& current = {});
 bool IsPulledFuse(void* actor);
 
 // ---- the gate ----------------------------------------------------------------------------------------------

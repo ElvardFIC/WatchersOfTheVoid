@@ -15,7 +15,7 @@ Obj& O(void* p){CHECK(p);return *static_cast<Obj*>(p);}void* At(int id){return &
 uintptr_t world=100;uint32_t generation=1;std::map<std::wstring,void*> keys;std::wstring generated=L"native_marker_key";
 int fail=-1,missing=-1,wrongSize=-1,beginCount=0,finishCount=0,destroyCount=0,keyCalls=0,dataCalls=0,loadCalls=0,transformCalls=0;
 bool fields=true,registry=true,loadAccepted=true,finishOK=true,destroyOK=true,setAccepted=true,writeOK=true,wrongLoadKey=false,extraRecord=false;
-std::wstring badParam;void* beginResult=nullptr;std::function<void(int)> onCall;std::function<void()> onBegin,onFinish;
+std::wstring badParam;void* beginResult=nullptr;std::function<void(int)> onCall;std::function<void()> onBegin,onFinish,onDestroy;
 S::SaveRecord nativeRecord,written;
 void Fire(int fn){auto action=std::move(onCall);onCall={};if(action)action(fn);}
 void Fire(std::function<void()>& f){auto action=std::move(f);f={};if(action)action();}
@@ -25,7 +25,7 @@ void Reset(){++world;++generation;for(int i=0;i<Count;++i){objects[i]={};objects
     for(int i=GetKey;i<=SetTransform;++i)objects[i].outer=At(i<=LoadData?SaveClass:EngineClass);
     keys.clear();generated=L"native_marker_key";fail=missing=wrongSize=-1;beginCount=finishCount=destroyCount=keyCalls=dataCalls=loadCalls=transformCalls=0;
     fields=registry=loadAccepted=finishOK=destroyOK=setAccepted=writeOK=true;wrongLoadKey=extraRecord=false;badParam=L"";beginResult=At(Actor);onCall={};onBegin=onFinish={};
-    nativeRecord=written={};M::g_cleanup.reset();}
+    nativeRecord=written={};M::g_cleanup.reset();M::g_cleanupNext={};onDestroy={};}
 std::vector<R::ParamInfo> Params(int fn){std::vector<R::ParamInfo> fields;
     if(fn==GetKey)fields={{L"key",0,8,0}};
     if(fn==GetData)fields={{L"data",0,256,0}};
@@ -77,7 +77,7 @@ namespace ue_wrap::engine {
 FRotator QuatToRotator(float,float,float,float){return {};}
 void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){++test::beginCount;test::Fire(test::onBegin);return test::beginResult;}
 bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){++test::finishCount;test::Fire(test::onFinish);return test::finishOK;}
-bool DestroyActor(void* p){++test::destroyCount;if(test::destroyOK)test::O(p).live=false;return test::destroyOK;}
+bool DestroyActor(void* p){++test::destroyCount;if(test::destroyOK)test::O(p).live=false;test::Fire(test::onDestroy);return test::destroyOK;}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace test {
@@ -114,7 +114,25 @@ void Group(int id){Reset();S::SaveRecord out=Record(L"untouched");auto record=Re
         Reset();record=Record();record.xform[4]=15;setAccepted=false;CHECK(!M::Apply(At(Actor),record)&&!loadCalls);break;
     case 19:CHECK(M::Apply(At(Actor),record)&&objects[Actor].key==record.key&&keys[record.key]==At(Actor));Reset();wrongLoadKey=true;CHECK(!M::Apply(At(Actor),record)&&!keyCalls);
         Reset();objects[Actor].key=record.key;keys[record.key]=At(Actor);CHECK(M::Spawn(record)==At(Actor)&&!beginCount);M::OnDisconnect();CHECK(objects[Actor].live&&!destroyCount);break;
+    case 20:finishOK=false;destroyOK=false;CHECK(!M::Spawn(record)&&M::g_cleanup&&destroyCount==1);
+        M::Tick();CHECK(M::g_cleanup&&destroyCount==2);M::Tick();CHECK(destroyCount==2);
+        destroyOK=true;M::g_cleanupNext={};M::Tick();CHECK(!M::g_cleanup&&!objects[Actor].live&&destroyCount==3);
+        M::Tick();CHECK(destroyCount==3);break;
+    case 21:finishOK=false;destroyOK=false;CHECK(!M::Spawn(record));M::OnDisconnect();CHECK(M::g_cleanup&&destroyCount==2);
+        destroyOK=true;M::Tick();CHECK(!M::g_cleanup&&destroyCount==3);break;
+    case 22:for(int cause=0;cause<4;++cause){Reset();finishOK=false;destroyOK=false;CHECK(!M::Spawn(record));
+        if(cause==0)++objects[Actor].serial;if(cause==1)++objects[MarkerClass].serial;if(cause==2)++generation;if(cause==3)++world;
+        destroyOK=true;M::Tick();CHECK(!M::g_cleanup&&destroyCount==1&&objects[Actor].live);}break;
+    case 23:finishOK=false;destroyOK=false;CHECK(!M::Spawn(record));{const auto prior=world;world=0;
+        M::Tick();CHECK(M::g_cleanup&&destroyCount==1);world=prior;destroyOK=true;M::g_cleanupNext={};M::Tick();
+        CHECK(!M::g_cleanup&&destroyCount==2);}break;
+    case 24:onBegin=[record]{CHECK(!M::Spawn(record)&&beginCount==1);};CHECK(M::Spawn(record)==At(Actor)&&beginCount==1&&finishCount==1);break;
+    case 25:onFinish=[record]{CHECK(!M::Spawn(record)&&beginCount==1);};CHECK(M::Spawn(record)==At(Actor)&&beginCount==1&&finishCount==1);break;
+    case 26:finishOK=false;destroyOK=false;CHECK(!M::Spawn(record));onDestroy=[record]{M::Tick();M::OnDisconnect();CHECK(!M::Spawn(record));};
+        M::Tick();CHECK(M::g_cleanup&&destroyCount==2&&beginCount==1);destroyOK=true;M::g_cleanupNext={};M::Tick();CHECK(!M::g_cleanup);break;
+    case 27:finishOK=false;destroyOK=false;CHECK(!M::Spawn(record)&&M::g_cleanup);CHECK(!M::Capture(At(Actor),out));
+        CHECK(M::Apply(At(Actor),record)&&!M::g_cleanup);M::Tick();M::OnDisconnect();CHECK(objects[Actor].live&&destroyCount==1);break;
     default:CHECK(false);}
 }
 }
-int main(){for(int id=1;id<=19;++id){test::Group(id);std::printf("PASS llama lifecycle %d\n",id);}return 0;}
+int main(){for(int id=1;id<=27;++id){test::Group(id);std::printf("PASS llama lifecycle %d\n",id);}return 0;}

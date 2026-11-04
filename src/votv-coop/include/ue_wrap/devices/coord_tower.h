@@ -9,6 +9,7 @@
 // a walk. Principle 7: no network or gameplay logic. Game thread.
 
 #pragma once
+#include <functional>
 
 #include "ue_wrap/core/types.h"  // FVector
 
@@ -34,7 +35,7 @@ struct State {
 
 // Resolve the class, its members and verbs. A missing class is looked for again at most every 2 s, and so is one
 // that has gone with its map; a member missing from the loaded class latches the wrapper off with one warning
-// naming it, since it will not appear later. True while resolved.
+// naming it. A new class incarnation retries its layout. True while resolved.
 bool EnsureResolved();
 
 // Every live tower, sorted by id, into `out`. How many were written, or -1 while the wrapper is not resolved, so
@@ -91,6 +92,7 @@ bool PartLocation(void* tower, const LookAt& at, FVector& out);
 // fuse is the plain prop the pull spawns and names fuse_0.
 bool IsFuse(void* actor);
 void* SpawnFuse(const FVector& at);
+void* SpawnFuseTracked(const FVector& at, bool& attempted, const std::function<bool()>& current = {});
 bool IsPulledFuse(void* actor);
 
 // [dev] the drills' insert as a player makes it: the fuse slot as the look-at, then playerUsedOn(player, a hit on

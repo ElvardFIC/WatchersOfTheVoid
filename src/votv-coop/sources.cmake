@@ -76,6 +76,8 @@ set(VOTVCOOP_SOURCES
     src/coop/props/bucket_sync.cpp
     src/coop/props/water_pour_sync.cpp
     src/coop/props/dingus_music_sync.cpp
+    src/coop/player/emote_sync.cpp
+    src/ue_wrap/actors/emote_wheel.cpp
     src/coop/props/llama_sync.cpp
     src/coop/props/llama_trigger.cpp
     src/coop/props/llama_timers.cpp
@@ -282,6 +284,7 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/hit_target_creature.cpp
     src/coop/creatures/npc_pose_drive.cpp
     src/coop/creatures/npc_pose_host.cpp
+    src/coop/creatures/npc_join_delivery.cpp
     src/coop/creatures/npc_sync.cpp
     src/coop/creatures/npc_sync_install.cpp
     src/coop/creatures/npc_world_enum.cpp

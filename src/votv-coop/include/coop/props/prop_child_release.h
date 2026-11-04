@@ -25,11 +25,14 @@ void Forget(void* door);
 // after the parent. A door a hand holds meanwhile is not touched; its wait just ends.
 void OnParentReleased(void* parent);
 
-// Per tick: a wait whose door or parent died ends, and one past kChildWaitMs releases its door (WARN once).
+// Per tick: a retired door is forgotten. A surviving unheld door whose parent retired is
+// unparked without restoring an old pose. The timeout also releases the door. Refused
+// declarative pose writes retain retry debt; a dispatched unpark is consumed once.
 // Nothing to do, and nothing allocated, while no door waits.
 void Tick(uint64_t nowMs);
 
-// The session ended: every door still waiting is unparked simulating, and the waits are dropped.
+// The session ended: current unheld doors are unparked; waits and in-flight work retire.
+// New hands keep their ownership, and teardown callbacks cannot add another wait.
 void OnDisconnect();
 
 }  // namespace coop::prop_child_release

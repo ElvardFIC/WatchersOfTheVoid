@@ -65,9 +65,10 @@ void OnDisconnect();
 // thread (event_dispatch_entity posts it).
 //
 // The replay stages the native inputs the host held at ITS commit (wispTarget + isWalking,
-// staged once the mirrors interp inside a 10500-unit pre-gate, deliberately WIDER than the
-// native 10000-unit arrive radius, the re-dispatched native check being the real arbiter) and
-// re-dispatches checkIfReached through a TLS allow slot, so the game's OWN bytecode runs the
+// staged once the mirrors reach the native 10000-unit planar radius) and
+// re-dispatches checkIfReached through an actor/function/frame-bound TLS pass. An admitted
+// call is consumed even if its result is uncertain; tick restoration retries independently.
+// The game's own bytecode runs the
 // whole choreography -- montage, proxy delegate binds, notifies, beams, timelines, wisp
 // freeze. Nothing is reimplemented. The 'del' notify's local wisp destroy CONVERGES with the
 // npc lane's authoritative EntityDestroy: a client mirror is never in npc_sync's host reverse

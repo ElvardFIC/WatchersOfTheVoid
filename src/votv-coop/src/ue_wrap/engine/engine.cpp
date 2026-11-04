@@ -202,34 +202,44 @@ bool ResolveActorFns() {
 
 }  // namespace
 
-void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn, BeforeFinishFn beforeFinish,
-                 void* ctx) {
-    if (!actorClass) return nullptr;
+static void* SpawnActorImpl(void* actorClass, const FVector& location, bool inertPawn, BeforeFinishFn beforeFinish,
+                 void* ctx, bool* attempted, const std::function<bool()>& allowed = {}) {
+    if(attempted)*attempted=false;
+    const auto where=location;
+    if(!std::isfinite(where.X)||!std::isfinite(where.Y)||!std::isfinite(where.Z))return nullptr;
+    const auto world=world_identity::Generation();
+    CachedObjRef type;type.Set(actorClass);
+    const auto current=[&]{return (!allowed||allowed()) && world==world_identity::Generation() && type.Get();};
+    if (!current()) return nullptr;
     if (!ResolveSpawn()) {
         UE_LOGE("engine: SpawnActor unresolved (cdo=%p begin=%p finish=%p)",
                 g_gsCdo, g_beginSpawnFn, g_finishSpawnFn);
         return nullptr;
     }
-    const FTransform xform = MakeTransform(location);
+    const FTransform xform = MakeTransform(where);
 
     // Step one: the deferred spawn returns an uninitialised actor.
     ParamFrame begin(g_beginSpawnFn);
-    begin.Set<void*>(L"WorldContextObject", GetWorldContext());
-    begin.Set<void*>(L"ActorClass", actorClass);
-    begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
-    begin.Set<uint8_t>(L"CollisionHandlingOverride", kAlwaysSpawn);
-    begin.Set<void*>(L"Owner", nullptr);
+    if(!begin.valid() || !begin.Set<void*>(L"WorldContextObject", GetWorldContext()) ||
+        !begin.Set<void*>(L"ActorClass", actorClass) || !begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform)) ||
+        !begin.Set<uint8_t>(L"CollisionHandlingOverride", kAlwaysSpawn) || !begin.Set<void*>(L"Owner", nullptr) || !current())return nullptr;
+    if(attempted)*attempted=true;
     if (!Call(g_gsCdo, begin)) {
         UE_LOGE("engine: BeginDeferredActorSpawnFromClass call failed");
         return nullptr;
     }
+    if(world!=world_identity::Generation())return nullptr;
     void* actor = begin.Get<void*>(L"ReturnValue");
-    if (!actor) {
+    if (!actor || !R::IsLive(actor)) {
         UE_LOGE("engine: BeginDeferredActorSpawnFromClass returned null");
         return nullptr;
     }
     // Read while the actor is known live, so the failed-finish branch below can tell it from a recycled address.
-    const int32_t actorIdx = R::InternalIndexOf(actor);
+    CachedObjRef instance,cls;instance.Set(actor);cls.Set(R::ClassOf(actor));
+    const auto owned=[&]{return world==world_identity::Generation() && instance.Get() && cls.Get() && R::ClassOf(actor)==cls.Raw();};
+    const auto cancel=[&]{if(owned())DestroyActor(actor);return static_cast<void*>(nullptr);};
+    if(!owned())return nullptr;
+    if(!current())return cancel();
 
     // Before FinishSpawningActor runs BeginPlay, zero the fields that make a pawn behave as a
     // local player: BeginPlay's native auto-possess reads AutoPossessPlayer, and clearing it
@@ -250,28 +260,36 @@ void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn, Befo
     }
     // The caller's last word on the deferred actor: what must hold from its BeginPlay on is set here.
     if (beforeFinish) beforeFinish(ctx, actor);
+    if(!current()||!owned())return cancel();
 
     // Step two: FinishSpawningActor runs the actor's construction and BeginPlay and returns the
     // same actor.
     ParamFrame finish(g_finishSpawnFn);
-    finish.Set<void*>(L"Actor", actor);
-    finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
+    if(!finish.valid() || !finish.Set<void*>(L"Actor", actor) || !finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform)))return cancel();
     if (!Call(g_gsCdo, finish)) {
         UE_LOGE("engine: FinishSpawningActor call failed");
         // The begun actor is not left in the world, half made: no caller holds it (the result is null), and the
         // engine would keep it. A failed finish call may have faulted past begin-play; if it began play, its
         // destroy is an ordinary end of play to every observer, and if it did not there is none.
-        if (R::IsLiveByIndex(actor, actorIdx)) {
+        if (owned()) {
             UE_LOGW("engine: SpawnActor: the finish of a '%ls' failed -- the begun actor is destroyed",
                     R::ClassNameOf(actor).c_str());
             DestroyActor(actor);
         }
         return nullptr;
     }
+    if(!current()||!owned())return nullptr;
     void* finished = finish.Get<void*>(L"ReturnValue");
     UE_LOGI("engine: SpawnActor -> %p (finished %p) at (%.0f,%.0f,%.0f)",
-            actor, finished, location.X, location.Y, location.Z);
-    return finished ? finished : actor;
+            actor, finished, where.X, where.Y, where.Z);
+    return !finished || finished==actor ? actor : nullptr;
+}
+
+void* SpawnActor(void* actorClass,const FVector& location,bool inertPawn,BeforeFinishFn beforeFinish,void* ctx) {
+    return SpawnActorImpl(actorClass,location,inertPawn,beforeFinish,ctx,nullptr);
+}
+void* SpawnActorTracked(void* actorClass,const FVector& location,bool& attempted,const std::function<bool()>& current) {
+    return SpawnActorImpl(actorClass,location,false,nullptr,nullptr,&attempted,current);
 }
 
 namespace {
@@ -337,6 +355,53 @@ bool TryGetActorLocation(void* actor, FVector& out) {
     if (!Call(actor, f)) return false;
     if (!f.GetRaw(L"ReturnValue", &out, static_cast<int32_t>(sizeof(out)))) { out = FVector{}; return false; }
     return true;
+}
+
+bool TryGetActorTransform(void* actor,FVector& location,FRotator& rotation,FVector& scale,
+                          const std::function<bool()>& callerCurrent) {
+    CachedObjRef object,cls;
+    object.Set(actor);
+    if(!object.Get())return false;
+    cls.Set(R::ClassOf(actor));
+    const auto generation=world_identity::Generation();
+    void* const world=world_identity::CurrentWorld();
+    const auto owned=[&]{return (!callerCurrent||callerCurrent()) && object.Get() && cls.Get() && world &&
+        generation==world_identity::Generation() && world==world_identity::CurrentWorld() && R::ClassOf(actor)==cls.Raw();};
+    if(!owned())return false;
+    int32_t rootOffset=-1;std::wstring rootType;
+    const int32_t objectSize=R::StructSize(cls.Raw());
+    if(!R::PropertyOffsetAndClass(cls.Raw(),L"RootComponent",rootOffset,rootType) || rootType!=L"ObjectProperty" ||
+        rootOffset<0 || rootOffset>objectSize || sizeof(void*)>static_cast<size_t>(objectSize-rootOffset) || !owned())return false;
+    void* rootPointer=nullptr;std::memcpy(&rootPointer,static_cast<const uint8_t*>(actor)+rootOffset,sizeof rootPointer);
+    CachedObjRef root,rootClass;root.Set(rootPointer);
+    if(!root.Get())return false;
+    rootClass.Set(R::ClassOf(rootPointer));
+    const auto current=[&]{
+        if(!owned()||!root.Get()||!rootClass.Get()||R::ClassOf(rootPointer)!=rootClass.Raw())return false;
+        void* bound=nullptr;std::memcpy(&bound,static_cast<const uint8_t*>(actor)+rootOffset,sizeof bound);
+        return bound==rootPointer;
+    };
+    if(!current())return false;
+    const wchar_t* names[]={P::name::GetActorLocationFn,P::name::GetActorRotationFn,P::name::GetActorScale3DFn};
+    FVector ownedLocation{},ownedScale{};FRotator ownedRotation{};
+    void* outputs[]={&ownedLocation,&ownedRotation,&ownedScale};
+    const int sizes[]={sizeof ownedLocation,sizeof ownedRotation,sizeof ownedScale};
+    for(int i=0;i<3;++i){
+        if(!current())return false;
+        CachedObjRef function;function.Set(R::FindDispatchFunctionCached(cls.Raw(),names[i]));
+        if(!function.Get())return false;
+        ParamFrame frame(function.Raw());
+        if(!frame.valid() || !current() || !function.Get() ||
+            R::FindDispatchFunctionCached(cls.Raw(),names[i])!=function.Raw())return false;
+        if(!Call(actor,frame) || !current() || !function.Get() ||
+            R::FindDispatchFunctionCached(cls.Raw(),names[i])!=function.Raw() ||
+            !frame.GetRaw(L"ReturnValue",outputs[i],sizes[i]))return false;
+    }
+    const float values[]={ownedLocation.X,ownedLocation.Y,ownedLocation.Z,
+        ownedRotation.Pitch,ownedRotation.Yaw,ownedRotation.Roll,ownedScale.X,ownedScale.Y,ownedScale.Z};
+    for(float value:values)if(!std::isfinite(value))return false;
+    if(!current())return false;
+    location=ownedLocation;rotation=ownedRotation;scale=ownedScale;return true;
 }
 
 FVector GetActorScale3D(void* actor) {

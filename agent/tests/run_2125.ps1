@@ -15,9 +15,9 @@ try {
     $sourcePath=Join-Path $root 'src\votv-coop\src\coop\world\radio_sync.cpp'
     $source=[IO.File]::ReadAllText($sourcePath)
     $cases=@(
-        @{Name='prediction';Before='if (Predicted(id)) return;';After='/* prediction fence removed */'},
+        @{Name='prediction';Before='Predicted(id)';After='false'},
         @{Name='automatic_end';Before='? SG::Verdict::Cancel : SG::Verdict::Run;';After='? SG::Verdict::Run : SG::Verdict::Run;'},
-        @{Name='retry_bound';Before='now-attempt.since<15000';After='true'}
+        @{Name='retry_bound';Before='Elapsed(now,attempt.since)<15000';After='true'}
     )
     foreach ($case in $cases) {
         if (-not $source.Contains($case.Before)) { throw "Mutation target changed: $($case.Name)" }

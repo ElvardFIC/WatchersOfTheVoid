@@ -255,9 +255,13 @@ ElementId Registry::EidForActor(void* actor) const {
 }
 
 void Registry::NoteActorRebind(ElementId id, void* oldActor, void* newActor, int32_t newIdx) {
-    if (oldActor == newActor) return;
+    if(!oldActor&&!newActor)return;
     const ActorIdent ai = IdentOf(newActor, newIdx);
     std::lock_guard<std::mutex> lk(m_mutex);
+    if(oldActor==newActor){
+        auto it=m_byActor.find(oldActor);
+        if(it!=m_byActor.end()&&(it->second.id!=id || (it->second.idx==ai.idx&&it->second.serial==ai.serial)))return;
+    }
     if (oldActor) {
         auto it = m_byActor.find(oldActor);
         // Only erase if it still points at us: a recycled address already re-pointed to a newer
@@ -295,6 +299,25 @@ size_t Registry::SnapshotActorsByType(ElementType t,
         if (e && e->GetType() == t) {
             out.push_back({e->GetActor(), id, e->GetInternalIdx(), e->IsMirror()});
         }
+    }
+    return out.size();
+}
+
+bool Registry::ReadIdentity(ElementId id, IdentitySnapshot& out) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    Element* e = id < kMaxElements ? m_byId[id] : nullptr;
+    if (!e) return false;
+    out = {id,e->GetIncarnation(),e->GetType(),e->GetTypeName(),e->GetActor(),e->GetInternalIdx(),e->IsMirror(),e->IsBeingDeleted()};
+    return true;
+}
+
+size_t Registry::SnapshotIdentitiesByType(ElementType type, std::vector<IdentitySnapshot>& out) const {
+    out.clear();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (ElementId id=1; id<kMaxElements; ++id) {
+        Element* e=m_byId[id];
+        if(e && e->GetType()==type)
+            out.push_back({id,e->GetIncarnation(),type,e->GetTypeName(),e->GetActor(),e->GetInternalIdx(),e->IsMirror(),e->IsBeingDeleted()});
     }
     return out.size();
 }

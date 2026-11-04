@@ -1,5 +1,208 @@
 # Current upstream refresh checks
 
+`run_handtaken.ps1` covers HD01-HD25 / HX01-HX50 against the actual Omega
+controller and service/Registry stack, plus extracted updateHold/grab-release
+wrappers and the actual inventory/save-record implementation. Transport, metadata,
+engine dispatch, puppet/hand access and clock are doubled. Cases cover retained
+recipient debt, FIFO capacity, native dispatch receipts, retryable unattempted
+cleanup and replacement across ten callback boundaries. Class-only wire matching
+and native multiplayer acceptance remain open.
+
+`run_omega_command.ps1` covers OC01-OC25 / OX01-OX50 with the actual command
+controller, services, Registry/Element/claims and extracted native actionName.
+Seventy-five cases, 24 assertion controls and three production object compiles
+cover service CAS/rollback, host reservations, startKill, staging receipts, sender/
+actor/context retirement, owned native text and dispatch accounting. Metadata,
+engine, hand/puppet access, transport and clock are doubled. HandTaken ownership
+is covered above; exact item correlation and uncertain resource/latent consequences remain open.
+
+`run_served_player.ps1` exercises SF01-SF25 / SM01-SM50 using actual follow
+and service controllers, real Element/Registry/claims and extracted native
+insert-read functions. Seventy-five named cases, 26 assertion controls and three
+production objects cover leases, recipient/context replacement, active-read debt,
+arm/watch reconciliation, puppet lookup, exact native results and typed out fields.
+Hook/watch operations, puppet access, metadata, engine/transport and clock are
+doubled; native acceptance and other Omega command continuations remain open.
+
+`run_kerfus_intent.ps1` covers KA01-KA25 / KB01-KB50 against the actual
+command controller, native action wrapper and real Element/Registry/claims.
+Seventy-five cases, 25 assertion controls and two production object compiles
+cover FIFO refusal retry, sender/target/context ownership, budgeted NoBody waits,
+PRE frame/string bounds, native dispatch receipts and guarded watch settlement.
+Metadata, reach judgement, follow attribution, engine/transport and clock are
+doubled; follow/served-player lifetime and native acceptance remain open.
+
+`run_kerfus_state.ps1` runs KD01-KD25 / KX01-KX50 against the actual state
+manager and native wrapper, with real Element/Registry and drive claims. Seventy-five
+named cases cover per-recipient retry/readiness, late joins, bounded fair pumps,
+checkpointed writes, refresh receipts and replacement during ten native operations.
+Nineteen fault controls fail at assertions; both production objects compile.
+Metadata, engine dispatch, transport and clock are doubled; gameplay acceptance
+remains open.
+
+`run_prop_claim.ps1` exercises LS01-LS25 / LX01-LX50: independent source masks,
+unique/context-bound tokens, partial/final release, hand/handoff/election expiry,
+first-bind cleanup and legacy isolation. It runs actual core, hook, NPC-cleanup,
+Kerfus and extracted watoy/handoff bodies with real Element/Registry code;
+unexercised native routes fail if reached. Seventy-five named cases, 23 assertion
+controls, 11 production object compiles and nine canonical producer-route checks
+cover implementation; engine calls are doubled. Native transform/constraint
+priority, contact acceptance and the original jitter root cause remain open.
+
+`run_prop_verb.ps1` covers VA01-VA25 / VX01-VX50 using the actual publisher
+admission/verb implementation and extracted client-to-host handoff commit.
+Seventy-five named cases, 21 assertion-based mutations and six production object
+compiles cover admission identity, per-read cancellation, duplicate/reentrant
+opens, owned callback data, canonical keys/EIDs, handoff predecessor receipts and
+lineage consumption. The controller, control-delivery and stream fixtures include
+the same extracted admission support; native, transport and clock calls are doubled.
+Multi-verb leases and native multiplayer/contact acceptance remain open.
+
+`run_npc_pose.ps1` exercises NH01-NH25 / NX01-NX50 against the actual host
+pose/hold controller, Registry/Element and extracted atomic transform body.
+The named matrix replaces session, world, actor, class or Element at ten native
+read continuations. Other cases cover owned batches, prior-row retirement,
+MTU fairness, offline lifecycle, two robots holding one prop, hand arbitration,
+failed thaw retry and nested teardown. Twenty-three assertion-based fault
+controls and four production object compiles supplement the fixture. Engine,
+hand state and drive calls are doubled; native contact and multiplayer
+acceptance, drive-verb arbitration and the broader upstream audit remain open.
+
+`run_npc_join.ps1` exercises NJ01-NJ25 / NK01-NK50 with the actual sender,
+Element/Registry implementation, extracted transform/save-key reads and prop
+completion function. The 75 cases cover retained refusals/unbound rows, canonical
+bindings, Element and actor incarnations, fresh payloads, 32-slot fairness,
+native reentrancy and independent completion receipts. Thirty assertion-based
+mutations cover sender scope, pacing/budgets, save-key metadata and snapshot
+closure. Production compile checks cover all eight changed translation units.
+The sender permits at most 16 delivery attempts per invocation, with at most 12
+NPC row attempts and 64 row scans; callback-owned event lanes retain their own budgets. Native materialization,
+attack phases/audio, prop contacts and the broader upstream audit remain open.
+
+The full-upstream work adds tower capture/refund and extracted native-spawn
+attempt and client ACK-delivery fixtures to `run_tower_ops`; its fault controls
+now cover 27 mutations. Paid inserts wait for ACK before another native spend;
+refused pulls clean up their captured output and retain unknown receipts.
+`run_cord_continuation` also checks recipient delivery and drag receipts; the
+real wrapper fixture checks head/component/caller retirement. `run_geom_octa`
+checks retained decision delivery, ordered per-recipient birth admission and session
+reconstruction. Its extracted actor-transform fixture covers 71 refusal/root/
+function/caller/world/schema/finite boundaries with unchanged outputs on failure.
+Actual extracted Session readiness methods cover all 32 slots, bounds and eight
+concurrent reset writers. Birth receipts also bind its world-ready reset revision,
+including reset/ready between pumps and during native/send callbacks.
+`-FaultControls` rejects nine birth/transform/readiness mutations at assertions; native
+mirror creation acceptance and exact phase joins remain open. `run_vulkan_context`
+extracts the actual Present/Destroy functions for a two-thread lifetime fixture;
+`-FaultControls` rejects missing serialization independently on both Present and
+Destroy. GPU quiescence remains the engine caller's contract; no unsynchronized
+queue-idle call is added to Destroy.
+Native rendering/contact acceptance, exact Geom phases/joins, full Vulkan
+context recovery and the remaining semantic review are still open.
+
+`run_cord_continuation.ps1` compiles the actual cord_sync with 32-peer transport,
+object/session identity and native-operation doubles. CP01-CP25 cover owned
+publication/outbox/release receipts, session retirement, sender/recipient proofs,
+same-world scan preservation, nested replacement, refused retries and clocks.
+CQ01-CQ50 cover ten replacement causes at five transport/native continuations.
+`-FaultControls` rejects 25 separately compiled mutations at assertions;
+`-CompileSources` compiles cord_sync without a DLL. Legacy run_2170 retains real
+wrapper/ParamFrame and 4/32-peer checks; run_2145 retains 200-read idle repaint
+coverage. UI04/UI05 add per-recipient canonical-state/join delivery and native
+drag/head continuations; native acceptance remains open. The runner is included in check_current.
+
+`run_prop_stream_scope.ps1` compiles the actual controller, stream, park, parity
+and bind_wait implementations with eight extracted driver row functions.
+SG01-SG15 cover guarded ingress, owned immediate/episode proofs, receiver
+retirement, park debt, End accounting and failed writes. SX01-SX60 cover six
+replacement causes at ten native boundaries. All 75 named cases pass;
+`-FaultControls` rejects eighteen separately compiled mutations across the
+controller/stream/park/parity seams. `-CompileSources` compiles all five changed
+production translation units without a DLL. Native engine, transport, registry,
+clock and rider-token operations are doubled. Control/join delivery and rendered
+multiplayer contacts remain open. The runner is included in check_current.
+
+`run_prop_publisher.ps1` compiles the actual host publisher and config registry.
+HP01-HP25 cover owned snapshots, revision commits, Tick/Pump recursion, session
+retirement, owner/root/hand checks, clocks and End retries. HT01-HT50 cover five
+replacement causes at ten publication/capture boundaries. All 75 named cases
+and integration controls pass; `-FaultControls` rejects sixteen independently
+compiled mutations. `-CompileSources` compiles the changed production unit
+without a DLL. Native engine, controller and transport seams are doubled.
+Control/join delivery and native
+contact acceptance remain open. This runner is included in check_current.
+
+`run_prop_syncer_host.ps1` compiles the actual host controller and config registry,
+and extracts eight production driver functions for row creation/election/retirement.
+PH01-PH15 cover owned batches/input/pass/departure, row/occupant identity, clocks,
+bounded admission and detached endings. HS01-HS60 cover six replacement causes
+at ten continuation boundaries. All 75 named cases pass; `-FaultControls` rejects
+fifteen separately compiled mutations and `-CompileSources` compiles both changed
+production units without a DLL. Native calls and transport are doubled. The
+retained answer/End delivery, swinger join retries and native contact acceptance
+remain open. This runner is included in check_current.
+
+`run_prop_syncer.ps1` compiles the actual client publisher/config registry and
+extracts the production EndFromBody capture. PC01-PC25 cover owned episode
+state, callback replies, clocks, root/hand handoffs and retained End delivery;
+PS01-PS50 cover world/session/actor/class/episode cancellation at ten native
+boundaries. All 75 named cases pass; `-FaultControls` rejects fifteen separately
+compiled mutations, including End capture and orphan-End retry. `-CompileSources`
+compiles both changed production translation units without linking a DLL.
+The runner is included in check_current. Engine/transport seams are doubled;
+host control delivery and rendered prop-contact acceptance remain open.
+
+`run_tower_ops.ps1` compiles the actual operation controller and config registry.
+TQ01-TQ20 cover owned FIFO/overflow work, admission, bounded rotating drains and
+spend reservations; TO01-TO55 cover world/session/sender/tower/class cancellation
+at eleven native boundaries. All 75 named cases and legal-action controls pass.
+`-FaultControls` rejects eleven separately compiled mutations; `-CompileSources`
+compiles both production tower translation units without linking a DLL.
+The runner is included in check_current. `run_tower_rows.ps1 -FaultControls`
+rejects 21 mutations, including operation-helper cancellation and failed-write
+continuations. Native calls and transport are doubled; output/refund transaction
+completion and native multiplayer acceptance remain open.
+
+`run_physics_native.ps1` checks the actual engine physics wrapper with native
+reflection/dispatch doubles: five bounded parameter schemas, class/function
+incarnations, finite vectors, refused calls and bounded component discovery.
+`run_child_release.ps1` checks the actual deferred child release with controlled
+clock, hand, mesh and native callback doubles. NP01-NP45 and CR01-CR30 each have
+a named case; each runner's `-FaultControls` rejects 11 independently compiled
+faults. Both runners are included in check_current. These checks do not simulate
+Unreal contacts or qualify the original joined-client resting-stack report.
+
+`run_tower_wrappers.ps1` compiles both actual tower wrappers and real ParamFrame.
+It covers CW01-CW37 / RW01-RW38: layout replacement and extents, bounded arrays,
+actor/class/world/function retirement, component bindings, look-at ownership,
+recursive interactions, exception restoration and the current gamemode tower.
+`-FaultControls` rejects 13 independently compiled mutations for each wrapper.
+Reflection, timeline reads and engine dispatch are doubled; native acceptance
+is still pending. The runner is included in check_current.
+
+`run_emote.ps1` checks the optional EmoteWheel controller, actual native wrapper,
+316-emote/442-phase catalogue and derived native function references. Its
+`-FaultControls` switch rejects three separately compiled ownership/hand/source
+capture faults. Transport, reflection and engine execution are doubled; native
+multiplayer acceptance remains pending. `generate_emote_catalogue.py <manifest>`
+regenerates metadata from the supplied 1.0.1 manifest without copying assets.
+The external mod is optional for the build and regression runner.
+
+`run_radio.ps1` retains the radio/controller/native-wrapper and cooked Blueprint
+checks, adds R01-R45/M01-M30 lifetime/reentry/32-peer checks, and is registered in
+check_current. `-FaultControls` rejects 18 additional independently compiled
+faults. `-ProductionCompile` compiles only the two radio translation units into
+separate objects using the configured Release settings; it records their stable
+source hashes and does not link or qualify a DLL. It supports scoped verification
+while another session edits unrelated production code. Native gameplay is unverified.
+
+`run_coffee.ps1` compiles the actual coffee intent/state controllers and the
+coffee/appliance wrappers with real ParamFrame. It covers invocation nesting,
+actor/function/session/world retirement, sender generations, bounded publication
+debt and checked action writes. `-FaultControls` rejects 11 injected faults.
+Native reflection, roster and transport seams are doubled; gameplay is unverified.
+The runner and production queue/bucket suite are included in check_current.
+
 `run_local_release.ps1` compiles the production release edge and Kerfur arming
 function against the real protocol and CachedObjRef. It checks PvP nonce bytes
 independently of the native throw sequence, robot transfer/one-edge consumption,
@@ -9,6 +212,12 @@ trash suppression and host/client coasting. It is part of check_current.
 The item-record and event-slot fixtures now exercise full discs beyond 32 KiB
 and refuse data exceeding the blob transport capacity. Existing native apply,
 canonical ordering, reentry and lifetime assertions remain in those suites.
+`run_event_slots.ps1` also exercises SB1-SB5 host fan-out, refused delivery,
+captured publication state and owned join retries against a 32-slot transport
+double. The companion claim fixture covers FC01-FC75 across world/session,
+actor/class and peer retirement, plus actual claim parsing and refused writes.
+`-FaultControls` rejects eighteen separately compiled mutations;
+`-CompileSources` compiles the production translation unit without linking a DLL.
 
 The public-prose include suite covers private header context and simple local
 macro includes/undef, including cross-unit isolation and unreferenced fragments.
@@ -55,9 +264,17 @@ acceptance remains separate.
 receiver, host and bind-wait implementation. It checks ends received before
 binding, reordered generations, local/remote hand ownership, reused object
 slots, angular-only release velocity, sleeping rest and refused host sends.
-Four mutations must fail assertions: lost bind replay, pose serial bypass,
-host-end serial bypass and lost spin. This runner, `run_2124.ps1` and
+It also checks host end ordering, input ownership, native reentry at each end
+seam, first/steady pose and interpolation retirement, mesh replacement, nested
+ticks and hand-yield successors. Eleven mutations must fail assertions, including
+revision, continuation and component-ownership faults. This runner, `run_2124.ps1` and
 `run_2126.ps1` are now included in `package/check_current.ps1`.
+
+`run_llama_marker.ps1 -FaultControls` executes the actual marker wrapper and the
+placed-save controller. Failed mirror construction has a throttled frame-tail
+cleanup path that outlives a stopped session, with incarnation/world/reentry and
+successful-adoption checks. Four mutations must fail assertions. The runner also
+compiles all four production marker/placed-save translation units.
 
 The supplemental runners use current typed function rows, two-argument save
 sinks, actual batch-admission semantics and production peer capacity where
@@ -787,3 +1004,103 @@ payloads retain the existing datagram bounds. `run_2145.ps1` also checks deferre
 flashlight component/setter applies, startup before the player class loads, refused
 connect publication, newer callback state and world replacement. These remain
 offline fixtures; rendered multiplayer and larger real groups require acceptance.
+
+The upstream seam checks include `run_swinger_join.ps1` (the actual join controller
+under reentrant pose/ownership/teardown callbacks and the actual park controller
+with 32 rider leases), `run_vulkan_context.ps1` (device/window identity policy,
+without a GPU), and `run_2170.ps1` (actual cord controller at 4 and 32 peers).
+`merged_protocol_test.cpp`, run by `run_placement.ps1`, pins the selected intent
+and host-state authorship and prevents blind relay. These tests leave native GPU,
+contact-physics and multiplayer acceptance separate.
+
+`build_order_test.ps1` executes the packaging workflow scripts in a disposable
+fixture with external-command doubles. It checks failed tests/gates, selected
+groups, ChecksOnly, successful ordering and qualification reuse; no release DLL
+is compiled. Registered as `build_order` in check_current.
+
+
+## Entity adapter boundaries (6 November 2026)
+
+`run_geom_octa.ps1` verifies G01-G11; `run_entity_adapters.ps1` verifies
+R01-R40/P01-P24, cooked native contracts and production object compilation.
+The latter's `-FaultControls` rejects eight independently compiled mutations.
+Reflection, native dispatch and transport are doubled; multiplayer acceptance
+and the remaining entity behavior/effect routes are open.
+
+| ID | Implemented boundary |
+| --- | --- |
+| G01 | Invocation-bound nested aggro capture. |
+| G02 | Host session/world cancellation, including verdict callbacks. |
+| G03 | Bounded aggro/graph/overlap frame reads. |
+| G04 | Mirror state bound to actor incarnation. |
+| G05 | Replay continuation cancellation after native callbacks. |
+| G06 | Nested relay-tick refusal. |
+| G07 | Overlap-hook installation retry. |
+| G08 | No native verdict replay without an armed host-answer hook. |
+| G09 | Exact actor/component/function/frame/bytecode overlap match and one write. |
+| G10 | Scoped hook arming and disarming through teardown. |
+| G11 | Checked native overlap/notify parameters and metadata recovery. |
+| R01 | Clear roach work on session/world replacement. |
+| R02 | Validate cached roach class/function incarnations. |
+| R03 | Retry unavailable roach metadata instead of permanently disabling it. |
+| R04 | Resolve master/property offsets against current objects. |
+| R05 | Validate roach array Num/Max/Data. |
+| R06 | Bound raw-array scans including null holes. |
+| R07 | Capture component slot serials in roach rows. |
+| R08 | Revalidate sampling after location callbacks. |
+| R09 | Revalidate sampling after scale callbacks. |
+| R10 | Refuse incomplete host population samples. |
+| R11 | Reject invalid native roach position/scale values. |
+| R12 | Retain refused host snapshot delivery. |
+| R13 | Skip zero on roach sequence wrap. |
+| R14 | Isolate snapshot progress per recipient. |
+| R15 | Bind queued snapshots to peer occupancy generations. |
+| R16 | Deliver empty population at join. |
+| R17 | Converge empty populations through keepalive. |
+| R18 | Require an active client for roach state reception. |
+| R19 | Require exact page count and row count. |
+| R20 | Reject conflicting headers within one snapshot. |
+| R21 | Reject stale sequences with wrap-aware ordering. |
+| R22 | Ignore duplicate completed/received pages. |
+| R23 | Validate every wire roach row before assembly. |
+| R24 | Retain complete snapshots while the master is unavailable. |
+| R25 | Bind application to the master's exact incarnation. |
+| R26 | Own snapshot data across reentrant reception. |
+| R27 | Refuse nested roach ticks/application. |
+| R28 | Check every location-set parameter before calling native code. |
+| R29 | Retain scale-write failure for reconciliation. |
+| R30 | Check deletion index/crush parameters. |
+| R31 | Check creation location/size/bypass parameters. |
+| R32 | Do not repeat uncertain creation/deletion effects. |
+| R33 | Verify component-to-raw-index binding before deletion. |
+| R34 | Retry reversible application failures. |
+| R35 | Exclude snapshot reconstruction from consumption detection. |
+| R36 | Detect consumed component reincarnations by serial. |
+| R37 | Suppress consumption after master replacement. |
+| R38 | Own consumption rows across send callbacks. |
+| R39 | Validate consumed-intent sender/position/readiness. |
+| R40 | Revalidate nearest-match target and sender through native reads/deletion. |
+| P01 | Clear pyramid work on session/world replacement. |
+| P02 | Require game-thread active-client gather reception. |
+| P03 | Admit only the exact pyramid mirror for replay. |
+| P04 | Require a canonical host wisp for host gather identity. |
+| P05 | Bind host gather edges to actor serials. |
+| P06 | Cancel post-send host accounting after teardown. |
+| P07 | Bind pending gathers to pyramid/wisp incarnations. |
+| P08 | Ignore duplicate gathers without extending their deadline. |
+| P09 | Reject nonfinite gather positions/distances. |
+| P10 | Revalidate both location-query continuations. |
+| P11 | Consume admitted gather replay once, including uncertain dispatch. |
+| P12 | Restore staged fields only on the still-owned pyramid. |
+| P13 | Revalidate gathered-wisp tick enablement. |
+| P14 | Refuse recursive pyramid ticks. |
+| P15 | Scope replay admission to its exact pyramid/function. |
+| P16 | Restore replay admission with RAII. |
+| P17 | Bind restored-tick bookkeeping to actor incarnations. |
+| P18 | Require live heading components. |
+| P19 | Reject nonfinite heading yaw. |
+| P20 | Stop heading writes after component/actor callback replacement. |
+| P21 | Reject nonfinite head-look vectors. |
+| P22 | Validate cached host wisp-target identity. |
+| P23 | Validate join slot readiness and occupancy generation. |
+| P24 | Own join iteration data across send callbacks. |

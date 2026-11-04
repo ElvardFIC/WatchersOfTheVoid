@@ -184,6 +184,52 @@ bool CallMainPlayerUpdateHold(void* mainPlayer) {
     return f.valid() && Call(mainPlayer, f);
 }
 
+bool CallMainPlayerUpdateHoldWhile(void* mainPlayer,const std::function<bool()>& owner,bool* dispatched){
+    if(dispatched)*dispatched=false;
+    if(!mainPlayer||(owner&&!owner()))return false;
+    CachedObjRef actor,cls,fn;actor.Set(mainPlayer);if(!actor.Get())return false;
+    cls.Set(R::ClassOf(mainPlayer));
+    const auto current=[&]{return (!owner||owner())&&actor.Get()&&cls.Get()&&R::ClassOf(mainPlayer)==cls.Raw()&&actor.Get()&&cls.Get()&&(!owner||owner());};
+    if(!current())return false;fn.Set(R::FindFunction(cls.Raw(),L"updateHold"));
+    if(!current()||!fn.Get())return false;
+    ParamFrame frame(fn.Raw());if(!frame.valid()||!current()||!fn.Get())return false;
+    if(dispatched)*dispatched=true;
+    const bool result=Call(mainPlayer,frame);return current()&&fn.Get()&&result;
+}
+
+bool ReleaseMainPlayerGrabIfHoldingWhile(void* localPlayer,void* actor,const std::function<bool()>& owner,bool* dispatched){
+    if(dispatched)*dispatched=false;
+    if(!localPlayer||!actor||(owner&&!owner()))return false;
+    CachedObjRef pawn,pawnClass,prop,propClass;pawn.Set(localPlayer);prop.Set(actor);
+    if(!pawn.Get()||!prop.Get())return false;
+    pawnClass.Set(R::ClassOf(localPlayer));propClass.Set(R::ClassOf(actor));
+    const auto current=[&]{return (!owner||owner())&&pawn.Get()&&prop.Get()&&pawnClass.Get()&&propClass.Get()&&
+        R::ClassOf(localPlayer)==pawnClass.Raw()&&R::ClassOf(actor)==propClass.Raw()&&pawn.Get()&&prop.Get()&&(!owner||owner());};
+    if(!current())return false;const int32_t size=R::StructSize(pawnClass.Raw());if(!current())return false;
+    const auto field=[&](const wchar_t* name,int32_t& offset){std::wstring type;
+        if(!R::PropertyOffsetAndClass(pawnClass.Raw(),name,offset,type)||!current()||type!=L"ObjectProperty"||offset<0||offset>size||sizeof(void*)>size-offset)return false;
+        const auto fields=R::EnumerateStructFields(pawnClass.Raw());if(!current())return false;
+        for(const auto& f:fields)if(_wcsicmp(f.name.c_str(),name)==0)return f.offset==offset&&f.size==sizeof(void*);
+        return false;};
+    int32_t grab=-1,handle=-1,component=-1;
+    if(!field(L"grabbing_actor",grab)||!field(L"grabHandle",handle)||!field(L"grabbing_component",component)||!current())return false;
+    const auto overlap=[](int32_t a,int32_t b){return a<b+sizeof(void*)&&b<a+sizeof(void*);};
+    if(overlap(grab,handle)||overlap(grab,component)||overlap(handle,component))return false;
+    const auto read=[&](int32_t offset){void* p=nullptr;std::memcpy(&p,static_cast<uint8_t*>(localPlayer)+offset,sizeof p);return p;};
+    if(read(grab)!=actor)return false;void* phc=read(handle);void* capturedComponent=read(component);
+    CachedObjRef phcRef,phcClass,fn;
+    if(phc){phcRef.Set(phc);if(!current()||!phcRef.Get())return false;phcClass.Set(R::ClassOf(phc));
+        if(!current()||!phcClass.Get())return false;fn.Set(R::FindFunction(phcClass.Raw(),P::name::ReleaseComponentFn));
+        if(!current()||!phcRef.Get()||!phcClass.Get()||R::ClassOf(phc)!=phcClass.Raw()||!phcRef.Get()||!fn.Get()||!current()||read(grab)!=actor||read(handle)!=phc||read(component)!=capturedComponent)return false;
+        if(dispatched)*dispatched=true;
+        R::CallFunction(phc,fn.Raw(),nullptr);
+    }
+    if(phc&&(!phcRef.Get()||!phcClass.Get()||!fn.Get()||R::ClassOf(phc)!=phcClass.Raw()||!phcRef.Get()))return false;
+    if(!current()||read(grab)!=actor||read(handle)!=phc||read(component)!=capturedComponent)return false;
+    void* empty=nullptr;std::memcpy(static_cast<uint8_t*>(localPlayer)+grab,&empty,sizeof empty);
+    std::memcpy(static_cast<uint8_t*>(localPlayer)+component,&empty,sizeof empty);return true;
+}
+
 bool CallMainPlayerUseSelectedAction(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(mainPlayer), L"useSelectedAction");

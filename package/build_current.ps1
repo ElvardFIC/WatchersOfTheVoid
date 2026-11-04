@@ -32,6 +32,8 @@ try {
   }
   $reference | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $evidence 'reference-qualification.json') -Encoding UTF8
   $build=Split-Path (Join-Path $root $release.dll) -Parent
+  & (Join-Path $PSScriptRoot 'check_prebuild.ps1') -EvidenceDirectory $evidence
+  if((ProductionStamp) -ne $before){throw 'Production changed during pre-build checks'}
   $ErrorActionPreference='Continue'
   & cmake --build $build --target votv-coop --parallel 2 *> (Join-Path $evidence 'build.log')
   $code=$LASTEXITCODE
