@@ -65,6 +65,8 @@ try {
     if($FaultControls){
         $source=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/ue_wrap/actors/watoy.cpp'))
         $controls=@(
+            @{Name='physics-owner';Changes=@(@('return IsToy(owner)?owner:nullptr;',
+                'void* cls=object_index::ClassByName(L"comp_zerog_C");if(!cls || !R::IsDescendantOfAny(R::ClassOf(component),&cls,1))return nullptr;return IsToy(owner)?owner:nullptr;'))},
             @{Name='native-schema';Changes=@(@('if(actual.size()!=parameters.size())return false;','/* extra parameters admitted */'))},
             @{Name='native-function';Changes=@(@('R::FindDispatchFunctionCached(owner.cls.Get(),name)==function.Get()','true'))},
             @{Name='field-class';Changes=@(@('cls.Get() && R::ClassOf(object.Get())==cls.Get()','true'))},

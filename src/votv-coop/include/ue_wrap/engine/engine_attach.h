@@ -16,11 +16,19 @@ namespace ue_wrap::engine {
 // DetachActorFromParent reverses it. Game thread.
 bool AttachActorToComponentSocket(void* actor, void* component, const wchar_t* socket);
 
+// Attach `actor` directly to `component` with KeepWorld location, rotation and scale rules.
+// False unless the root's resulting AttachParent is exactly `component`. Game thread.
+bool AttachActorToComponentKeepWorld(void* actor, void* component);
+
 bool DetachActorFromParent(void* actor);
 
 // AActor::GetAttachParentActor: the actor `actor`'s root is attached to, or null in `parent` when it is attached to
 // none. False when the read did not run (`parent` is null then too). Game thread.
 bool GetAttachParentActor(void* actor, void*& parent);
+
+// The component attached to `actor`'s root, or null when it has no parent component. False when
+// the root or reflected AttachParent field could not be read. Game thread.
+bool GetAttachParentComponent(void* actor, void*& parent);
 
 // A Character attached to an actor: the Character, its CharacterMovementComponent, and the component that
 // movement moves (UpdatedComponent, its capsule). A field that does not read is null.

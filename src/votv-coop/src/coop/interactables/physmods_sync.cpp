@@ -6,6 +6,7 @@
 #include "coop/element/mirror_manager.h"
 #include "coop/element/prop.h"
 #include "coop/net/session.h"
+#include "coop/element/registry.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_lifecycle.h"  // DestroyLocalProp (echo-suppressed)
 
@@ -208,7 +209,7 @@ void ClientHandleDeny(uint8_t origOp, uint8_t slot, uint8_t byte) {
     int swept = 0;
     for (void* a : R::FindObjectsByClass(clsName.c_str())) {
         if (!a || !R::IsLive(a)) continue;
-        if (coop::prop_element_tracker::GetPropElementIdForActor(a) !=
+        if (coop::element::Registry::Get().EidForActor(a) !=
             coop::element::kInvalidId) continue;  // tracked = legit
         coop::prop_lifecycle::DestroyLocalProp(a, /*deferred*/true);
         ++swept;

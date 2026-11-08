@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2220;  // optional EmoteWheel owner state; retained fork IDs
+inline constexpr uint16_t kProtocolVersion = 2222;  // toolgun prop flags
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1112,6 +1112,9 @@ enum class ReliableKind : uint16_t {
     // Owner -> host validation -> world-ready peers, no blind relay. Current
     // animation variant/phase and music clocks; absent assets are optional.
     EmoteState = 267,
+    // Any peer, relayed by the host: a toolgun tool changed a keyed prop's static, frozen or sleep flags.
+    // Receivers apply the final live state unless their local player is holding the prop.
+    PropToolFlags = 268,
 };
 inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::EmoteState) + 1;
 
@@ -1779,9 +1782,9 @@ static_assert(sizeof(VoiceStatePayload) == 4, "VoiceStatePayload must be 4 bytes
 
 // A wall-attach component's stick or unstick (PropStickState): the prop by key (eid as fallback)
 // and which field the Blueprint set (bit 0 frozen, bit 1 static), or 0 for an unstick. A stick
-// carries the commit-time transform the receiver pre-poses to before replaying the component's own
-// forceStick; an unstick carries the prop's transform and velocity once the unsticking peer's body
-// freed it, which a pry's kick is part of, and the receiver lets its copy go from there.
+// carries the commit-time transform and exact support actor/component; the receiver attaches to
+// that component rather than repeating a local trace. An unstick carries the prop's transform and
+// velocity once the unsticking peer's body freed it, which a pry's kick is part of.
 struct PropStickStatePayload {
     WireKey  key;
     uint32_t elementId;
@@ -1792,8 +1795,27 @@ struct PropStickStatePayload {
     float rotPitch, rotYaw, rotRoll;
     float linVelX, linVelY, linVelZ;  // cm/s, an unstick's; zero on a stick
     float angVelX, angVelY, angVelZ;  // deg/s, an unstick's; zero on a stick
+    struct {
+        uint32_t elementId;                 // support actor element id, or 0 for a named world actor
+        WireClassName className;            // support actor class
+        WireKey actorName;                  // required when elementId is 0
+        WireKey componentName;              // exact component on the support actor
+    } support;
 };
-static_assert(sizeof(PropStickStatePayload) == 88, "PropStickStatePayload must be 88 bytes");
+static_assert(sizeof(PropStickStatePayload) == 220, "PropStickStatePayload must be 220 bytes");
+static_assert(sizeof(PropStickStatePayload) <= 256 - 20 - 8,
+              "PropStickStatePayload must fit in one reliable datagram");
+
+// A toolgun tool changed a keyed prop's live physics flags. The kLiveState bit distinguishes these
+// values from birth defaults; only static, frozen and sleep are carried.
+struct PropToolFlagsPayload {
+    WireKey key;
+    uint8_t physFlags;
+    uint8_t _pad[3];
+};
+static_assert(sizeof(PropToolFlagsPayload) == 36, "PropToolFlagsPayload must be 36 bytes");
+static_assert(sizeof(PropToolFlagsPayload) <= 256 - 20 - 8,
+              "PropToolFlagsPayload must fit in one reliable datagram");
 
 // A kerfur conversion request (KerfurConvertRequest): the element id of the form whose verb the
 // client's gate refused (a character when toProp is 1, a prop when 0). The host resolves it,

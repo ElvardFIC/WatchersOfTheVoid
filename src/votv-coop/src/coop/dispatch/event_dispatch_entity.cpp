@@ -63,8 +63,8 @@ bool HandleEntityEvent(net::Session& session,
     }
     case net::ReliableKind::PropStickState: {
         // A peer stuck a wall-attach component's prop (the camera) to a surface, or it came unstuck.
-        // Symmetric prop state, relayed by the host; prop_stick_sync replays the component's own
-        // forceStick or unstick.
+        // Symmetric prop state, relayed by the host; prop_stick_sync attaches to the exact support
+        // component or runs the component's unstick.
         if (msg.payloadLen < sizeof(net::PropStickStatePayload)) {
             UE_LOGW("event_feed: PropStickState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PropStickStatePayload));

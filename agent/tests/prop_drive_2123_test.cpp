@@ -245,14 +245,15 @@ int main() {
     assert(test::unparks == 1 && !test::simulates); // release rider bookkeeping, retain frozen physics
     reset(); pose(255, 255); end(255, 256); pose(1, 1); end(255, 999);
     assert(D::IsParked(&test::actor) && test::x == 1); // generation wrap
-    // Resting translation can still carry angular momentum; all-zero ends stay asleep.
+    // Both velocity components are authoritative, including a stop after earlier motion.
     for (int motion=0; motion<4; ++motion) {
         reset(); pose(50,50);
         coop::net::PropDriveEndPayload final{}; final.eid=1; final.gen=50; final.x=50;
         if (motion&1) final.linVelX=20;
         if (motion&2) final.angVelZ=90;
+        test::linear={7,0,0};test::angular={0,0,8};
         D::OnEnd(final);
-        assert(test::linearWrites==(motion!=0) && test::angularWrites==(motion!=0));
+        assert(test::linearWrites==1 && test::angularWrites==1);
         assert(test::linear.X==final.linVelX && test::angular.Z==final.angVelZ);
     }
     std::puts("PASS prop lifetime and release: recycled slot before pose/host end, pure spin, translation, combined motion and sleeping rest");

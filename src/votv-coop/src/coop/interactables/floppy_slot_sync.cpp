@@ -51,6 +51,8 @@ constexpr size_t kMaxDevices = 64;
 // A full disc of server requests is about 50 KiB. Reserve room for either outer header when
 // packing one slot; larger sets still split into independently bounded canonical blobs.
 constexpr size_t kMaxSlotBytes = coop::blob_chunks::MaxBlobBytes() - 64;
+constexpr size_t kCanonicalHeadBytes = 8;  // op, kind, generation, entry count
+static_assert(kMaxSlotBytes + kCanonicalHeadBytes <= coop::blob_chunks::MaxBlobBytes());
 
 // A client's claim is unbounded input. The window is generous next to the 1 Hz poll that
 // produces one, so a peer playing normally never reaches it.
@@ -379,8 +381,8 @@ std::vector<std::vector<uint8_t>> PackCanonicalSet(
                 ++i;
                 continue;
             }
-            // 4 = the head plus the count; keep a whole entry together.
-            if (count > 0 && body.size() + one.size() + 4 > coop::blob_chunks::MaxBlobBytes())
+            // Keep each entry whole, including the generation in the envelope size.
+            if (count > 0 && body.size() + one.size() + kCanonicalHeadBytes > coop::blob_chunks::MaxBlobBytes())
                 break;
             body.insert(body.end(), one.begin(), one.end());
             ++count;
@@ -950,6 +952,9 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
                         kMaxClaimsPerWindow, static_cast<unsigned long long>(kRateWindowMs));
             return;
         }
+        // Include the index byte, just as PackOne does. Reject before native mutation:
+        // a claim the host cannot publish would leave every other peer with older state.
+        if (blob.size() - r.off > kMaxSlotBytes) return;
         const uint8_t index = r.U8();
         Slot in;
         if (!ParseSlot(r, in) || r.off != blob.size()) {

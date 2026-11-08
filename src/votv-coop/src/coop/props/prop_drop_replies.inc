@@ -136,7 +136,7 @@ void PlacementTick(net::Session* session) {
     g_placementWorld = world;
     std::erase_if(g_refusedPlacements,[](const auto& r) {
         void* a = r.Get();
-        return !a || PT::GetPropElementIdForActor(a) != coop::element::kInvalidId;
+        return !a || coop::element::Registry::Get().EidForActor(a) != coop::element::kInvalidId;
     });
     if (!session || !session->connected()) return;
     const uint64_t epoch = g_pendingEpoch, now = PlacementNow();
@@ -146,7 +146,7 @@ void PlacementTick(net::Session* session) {
         std::vector<AwaitingHost> retry;
         for (auto& row : g_awaitingHost) {
             void* a = row.actor.Get();
-            if (!a || (row.recordSubmitted && PT::GetPropElementIdForActor(a) != coop::element::kInvalidId) || now < row.next) continue;
+            if (!a || (row.recordSubmitted && coop::element::Registry::Get().EidForActor(a) != coop::element::kInvalidId) || now < row.next) continue;
             if (retry.size() < 4) {
                 row.next = now + 1000;
                 retry.push_back(row);

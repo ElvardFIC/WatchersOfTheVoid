@@ -1,3 +1,65 @@
+# Selected integration — 8 November 2026
+
+Compared upstream `49023201c` against the integrated `4fbf1acf0`: 431 graph
+commits, 450 changed files. Enumerated 64 upstream-network forks (including this
+repository) and seven direct forks; fetched 69 of the 70 other default branches.
+`Marlore/temp-mail-generator` remains unavailable. This covers public default
+branches, not all feature branches. Inventory, exact heads and commit lists:
+`build/fork-review-20261108/{forks,comparisons}.json` and `upstream-commits.txt`.
+The upstream head is reviewed, not merged wholesale. Integrated ancestry remains
+`4fbf1acf0`; the selected source adaptations below do not claim all 431 commits.
+
+| Item / provenance | Selected change or disposition |
+| --- | --- |
+| M1 / existing origin merge | Resolve five remaining conflicts using the newer local test inventory, EmoteWheel protocol assertion, backlog and condensed verification history. The older origin history remains recoverable in Git. |
+| M2 / existing origin merge | Remove duplicate protocol comments, CoordTowerState, tower fields and struct declarations introduced by the previous conflict resolution. Preserve HEAD's IDs, sizes and 32 peers. |
+| M3 / public fork inventory | Fetch and compare the default heads above; keep the per-repository commit inventory as review evidence. |
+| M4 / kdp80 `c6b82f83d` | Apply zero End velocities as well as nonzero ones; retain component/actor/session ownership checks between native writes. |
+| M5 / BitRoit `50c864631` | Use the unified Registry when detecting a placed actor, retiring placement retries and clearing refused-placement recovery. A registered remote mirror is already canonical even without local authorship. |
+| M6 / BitRoit `50c864631` | Module-denial and upgrade-ghost cleanup also recognize registered mirrors, so legitimate copies are not selected as untracked ghosts. |
+| M7 / BitRoit `52cdcd819` | Install the existing personal-rest controller with the session. Retain this fork's personal-sleep policy and native factor. |
+| M8 / upstream `bba245191`, Ghezra `fb28e336c` | Include the Steam utility header that defines the IP address formatter inline. |
+| M9 / upstream `95cba1361` | Count all eight canonical-envelope bytes when splitting floppy-slot sets; the generation occupies four of them. |
+| M10 / upstream `95cba1361` | Refuse an incoming slot claim larger than the existing sender ceiling before native writes. Preserve this fork's current limits and wire version. |
+
+Retained/excluded after review:
+
+- kdp80 `8763b1658` disables simulation on settled props; local PhysFlagsOf
+  describes an asleep body, not necessarily a disabled one. Keep simulation
+  eligibility for native PhysicsHandle pickup. Do not freeze workbenches by a
+  class-name substring. Tick-cadence reductions lack coverage for our retry owners.
+- BitRoit's forced process termination after 1.5 seconds, repair-widget watchdog,
+  local Escape polling and 5x solo-rest policy are not imported. Repair-widget
+  lifetime and the signed minigame sentinel need a separate native review. Its
+  Gone-response destruction needs an exact actor/episode proof before adoption.
+- BitRoit's large `4420f6f1e` commit combines entity, vehicle, ragdoll, cache and
+  cadence changes. Preserve newer local ownership implementations; do not replace
+  them with the older fork snapshot or its parallel documentation/test inventory.
+- Upstream battery-off publication (`63aa82f7e`) and destroy-window single reads
+  (`338ef476d`) are already covered locally. Disc capacities already exceed the
+  earlier 32 KB limit; only the newly identified envelope/admission bugs land.
+- Upstream toolgun, walking mannequin, plant/ambient, woodchipper, cremator,
+  Kerfur carried-disc/command-feedback and food-authority groups need adaptation
+  to the retained protocol, native transactions and existing controllers. Keep
+  UP2/UP4/UP5/UP6 and the current entity/resource backlog open.
+- Ghezra's new body-push publisher (`74ab6e6cf`) changes syncer admission and adds
+  a publisher; it is a reference for the open contact/jitter investigation, not
+  proof that this fork can safely add another transform owner. New drone timing,
+  chipper feed, hacksaw, container-break and ATV groups likewise overlap owners.
+- FadeTNT1 targets game 0.10.0 and another protocol family; no game-port or wire
+  identity replacement. TheBrokenWaLL's drone-sack rewrite needs the existing
+  drone/item ownership review. pypsik154's Steam watcher/UI/ragdoll additions and
+  DOMSER12's ATV/mining/microphone features are not isolated fixes for this pass.
+- VoidCrew and Cairn primarily add distribution/product changes. Dafirka and
+  older fork fixes retain the dispositions below. Default heads with no unique
+  commits supply no additional changes; rewritten historical commits are not
+  automatically new fixes. CI baseline relaxations are excluded.
+
+No public version/protocol bump, package, installation, commit or push. The
+pre-existing origin merge has resolved paths but remains uncommitted. Tests and
+native-gameplay limits are recorded in TESTLOG; this review does not qualify a
+new DLL or release.
+
 # Fork head recheck — 4 November 2026
 
 The subsequent owner-requested three-way history merge is recorded in TESTLOG.

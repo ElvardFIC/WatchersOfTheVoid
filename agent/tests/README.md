@@ -958,7 +958,7 @@ b2178 and does not contain the material, C-key or PC boot corrections.
 | run_grime_join / run_windows | Cleaning snapshots, nested hooks, latest final wipe and retained join delivery |
 | run_kitchen / run_grill_hand / run_grill_edits | Lid/fuel/burn/audio, held state, saved runtime and ordered field edits |
 | run_hand_tools / run_sponge_effects | Tool display lifetime, stop expiry, soap observation and cosmetic foam |
-| run_toy_music / run_watoy / run_2157 | Maxwell phase/recovery, Watoy authority/motion and held toy audio |
+| run_toy_music / run_watoy / run_2157 | Maxwell phase/recovery, Watoy authority/motion and held-toy audio; `run_2157` also checks class-scoped input watches for all catalogued Dingus variants |
 | run_wall_creative / run_2166 | Creator/source/reach/rule validation, wall construction and immutable retry |
 | run_item_records / run_2130 / run_2176 | Record ordering/reentrancy, native apply budgets, profile capture and stale sends |
 

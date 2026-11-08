@@ -2,6 +2,74 @@
 
 Development target: **0.9.2164**. Last qualified offline package: **0.9.2163 / b2217**. Implementation backlog: [TODO.md](TODO.md) and [WORK.md](WORK.md). Maintained test coverage: [tests/README.md](tests/README.md).
 
+## Owner disposition (11 November 2026)
+
+The joined-client prop jitter/support-penetration report was considered resolved
+and skipped at the owner's direction. No code change or gameplay validation was
+performed for that report in this turn. Reopen it if the symptom recurs; the
+separate handoff/support-contact ownership review remains open.
+
+## Held-toy variant hook coverage (11 November 2026)
+
+The Dingus wrapper and held-toy controller now share one list of catalogued
+Dingus classes. The controller registers class-scoped PRE/POST capture watches
+for `playerHandUse_RMB` and `actionOptionIndex` on each class, so a variant
+override can be owned by its declaring class without changing inherited calls.
+The controller fixture asserts both watches for every catalog entry and the
+separate ABPlush `player_use` watch.
+
+PASS `run_2157.ps1 -FaultControls -CompileSources`: controller, native input
+capture, world toy, held-toy lifetime/budget suites, ten fault controls and all
+seven selected production translation units. PASS `run_toy_music.ps1
+-FaultControls -CompileSources`: wrapper/ParamFrame, playback phase/lifetime,
+clock wrapper, ten fault controls and four selected production units.
+These fixtures use metadata/engine/transport doubles; actual variant override
+schemas and in-game acceptance remain unverified. No Release build, package,
+install or protocol change.
+
+## Watoy physics-hook ownership (11 November 2026)
+
+The extracted `prop_watoy` Blueprint calls `AddForce` and
+`SetPhysicsLinearVelocity` on its `StaticMesh`. The native hook callback's
+`sourceObject` is the Blueprint caller (the Watoy actor), while `context` is
+the component receiving the call. The former lookup incorrectly treated
+`sourceObject` as a `comp_zerog_C`. Ownership now accepts the live Watoy caller
+directly and retains component-outer fallback; suppression still requires the
+exact toy mesh. Added actor/component owner regressions and a fault control for
+the former class-only lookup. Existing start-cue sequencing and activation
+admission were left unchanged.
+
+PASS `run_watoy.ps1 -FaultControls -CompileSources`: controller, budget,
+lifetime, wrapper, physics-owner regression, all fault controls and four
+selected production translation units. These offline fixtures do not establish
+in-game timing or physics acceptance. No Release build, package, install or
+protocol change.
+
+## Thrown-sponge and water-projectile sync (11 November 2026)
+
+The water-projectile fixtures cover both `prop_sponge_p` washer shots and
+`prop_sponge_bucketPour` births, plus collision splash/audio, the client washer
+emitter, owner/source admission, resource capture, transform/velocity
+reconstruction, terminal retry/identity guards, and session-serial retirement
+when a `Session` object is reused.
+
+PASS `run_water_pour.ps1 -CompileSources`: controller, washer-shot, bucket-sound,
+wrapper/ParamFrame, floor-birth fixtures and six selected production translation
+units. PASS `run_sponge_effects.ps1 -FaultControls -CompileSources`: four
+controller/wrapper/trace suites, ten controller fault controls, the trace-player
+fault control and four selected production units. This evidence does not verify
+in-game draw material/size, full foam coverage, or stock/save/join parity; those
+broader acceptance items remain open. No Release build, package, install or
+protocol change.
+
+## Selected upstream and fork integration (8 November 2026)
+
+M1 resolves five pre-existing merge conflicts; M2 removes duplicate protocol declarations; M3 inventories 70 public default fork heads, 69 available. M4 applies zero End velocities with existing lifetime guards. M5 recognizes canonical mirrors in placement/recovery; M6 protects them during module/upgrade ghost cleanup. M7 installs the personal-rest controller. M8 includes the Steam formatter definition. M9 counts the eight-byte floppy canonical header; M10 rejects claims past the sender ceiling before mutation. Per-item provenance and exclusions: FORK_AUDIT_20261022.md.
+
+PASS 163 validation groups across the full run and scoped entity recheck on production stamp `0c6c9e5b155b0008e02abe70738d173e66551f2848bf7c595872218b0613b81e`. The full run initially failed only the legacy zero-velocity assertion; updating that fixture and rerunning its whole group passed without changing production sources. New cases cover zero End velocity, component replacement, registered mirrors, exact-capacity canonical packing and oversized claims. Seven changed production units compile. Native fact rows PASS (626 rows / 199 files); public_prose_gate still FAILS 14 counters, including 23 uncalled declarations and 156 unswept sources. Evidence and original failure/recheck records: `build/fork-review-20261108/verification.json` and `final/prebuild` beneath that directory.
+
+No Release compilation, new DLL/package, installation, commit, push or version/protocol change. The old merge is resolved but uncommitted. Native multiplayer pickup/rest, cleanup and sleep behavior remain unverified; offline checks do not establish the original jitter report's root cause.
+
 ## HandTaken delivery and client cleanup (8 November 2026)
 
 Implemented HD01-HD25 / HX01-HX50: confirmed notices retain recipient-owned FIFO debt after refusal, reserve bounded capacity before native spending, and complete only the accepted receipt. Context/recipient/body replacement cancels stale work; command/service retirement does not erase confirmed debt. Client cleanup captures typed hand fields and weak actor/class identities, preserves replacement hands and shared props, retries refused inventory writes and unattempted native refresh/release, and consumes dispatched native work once. Transactional inventory writes accept caller guards; native updateHold and physics-handle release revalidate their captured targets and preserve callback-installed grab fields.

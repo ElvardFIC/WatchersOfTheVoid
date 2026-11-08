@@ -27,6 +27,7 @@ std::function<void()> onBucketRead,onBucketSound;
 FX::BucketCue nativeCue{0,{100,200,300}};
 bool cueReady=true;
 int bucketSounds=0;
+uint32_t sessionSerial=0;
 std::vector<uint8_t> bucketKinds;
 void Run(std::function<void()>& f){auto callback=std::move(f);f={};if(callback)callback();}
 }
@@ -36,6 +37,7 @@ uint32_t Generation(uint8_t){return test::generation;}uint32_t MirrorGeneration(
 bool IsHandAxisActor(void* a){return a && (a==test::hand || a==test::mirror);}
 bool IsMirrorActor(void* a){return a==&test::ui && test::sourceMirror;}
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace coop::local_streams {void* LastHeldActor(){return test::held;}uint16_t CurrentHoldGen(){return test::holdGeneration;}}
 namespace coop::remote_prop {void* DrivenActor(int){return test::driven;}uint16_t DrivenHoldGeneration(int){return test::remoteHoldGeneration;}}
 namespace coop::prop_lifecycle {void DestroyLocalProp(void* actor,bool deferred){CHECK(actor==&test::actor && deferred);++test::retires;}}
@@ -89,7 +91,7 @@ bool BucketSound(const BucketCue& cue,const std::function<bool()>& current){test
 }
 namespace test {
 void Start(coop::net::Session& session,Role role){
-    S::OnDisconnect();session={};session.mode=role;coop::players::Registry::Get().peer=role==Role::Host?0:1;
+    S::OnDisconnect();++sessionSerial;session={};session.mode=role;coop::players::Registry::Get().peer=role==Role::Host?0:1;
     actor.live=ui.live=true;actor.serial=ui.serial=1;
     for(int slot=0;slot<4;++slot)roster[slot].playerNo=uint16_t(slot+10);
     hand=mirror=driven=held=&ui;generation=mirrorGeneration=7;holdGeneration=remoteHoldGeneration=19;
@@ -129,6 +131,9 @@ int main(){
     CHECK(S::ObserveBirth(&ui,&actor));S::AfterSource({});S::Tick();
     CHECK(reads==0 && retires==0 && session.sent.empty()); // source still assigns velocity
     CaptureFinished();CHECK(reads==1 && retires==1);
+    Start(session,Role::Client);CHECK(S::ObserveBirth(&ui,&actor));CaptureFinished();const auto beforeSerialRetire=retires;
+    ++sessionSerial;Pump();CHECK(S::g_local.size()==1 && session.sent.empty());
+    S::Install(&session);CHECK(S::g_local.empty() && retires==beforeSerialRetire+1);
     Start(session,Role::Client);active={{&actor,&ui}}; // throwing, not the ReceiveTick source
     CHECK(S::ObserveBirth(&ui,&actor));S::AfterSource({});CHECK(reads==0);
     CaptureFinished();CHECK(reads==1);

@@ -24,6 +24,14 @@ int main(int argc,char** argv){
   reset();CHECK(W::Activate(At(Actor),current,&dispatched) && dispatched && activations==1);
   puts("PASS watoy native admission reports refusal versus dispatched uncertain completion");
  }
+ if(run("physics-owner")){
+  reset();
+  CHECK(W::PhysicsToyOwner(At(Actor))==At(Actor));
+  CHECK(W::PhysicsToyOwner(At(Mesh))==At(Actor));
+  CHECK(W::PhysicsToyOwner(At(Zero))==At(Actor));
+  CHECK(W::PhysicsToyOwner(At(Other))==nullptr);
+  puts("PASS watoy physics owner resolves mesh and auxiliary components to their toy");
+ }
  if(run("native-schema")){
   for(const auto& [verb,param]:std::vector<std::pair<std::wstring,std::wstring>>{
       {L"IsPlaying",L"ReturnValue"},{L"SetVolumeMultiplier",L"NewVolumeMultiplier"},

@@ -41,7 +41,7 @@ bool ApplyAudio(void* a,const State& s,const std::function<bool()>& current){if(
 bool Apply(View& view,void* actor,const State& state,const std::function<bool()>& current){if(!view.presentation)view.presentation=std::make_shared<Presentation>();view.presentation->actor.Set(actor);return ApplyAudio(actor,state) && current();}
 void Clear(View& view){auto actor=view.Actor().Get();view={};if(actor)ApplyAudio(actor,{});}
 bool PlayStartCue(){++test::cues;test::Callback();return true;}
-void* ZeroGravityOwner(void*){return test::componentOwner;}
+void* PhysicsToyOwner(void* source){return source==&test::actor?source:test::componentOwner;}
 }
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}void* GetStaticMesh(void*){return &test::ui;}}
 namespace coop::prop_element_tracker {void* FindLiveActorByKey(const std::wstring& key){return test::found && key==test::key?&test::actor:nullptr;}}
@@ -119,8 +119,9 @@ int main() {
     // World and foreign-hand producer bodies stay native only on their author.
     ue_wrap::script_gate::Call call{};call.object=&actor;call.function=&ui;call.invocation=1;invocations.insert(1);
     mirror=&actor;CHECK(S::BeforeActivate(call)==V::Cancel && S::BeforeTick(call)==V::Cancel);
-    componentOwner=&actor;CHECK(S::BeforePhysics(&ui,&actor,nullptr)==V::Cancel);
-    CHECK(S::BeforePhysics(&actor,&actor,nullptr)==V::Run);componentOwner=nullptr;CHECK(S::BeforePhysics(&ui,&actor,nullptr)==V::Run);
+    componentOwner=nullptr;CHECK(S::BeforePhysics(&ui,&actor,nullptr)==V::Cancel);
+    componentOwner=&actor;CHECK(S::BeforePhysics(&ui,&ui,nullptr)==V::Cancel);
+    CHECK(S::BeforePhysics(&actor,&actor,nullptr)==V::Run);componentOwner=nullptr;CHECK(S::BeforePhysics(&ui,&ui,nullptr)==V::Run);
     mirror=nullptr;CHECK(S::BeforeTick(call)==V::Run);
     state.active=false;auto queued=S::g_out.size();CHECK(S::BeforeActivate(call)==V::Run);state.active=true;S::AfterActivate(call);
     CHECK(S::g_out.size()==queued+1);CHECK(S::BeforeActivate(call)==V::Run);S::AfterActivate(call);CHECK(S::g_out.size()==queued+1);

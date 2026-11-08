@@ -8,19 +8,28 @@ Run tests and pre-build gates before Release compilation, as specified in README
 
 ## Priority regressions
 
-- [ ] Finish the joined-client prop jitter/support-penetration investigation
-  described in WORK. Trace remaining simulation/transform ownership conflicts;
-  the repaired end replay and object-lifetime guards do not establish the root
-  cause of the original stack report. NP01-NP45 / CR01-CR30 now protect native
-  physics calls and deferred child releases; ordinary hand-drive, parked supports
-  and host/client publishers remain under review.
-- [ ] Finish held-toy native variant schemas and hook/function ownership beyond
-  the validated Dingus/ABPlush capture inputs; preserve bounded native work.
-- [ ] Finish watoy start-cue and physics-hook ownership beyond the validated
-  activation/audio/emitter schemas and native activation admission.
+- [x] Joined-client prop jitter/support-penetration report closed per owner
+  direction on 11 November 2026; no further implementation requested. This is
+  not a new gameplay verification. Reopen if the symptom recurs with a repro.
+  Broader hand-drive, parked-support and host/client publisher reviews remain
+  tracked separately in WORK.
+- [ ] Finish native function-schema review for held-toy variants beyond the
+  validated Dingus/ABPlush inputs. Class-scoped Dingus capture hooks now cover
+  all catalogued variants; verify any variant-specific native inputs and gameplay.
+- [x] Watoy controller now resolves physics-hook ownership through the
+  Blueprint caller actor (with component-outer fallback), matching native
+  `AddForce` and `SetPhysicsLinearVelocity` hook provenance; start-cue and
+  physics-owner fixture coverage passes. In-game timing/physics acceptance
+  remains open.
 - [ ] Finish thrown-sponge foam and resource synchronization beyond window dabs.
 
 ## Upstream integration
+
+The 8 November selected integration (M1-M10) is recorded in WORK and
+FORK_AUDIT_20261022.md. It reviews upstream `49023201c` and the current default
+fork heads; it does not replace the existing controllers or close the semantic
+reviews below. Native pickup/rest, module cleanup and personal-rest acceptance
+remain unperformed.
 
 - [ ] UP2: finish native continuation/session ownership review beyond the verified
   message-authority rules; track concrete findings in WORK. NJ01-NJ25 / NK01-NK50
@@ -201,11 +210,11 @@ These are documented upstream limits or requests with missing local adapters,
 not promises of an upstream fix or reproduced failures of our package.
 Implementation evidence and exclusions: [WORK.md](WORK.md#upstream-gap-review--29-october-2026).
 
-- [ ] UG2 — Preserve a wall attachment's support identity and destruction
+- [x] UG2 — Preserve a wall attachment's support identity and destruction
   binding when the receiver's trace misses; retire the attachment when its
   support disappears, including late join.
   Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
-- [ ] UG3 — Replicate toolgun freeze/unfreeze/static changes at the action,
+- [x] UG3 — Replicate toolgun freeze/unfreeze/static changes at the action,
   including idle props; existing hold/join flag convergence is insufficient.
   Source: [upstream prop limits](https://github.com/VOTV-MP/Multivoid/blob/main/docs/props.md#known-limits).
 - [ ] UG4 — Enforce laptop seat stabilization across peers so another player

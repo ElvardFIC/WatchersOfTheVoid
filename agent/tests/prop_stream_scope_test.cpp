@@ -179,6 +179,16 @@ int main(){using namespace test;N::Session session;
     Reset(session);Seed();S::AdmitRow(Row(),1,now);calls.clear();bool replaced=false;
     hook=[&](const std::string& n){if(n=="location"&&!replaced){replaced=true;auto next=H::Open(&objects[0],true,"new episode");CHECK(next);H::EraseRow(*next);}};
     S::OnClientEnd(session,End(),1);CHECK(replaced&&!Count("rotation")&&!Count("child")&&D::g_endCount==0);
+    Reset(session);Seed();S::AdmitRow(Row(),1,now);calls.clear();
+    linear={12,3,4};angular={5,6,7};auto resting=End();resting.linVelX=0;resting.angVelZ=0;
+    S::OnClientEnd(session,resting,1);
+    CHECK(Count("linear")==1 && Count("angular")==1 && D::g_endCount==1);
+    CHECK(linear.X==0 && linear.Y==0 && linear.Z==0 && angular.X==0 && angular.Y==0 && angular.Z==0);
+    CHECK(simulates); // Rest preserves PhysicsHandle pickup eligibility.
+    Reset(session);Seed();S::AdmitRow(Row(),1,now);calls.clear();angular={5,6,7};
+    hook=[](const std::string& n){if(n=="linear")++objects[2].serial;};
+    S::OnClientEnd(session,resting,1);CHECK(Count("linear")==1 && !Count("angular") && D::g_endCount==0);
+    Mark("M4 zero-velocity End and component replacement");
     std::puts("PASS stream scope integration controls");
 }
 

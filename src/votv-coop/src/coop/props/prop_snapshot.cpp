@@ -17,6 +17,7 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/props/pile_look.h"
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_stick_sync.h"
 #include "coop/config/config_registry.h"  // [dev] hold_snapshot_sec, the held-bracket drill
 #include "coop/session/join_beacon.h"  // a deferred or draining bracket says so, once a second
 #include "coop/props/prop_wire_parity.h"  // PhysFlagsOf
@@ -617,6 +618,10 @@ void DrainChunk() {
                               coop::net::ReliableKind::PropSpawn,
                               &p, sizeof(p));
         if(!current())return;
+        if (!coop::prop_stick_sync::SendCurrentToSlot(s, obj, g_currentTargetSlot))
+            UE_LOGW("snapshot: exact wall support state for prop eid=%u key='%.*s' was not sent",
+                    static_cast<unsigned>(eid), p.key.len, p.key.data);
+        if (!current()) return;
         // A clump's row says what the actor is; its carry generation rides behind it, on the same
         // lane, or the joiner holds every pose of it for good.
         if (ue_wrap::prop::IsGarbageClump(obj))

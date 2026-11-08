@@ -63,6 +63,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::VoiceState:
     case ReliableKind::KerfurConvertRequest:
     case ReliableKind::PropStickState:
+    case ReliableKind::PropToolFlags:
     case ReliableKind::DeskLogLine:
     case ReliableKind::SleepState:
     case ReliableKind::PlayerInventoryBlob:

@@ -311,12 +311,9 @@ bool PlayStartCue() {
     void* context=engine::GetWorldContext();if(!sound || !context)return false;
     engine::PlaySound2D(context,sound,1.f,.25f,0.f,true);return true;
 }
-void* ZeroGravityOwner(void* component) {
+void* PhysicsToyOwner(void* component) {
     if(!component || !R::IsLive(component))return nullptr;
-    void* cls=object_index::ClassByName(L"comp_zerog_C");
-    if(!cls || !R::IsDescendantOfAny(R::ClassOf(component),&cls,1))return nullptr;
-    // AddComponent makes the actor the component's outer, already before the
-    // Blueprint BeginPlay fills its owner variable. No dispatch inside force hooks.
+    if(IsToy(component))return component;
     void* owner=R::OuterOf(component);
     return IsToy(owner)?owner:nullptr;
 }

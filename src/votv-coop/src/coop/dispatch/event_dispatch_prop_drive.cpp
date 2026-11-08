@@ -16,6 +16,7 @@
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
 #include "coop/props/prop_syncer.h"        // the client's answer receiver
 #include "coop/props/prop_syncer_host.h"   // the host's claim judge and a client's End
+#include "coop/props/prop_tool_flags.h"
 
 #include "ue_wrap/core/log.h"
 
@@ -112,6 +113,32 @@ bool HandlePropDriveEvent(net::Session& session,
             break;
         }
         ::coop::prop_syncer::OnAnswer(p);
+        break;
+    }
+    case net::ReliableKind::PropToolFlags: {
+        if (msg.payloadLen != sizeof(net::PropToolFlagsPayload)) {
+            UE_LOGW("event_feed: PropToolFlags payload size %zu, expected %zu -- dropping",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::PropToolFlagsPayload));
+            break;
+        }
+        if (msg.senderPeerSlot < 0 || msg.senderPeerSlot >= net::kMaxPeers ||
+            (session.role() == net::Role::Host &&
+             (msg.senderPeerSlot == 0 || !session.IsSlotWorldReady(msg.senderPeerSlot)))) {
+            UE_LOGW("event_feed: PropToolFlags from invalid or unready slot %d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        net::PropToolFlagsPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        constexpr uint8_t kAllowed = net::propspawn_flags::kStatic | net::propspawn_flags::kFrozen |
+                                     net::propspawn_flags::kSleep | net::propspawn_flags::kLiveState;
+        if (p.key.len == 0 || p.key.len > sizeof(p.key.data) || (p.physFlags & ~kAllowed) != 0 ||
+            !(p.physFlags & net::propspawn_flags::kLiveState) || p._pad[0] || p._pad[1] || p._pad[2]) {
+            UE_LOGW("event_feed: PropToolFlags key.len=%u flags=0x%02x malformed -- dropping",
+                    static_cast<unsigned>(p.key.len), static_cast<unsigned>(p.physFlags));
+            break;
+        }
+        ::coop::prop_tool_flags::OnToolFlags(msg.senderPeerSlot, p);
         break;
     }
     case net::ReliableKind::DevLoadFiller: {

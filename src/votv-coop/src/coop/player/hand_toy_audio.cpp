@@ -267,8 +267,10 @@ void DrainPulses(uint64_t now) {
 }
 void Install(net::Session* s) {
     Scope(s);
-    SG::WatchClassName(L"prop_dingus_C",L"playerHandUse_RMB",kRmb,&BeforeCapture,&Capture);
-    SG::WatchClassName(L"prop_dingus_C",L"actionOptionIndex",kAction,&BeforeCapture,&Capture);
+    for(const auto* className:M::kDingusVariantClasses) {
+        SG::WatchClassName(className,L"playerHandUse_RMB",kRmb,&BeforeCapture,&Capture);
+        SG::WatchClassName(className,L"actionOptionIndex",kAction,&BeforeCapture,&Capture);
+    }
     SG::WatchClassName(L"prop_abplush_C",L"player_use",kPlushUse,&BeforeCapture,&Capture);
     SG::ResolvePendingNames();
 }

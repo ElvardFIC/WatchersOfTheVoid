@@ -261,7 +261,7 @@ SG::Verdict BeforeTick(const SG::Call& c) {
 }
 SG::Verdict BeforePhysics(void* component,void* source,const uint8_t*) {
     if(!Current() || !source)return SG::Verdict::Run;
-    void* owner=W::ZeroGravityOwner(source);
+    void* owner=W::PhysicsToyOwner(source);
     return owner && Park(owner) && ue_wrap::prop::GetStaticMesh(owner)==component?SG::Verdict::Cancel:SG::Verdict::Run;
 }
 void EnsurePhysicsHooks() {

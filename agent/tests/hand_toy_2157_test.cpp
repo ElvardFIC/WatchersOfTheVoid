@@ -75,7 +75,20 @@ int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coo
  coop::net::Session session;auto& registry=coop::players::Registry::Get();registry.peer=0;registry.local=&actor;
  CHECK(coop::net::LaneForKind(coop::net::ReliableKind::HandToyAudio)==coop::net::Lane::Normal);
  CHECK(!coop::net::IsClientRelayableReliableKind(coop::net::ReliableKind::HandToyAudio));
- S::Install(&session);S::Tick();CHECK(session.sent.size()==3&&applies==0);
+ S::Install(&session);
+ for(const auto* className:ue_wrap::dingus_music::kDingusVariantClasses) {
+  for(const auto* functionName:{L"playerHandUse_RMB",L"actionOptionIndex"}) {
+   bool found=false;
+   for(const auto& watched:ue_wrap::script_gate::watchedBodies)
+    if(watched.first==className && watched.second==functionName)found=true;
+   CHECK(found);
+  }
+ }
+ bool plushWatch=false;
+ for(const auto& watched:ue_wrap::script_gate::watchedBodies)
+  if(watched.first==L"prop_abplush_C" && watched.second==L"player_use")plushWatch=true;
+ CHECK(plushWatch);
+ S::Tick();CHECK(session.sent.size()==3&&applies==0);
  Packet first=S::g_rows[0].state;session.sent.clear();now+=250;S::Tick();CHECK(session.sent.empty());
  music.playing=false;session.sendOk=false;now+=250;S::Tick();CHECK(S::g_rows[0].pending);
  session.sendOk=true;S::Tick();CHECK(!S::g_rows[0].pending&&session.sent.size()==3);

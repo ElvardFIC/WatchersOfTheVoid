@@ -1,6 +1,7 @@
 #include "coop/props/water_pour_sync.h"
 #include "coop/element/intent_authority.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/local_prop_hold.h"
@@ -46,7 +47,7 @@ struct HostBirth {Request request{};uint64_t expires=0;uint8_t code=0;bool proce
 struct Cue {Splash packet{};Launch launch{};uint64_t expires=0;uint32_t pending=0;std::array<uint16_t,net::kMaxPeers> people{};std::array<uint64_t,net::kMaxPeers> epochs{};bool surface=false,sound=false,bucket=false;};
 struct Collision {CachedObjRef actor;FX::Impact impact;void* stack=nullptr;int depth=0;uint64_t epoch=0;uint8_t kind=0;};
 net::Session* g_session=nullptr;
-uint32_t g_world=0,g_sequence=0,g_splashSequence=0,g_lastSplash=0;
+uint32_t g_world=0,g_serial=0,g_sequence=0,g_splashSequence=0,g_lastSplash=0;
 uint64_t g_epoch=0,g_retryWatch=0;
 bool g_ticking=false,g_watched=false,g_capturing=false;
 bool g_launchHookReady=false;
@@ -66,7 +67,8 @@ uint32_t g_seen[net::kMaxPeers]{};
 std::array<std::bitset<256>,net::kMaxPeers> g_seenBirths{};
 uint64_t g_rateAt[net::kMaxPeers]{};
 uint16_t g_rate[net::kMaxPeers]{};
-bool Current(){return g_session && g_session->connected() && g_world==ue_wrap::world_identity::Generation();}
+bool Current(){return g_session && g_session->connected() && g_world==ue_wrap::world_identity::Generation() &&
+    g_serial==net::session_serial::Current();}
 bool Current(uint64_t epoch){return Current() && epoch==g_epoch;}
 bool Host(){return g_session->role()==net::Role::Host;}
 uint8_t Local(){return players::Registry::Get().LocalPeerId();}
@@ -355,8 +357,9 @@ void DrainCues(uint64_t now){
 }
 }
 void Install(net::Session* session){
-    const auto world=ue_wrap::world_identity::Generation();
-    if(g_session!=session || g_world!=world){const auto epoch=g_epoch;OnDisconnect();if(g_epoch!=epoch+1 || g_session)return;g_session=session;g_world=world;}
+    const auto world=ue_wrap::world_identity::Generation(),serial=net::session_serial::Current();
+    if(g_session!=session || g_world!=world || g_serial!=serial){const auto epoch=g_epoch;OnDisconnect();
+        if(g_epoch!=epoch+1 || g_session)return;g_session=session;g_world=world;g_serial=serial;}
     Watch();
 }
 bool ObserveBirth(void* source,void* actor){
@@ -427,7 +430,7 @@ void OnPeerLeft(int slot){
     if(slot==Local()){auto local=g_local;g_local.clear();for(const auto& row:local)Retire(row.actor,row.world);}
 }
 void OnDisconnect(){
-    auto local=g_local;++g_epoch;g_session=nullptr;g_world=g_sequence=g_splashSequence=g_lastSplash=0;
+    auto local=g_local;++g_epoch;g_session=nullptr;g_world=g_serial=g_sequence=g_splashSequence=g_lastSplash=0;
     g_local.clear();g_host.clear();g_cues.clear();g_collisions.clear();g_impacted={};g_impactCursor=g_hostCursor=0;g_tick.Reset();g_throw.Reset();
     g_seenBirths={};g_nativeShots.clear();g_washerTick.Reset();g_shotBegin.Reset();g_shotGraph.Reset();
     ClearBucketSounds(-1);

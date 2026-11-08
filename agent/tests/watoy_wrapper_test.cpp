@@ -51,7 +51,8 @@ bool IsDescendantOfAny(void* cls,void* const* bases,size_t n,int){return n==1 &&
 const FName& NameOf(void* p){static FName names[test::Count]{};const auto i=static_cast<test::Obj*>(p)->index;names[i].ComparisonIndex=i;return names[i];}
 bool NameEquals(const FName& name,const wchar_t* text){return (name.ComparisonIndex==test::Template && !wcscmp(text,L"eff_zgrav")) ||
     (name.ComparisonIndex==test::Package && !wcscmp(text,L"/Game/particles/eff_zgrav"));}
-void* OuterOf(void* p){if(p==test::At(test::Zero))return test::At(test::Actor);return p==test::At(test::Template)?test::At(test::Package):nullptr;}
+void* OuterOf(void* p){if(p==test::At(test::Zero) || p==test::At(test::Mesh))return test::At(test::Actor);
+    return p==test::At(test::Template)?test::At(test::Package):nullptr;}
 void* FindClassDefaultObject(const wchar_t* name){if(!wcscmp(name,L"GameplayStatics"))return test::At(test::Library);
     if(!wcscmp(name,L"KismetSystemLibrary"))return test::At(test::System);CHECK(!wcscmp(name,L"KismetMathLibrary"));return test::At(test::Math);}
 void* FindDispatchFunctionCached(void*,const wchar_t* name){test::Meta(std::wstring(L"resolve:")+name);
@@ -161,8 +162,9 @@ int main() {
     auto current=[] {return valid;};W::State state{};CHECK(W::Read(At(Actor),state) && state.active && state.effect);
     objects[Zero].flags=0;CHECK(W::Read(At(Actor),state) && state.active && !state.effect);objects[Zero].flags=1;
     objects[Zero].live=false;CHECK(W::Read(At(Actor),state) && !state.active && !state.effect);objects[Zero].live=true;
-    CHECK(!W::IsToy(At(Other)) && W::ZeroGravityOwner(At(Other))==nullptr && W::ZeroGravityOwner(At(Zero))==At(Actor));
-    objects[Zero].owner=nullptr;CHECK(W::ZeroGravityOwner(At(Zero))==At(Actor));objects[Zero].owner=At(Actor);
+    CHECK(!W::IsToy(At(Other)) && W::PhysicsToyOwner(At(Other))==nullptr &&
+        W::PhysicsToyOwner(At(Actor))==At(Actor) && W::PhysicsToyOwner(At(Zero))==At(Actor) &&
+        W::PhysicsToyOwner(At(Mesh))==At(Actor));
     W::View view;state={true,.6f,2.5f,true};
     CHECK(W::Apply(view,At(Actor),state,current) && playing && spawns==1 && starts==1 && view.OwnsEffect());
     CHECK(objects[Audio].volume==.6f && objects[Audio].pitch==2.5f && objects[Spawned].active && activations==0);

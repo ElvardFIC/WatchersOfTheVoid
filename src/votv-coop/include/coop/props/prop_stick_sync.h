@@ -4,13 +4,11 @@
 // The stick is Blueprint-internal and invisible to a ProcessEvent observer except at one
 // seam: its commit is reached only through a latent Delay resume, and the latent manager
 // resumes ubergraphs through ProcessEvent, so an observer on
-// ExecuteUbergraph_comp_wallAttachable sees every player-driven stick. A forceStick
-// self-stick at load jumps to the commit locally and is not seen, which costs nothing:
-// both peers run those themselves. The sticking peer broadcasts the frozen or static state
-// with the commit pose; a receiver re-poses and dispatches the component's own forceStick,
-// so the attach, the effect and the destroy binding stay the game's. Follows MTA's element-state
-// RPCs (SET_ELEMENT_FROZEN, ATTACH_ELEMENTS in CElementRPCs.cpp): state messages, not event
-// replay. docs/props.md carries the lane.
+// ExecuteUbergraph_comp_wallAttachable sees every player-driven stick. The sticking peer
+// captures the exact support actor/component after the native attach. Receivers attach to that
+// component directly rather than trusting a local re-trace, and retire the mirror when the
+// support ends play. Follows MTA's element-state RPCs (SET_ELEMENT_FROZEN, ATTACH_ELEMENTS in
+// CElementRPCs.cpp): state messages, not event replay. docs/props.md carries the lane.
 
 #pragma once
 
@@ -28,26 +26,30 @@ struct PropStickStatePayload;
 // velocity once the body has freed it, and a receiver runs the component's own unstick with the
 // tool and lets the copy go from there. A peer still loading gets neither message (the pre-world
 // gate), so a join's snapshot row and its window correction carry the host's frozen and static, and
-// ConvergeStuck makes the copy's stuck state the host's through the same two component verbs.
+// the snapshot's following PropStickState carries the support identity needed to attach it exactly.
 
 namespace coop::prop_stick_sync {
 
 // Idempotent install: one index lookup a call until comp_wallAttachable_C is loaded, after which each
 // half settles on its first attempt; run once on demand when a join's converge or a live message
 // needs the lane first. Two halves, each latched on its own, so a recook that loses one leaves the
-// other working: the stick
-// (the component class, ExecuteUbergraph_comp_wallAttachable, the component's `prop` field and
-// forceStick, then the POST observer) and the unstick (unstick and its script-gate watch). Caches
+// other working: the stick observer (ExecuteUbergraph_comp_wallAttachable and the component's `prop`
+// field) and the unstick verb (unstick and its script-gate watch). Caches
 // `session`. Also observes overriding crowbarOpen bodies for pryable props with no
 // wall-attach component; only a successful native freeing becomes an unstick.
 void Install(coop::net::Session* session);
 
 // Drain the stick commits and unsticks recorded since the last pass: verify (still live; still
-// stuck for a stick, freed for an unstick) and broadcast as PropStickState. MUST run before
+// stuck for a stick, freed for an unstick) and broadcast as PropStickState. Also drains exact-support
+// retries and retires attachments when their support ends play. MUST run before
 // local_streams::Tick within the pump pass (stick-before-release ordering). Cheap no-op when
-// empty. A temporary send refusal retries for at most two seconds while the
+// no pending work. A temporary send refusal retries for at most two seconds while the
 // original actor and outcome stay current. Game thread (net pump).
 void Tick();
+
+// Send an already-stuck prop's exact support identity after its PropSpawn in a join snapshot.
+// A free prop is a no-op. Host/game thread only.
+bool SendCurrentToSlot(coop::net::Session* session, void* prop, int peerSlot);
 
 // Receiver for PropStickState (wired in event_dispatch_entity): a stick, or an unstick when the
 // flags are 0. An unstick leaves a copy this peer's own grab or a drive owns where it is
@@ -56,8 +58,8 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
 
 // A join's snapshot row or window correction makes this copy's stuck state the host's
 // (`physFlags`, read off the host's live prop): a copy stuck here that is free on the host gets the
-// component's unstick, with the tool, and a free copy the host's is stuck on gets the component's
-// forceStick at the pose the caller has already put it at. Non-component props
+// component's unstick, with the tool. A copy free here but stuck on the host waits for the
+// snapshot's exact-support PropStickState; it must not guess by tracing locally. Non-component props
 // converge their static bit through prop_C's base setter. Only on a difference;
 // the caller converges frozen and sleep after it. Game thread.
 void ConvergeStuck(void* actor, uint8_t physFlags);
