@@ -22,6 +22,12 @@ Run tests and pre-build gates before Release compilation, as specified in README
 
 ## Upstream integration
 
+The 8 November selected integration (M1-M10) is recorded in WORK and
+FORK_AUDIT_20261022.md. It reviews upstream `49023201c` and the current default
+fork heads; it does not replace the existing controllers or close the semantic
+reviews below. Native pickup/rest, module cleanup and personal-rest acceptance
+remain unperformed.
+
 - [ ] UP2: finish native continuation/session ownership review beyond the verified
   message-authority rules; track concrete findings in WORK. NJ01-NJ25 / NK01-NK50
   now own NPC join reads, registry/actor identities and per-recipient snapshot completion.

@@ -2,6 +2,14 @@
 
 Development target: **0.9.2164**. Last qualified offline package: **0.9.2163 / b2217**. Implementation backlog: [TODO.md](TODO.md) and [WORK.md](WORK.md). Maintained test coverage: [tests/README.md](tests/README.md).
 
+## Selected upstream and fork integration (8 November 2026)
+
+M1 resolves five pre-existing merge conflicts; M2 removes duplicate protocol declarations; M3 inventories 70 public default fork heads, 69 available. M4 applies zero End velocities with existing lifetime guards. M5 recognizes canonical mirrors in placement/recovery; M6 protects them during module/upgrade ghost cleanup. M7 installs the personal-rest controller. M8 includes the Steam formatter definition. M9 counts the eight-byte floppy canonical header; M10 rejects claims past the sender ceiling before mutation. Per-item provenance and exclusions: FORK_AUDIT_20261022.md.
+
+PASS 163 validation groups across the full run and scoped entity recheck on production stamp `0c6c9e5b155b0008e02abe70738d173e66551f2848bf7c595872218b0613b81e`. The full run initially failed only the legacy zero-velocity assertion; updating that fixture and rerunning its whole group passed without changing production sources. New cases cover zero End velocity, component replacement, registered mirrors, exact-capacity canonical packing and oversized claims. Seven changed production units compile. Native fact rows PASS (626 rows / 199 files); public_prose_gate still FAILS 14 counters, including 23 uncalled declarations and 156 unswept sources. Evidence and original failure/recheck records: `build/fork-review-20261108/verification.json` and `final/prebuild` beneath that directory.
+
+No Release compilation, new DLL/package, installation, commit, push or version/protocol change. The old merge is resolved but uncommitted. Native multiplayer pickup/rest, cleanup and sleep behavior remain unverified; offline checks do not establish the original jitter report's root cause.
+
 ## HandTaken delivery and client cleanup (8 November 2026)
 
 Implemented HD01-HD25 / HX01-HX50: confirmed notices retain recipient-owned FIFO debt after refusal, reserve bounded capacity before native spending, and complete only the accepted receipt. Context/recipient/body replacement cancels stale work; command/service retirement does not erase confirmed debt. Client cleanup captures typed hand fields and weak actor/class identities, preserves replacement hands and shared props, retries refused inventory writes and unattempted native refresh/release, and consumes dispatched native work once. Transactional inventory writes accept caller guards; native updateHold and physics-handle release revalidate their captured targets and preserve callback-installed grab fields.

@@ -422,6 +422,7 @@ void Install(coop::net::Session& session) {
     coop::kerfur_form_assembler::Install(&session);  // script-body gate consumer: watch the two conversion verbs
     coop::prop_stick_sync::Install(&session);  // wall-attachable stick mirror (camera-on-wall -- commit observer -> PropStickState; receiver replays forceStick)
     coop::shared_screen_sync::Install(&session);
+    coop::sleep_rest::Install(&session);
     coop::sleep_sync::Install(&session);  // the Minecraft sleep gate (isSleep edge poll -> host tally -> accelerate/end phases)
     coop::wisp_attack_sync::Install(&session);  // Killer Wisp coop -- AddPlayerDamage PRE-cancel (host neutralize) + host detect/relay
     // The per-player inventory installs at session start, pre-world: this install runs at

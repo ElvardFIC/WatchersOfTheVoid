@@ -110,5 +110,15 @@ int main(){using namespace test;
     Client(session);laptopReady=true;S::g_shadow[Key(F::DeviceKind::Laptop)]=native.c.data.size();
     S::g_haveCanonical[static_cast<uint8_t>(F::DeviceKind::Laptop)]=true;
     CHECK(S::LaptopOccupancySettled());S::g_awaiting[Key(F::DeviceKind::Laptop)]={1,0};CHECK(!S::LaptopOccupancySettled());
+    Host(session);
+    auto large=Value({L""});std::vector<uint8_t> packed;CHECK(S::PackOne(0,large,packed));
+    large.c.data[0].assign(S::kMaxSlotBytes-packed.size(),L'x');
+    CHECK(S::PackOne(0,large,packed) && packed.size()==S::kMaxSlotBytes);
+    ClaimPacket(large);S::OnChunk(chunk,1);CHECK(writes==1 && attempts==2);
+    Host(session);large.c.data[0].push_back(L'x');
+    incoming={S::kOpClaim,static_cast<uint8_t>(box),0};S::PackSlot(incoming,large);
+    CHECK(incoming.size()<=coop::blob_chunks::MaxBlobBytes());
+    S::OnChunk(chunk,1);CHECK(!writes && !attempts);
+    puts("PASS M10: maximum publishable claim accepted, one byte over refused before native writes");
     puts("PASS claim integration: success/refusal, early canonical, newer state, partial read/baseline, reentry, departure, parser and uncertain-write correction");
 }

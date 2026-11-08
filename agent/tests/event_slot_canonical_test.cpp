@@ -104,6 +104,18 @@ bool SendBlobToSlotWhile(net::Session* s,int slot,net::ReliableKind,uint32_t seq
 namespace coop::laptop_buffer_sync {void PrimeQuadBaseline(){++test::primes;test::Callback(test::onQuad);}void QueueConnectBroadcastForSlot(int){}}
 #ifndef EVENT_SLOT_NO_MAIN
 int main(){using namespace test;
+    auto first=Value({L""}),second=first;std::vector<uint8_t> entryBytes;
+    CHECK(S::PackOne(0,first,entryBytes));
+    const size_t max=coop::blob_chunks::MaxBlobBytes();
+    first.c.data[0].assign(max/2-entryBytes.size(),L'x');
+    second.c.data[0].assign(max-max/2-4-entryBytes.size(),L'y');
+    auto blobs=S::PackCanonicalSet(box,{{0,first},{1,second}});
+    CHECK(blobs.size()==2); // Four bytes of apparent space cannot fit the eight-byte header.
+    for(const auto& blob:blobs)CHECK(blob.size()<=max);
+    second.c.data[0].resize(second.c.data[0].size()-4);
+    blobs=S::PackCanonicalSet(box,{{0,first},{1,second}});
+    CHECK(blobs.size()==1 && blobs[0].size()==max);
+    puts("PASS M9: canonical split counts generation, exact transport limit remains valid");
     Reset();auto fullDisc=Value(std::vector<std::wstring>(32,std::wstring(1500,L'x')));
     fullDisc.c.objectData=std::wstring(5000,L'j');
     std::vector<uint8_t> packed;

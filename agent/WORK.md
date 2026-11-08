@@ -6,6 +6,17 @@ tests-before-Release workflow is in README and AGENTS.md.
 
 ## Upstream continuation
 
+- [x] M1-M10 selected upstream/fork integration: resolved the existing merge,
+  removed duplicate protocol declarations, compared 69 available default heads,
+  applied zero End velocities, canonical-mirror placement/cleanup recognition,
+  personal-rest installation, Steam formatter include and floppy envelope/claim
+  bounds. Per-item provenance and exclusions are in FORK_AUDIT_20261022.md;
+  verification is in TESTLOG. Full upstream ancestry is still `4fbf1acf0`.
+- [ ] Review Ghezra `74ab6e6cf` body-push admission against the existing drive
+  leases before adding a publisher. Keep the native contact/jitter investigation
+  open. Review BitRoit's repair-widget lifecycle and signed minigame sentinel
+  independently of its fixed-delay exit/watchdog implementation.
+
 - [x] HD01-HD25 / HX01-HX50: retained HandTaken recipient delivery, bounded
   FIFO reservations and guarded client cleanup/native inventory, refresh and grab
   release are implemented. Individual fixes and offline checks are in TESTLOG.

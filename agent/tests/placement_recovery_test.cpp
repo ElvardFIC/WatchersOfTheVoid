@@ -20,5 +20,12 @@ int main(){using namespace test;CHECK(LegacyBirthTests()==0);
  for(int n=0;n<=D::kMaxKeyTries;++n)D::Tick(&session);
  CHECK(D::g_pending.size()==1&&D::IsPendingHostPlacement(&actor)&&destroys==0);
  D::g_refusedPlacements.clear();D::Tick(&session);CHECK(D::IsRefusedPlacement(&actor)&&D::g_pending.empty());
+ Reset();Enqueue();D::Tick(&session);CHECK(D::IsAwaitingHost(&actor));
+ registeredMirror=true;D::Tick(&session);CHECK(!D::IsAwaitingHost(&actor));
+ CHECK(session.drops.size()==1); // A host-adopted mirror must not retry its placement.
+ Reset();registeredMirror=true;Enqueue();CHECK(D::g_pending.empty());
+ Reset();ue_wrap::CachedObjRef refused;refused.Set(&actor);D::g_refusedPlacements.push_back(refused);
+ registeredMirror=true;D::PlacementTick(&session);CHECK(D::g_refusedPlacements.empty());
+ puts("PASS M5: registered mirrors retire placement and recovery debt without local authorship");
  puts("PASS admitted rifle placement: exhausted send/capture/food retries retain local recovery and sweep/fallback protection; bounded recovery pool preserves pending ownership");
 }

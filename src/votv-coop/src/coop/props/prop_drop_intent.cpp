@@ -224,7 +224,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
     if (!actor || !R::IsLive(actor)) return;
     if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;  // a host-authored mirror we adopt, not a place
     if (!ue_wrap::prop::IsDescendantOfProp(actor)) return;          // keyed Aprop_C lineage only
-    if (PT::GetPropElementIdForActor(actor) != coop::element::kInvalidId) return;  // already tracked = not a fresh place
+    if (coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId) return;  // already tracked = not a fresh place
     // The hand-axis exclusion, the enqueue half (a fast path only, not load-bearing here: at
     // finish-spawn return the hold update has not yet written the holding actor, so the freshly
     // spawned hand view actor can pass this check; the drain-time re-check in Tick is the
@@ -302,7 +302,7 @@ void Tick(coop::net::Session* session) {
     PlacementTick(session);
     std::erase_if(g_awaitingHost, [](const AwaitingHost& row) {
         void* a = row.actor.Get();
-        return !a || (row.recordSubmitted && PT::GetPropElementIdForActor(a) != coop::element::kInvalidId);
+        return !a || (row.recordSubmitted && coop::element::Registry::Get().EidForActor(a) != coop::element::kInvalidId);
     });
     if (g_pending.empty() || g_draining) return;
     DrainScope scope;
@@ -598,7 +598,7 @@ void OnPlacementResult(const net::PropPlacementResultPayload& p, int senderSlot)
         }
         if (it->parked) NoteClientKeyedDestroy(it->key);
         void* actor = it->actor.Get();
-        if (actor && PT::GetPropElementIdForActor(actor) == coop::element::kInvalidId)
+        if (actor && coop::element::Registry::Get().EidForActor(actor) == coop::element::kInvalidId)
             g_refusedPlacements.push_back(it->actor); // recover locally by picking it back up
         g_awaitingHost.erase(it);
         coop::peer_action_feed::AnnounceDirect(coop::players::Registry::Get().LocalPeerId(),

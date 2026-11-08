@@ -266,9 +266,8 @@ void ApplyEnd(void* actor, const coop::net::PropDriveEndPayload& p, bool parkedH
         if (!current()) return;
         if (!coop::prop_wire_parity::RestoreSpParityPhysicsAfterConverge(actor, p.physFlags, current)) return;
         if (!current()) return;
-        const float lin2 = p.linVelX * p.linVelX + p.linVelY * p.linVelY + p.linVelZ * p.linVelZ;
-        const float ang2 = p.angVelX * p.angVelX + p.angVelY * p.angVelY + p.angVelZ * p.angVelZ;
-        if (parkedHere && coop::prop_wire_parity::SpParitySimulate(p.physFlags) && (lin2 > 0.f || ang2 > 0.f)) {
+        // Zero is authoritative too: a parked body may retain velocity from before the stream.
+        if (parkedHere && coop::prop_wire_parity::SpParitySimulate(p.physFlags)) {
             void* mesh = PR::GetStaticMesh(actor);
             ue_wrap::CachedObjRef component, componentClass; component.Set(mesh); componentClass.Set(R::ClassOf(mesh));
             const auto live = [&] {return current() && component.Get() && componentClass.Get() &&
