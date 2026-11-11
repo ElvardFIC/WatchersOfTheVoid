@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2222;  // toolgun prop flags
+inline constexpr uint16_t kProtocolVersion = 2222;  // EmoteWheel owner state and toolgun prop flags
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1116,7 +1116,7 @@ enum class ReliableKind : uint16_t {
     // Receivers apply the final live state unless their local player is holding the prop.
     PropToolFlags = 268,
 };
-inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::EmoteState) + 1;
+inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::PropToolFlags) + 1;
 
 #pragma pack(push, 1)
 
