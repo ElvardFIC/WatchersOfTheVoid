@@ -30,16 +30,25 @@ struct State {
     int32_t slotTexts      = 0;        // ui_UI_C.slotTexts  -- their amount labels
     int32_t iconNames      = 0;        // propProcessor.names          (propToIcon's index side)
     int32_t iconTextures   = 0;        // mainGameInstance.texs_GAMEINST (propToIcon's value side)
+    int32_t validIconTextures = 0;     // populated entries, not null decoder results
     int32_t rendererPhases = -1;       // propProcessor.fins -- how far the render got
     int32_t carried        = -1;       // records in the live personal store, -1 if unreadable
 
-    // Both halves of the icon lookup are published. Either one empty makes every icon null.
-    bool IconsReady() const { return iconNames > 0 && iconTextures > 0; }
+    // Both halves agree and every texture decoded. A nonempty array of null
+    // entries is the native empty-file cache failure, not published icons.
+    bool IconsReady() const {
+        return iconNames > 0 && iconNames == iconTextures && validIconTextures == iconTextures;
+    }
 };
 
 // Read it. False (and `out` left alone) before the world is up or while the reflection has not
 // resolved. Pure field reads, no UFunction dispatch -- safe from inside a Blueprint body.
 bool Read(State& out);
+
+// Before a non-Tutorial travel, reject empty disk icons and discard a cached
+// array containing null textures so the next world's native renderer rebuilds.
+// Tutorial keeps its native presentation. False asks the boot poll to retry.
+bool PrepareForWorld(int mode);
 
 // The texture bound to slot `i`'s `tex` material parameter, by name. Empty when the slot index is
 // out of range or the widget is gone; `no-material` when the image was never touched by a

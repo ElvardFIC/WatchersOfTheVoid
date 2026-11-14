@@ -1,5 +1,9 @@
 # Resume ragdoll momentum work — 22 October 2026
 
+Historical qualification notes follow. For current priorities and version status,
+use [TODO.md](TODO.md) and [WORK.md](WORK.md): current development
+2161 / b2217. The 2157 evidence below is not current-DLL acceptance.
+
 ## Current release 0.9.2157 / b2184 - package-label correction, 22 October 2026
 
 The menu and server browser now show Watchers of the Void 0.9.2157 from

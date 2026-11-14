@@ -5,7 +5,7 @@
 // The three were cut apart when prop_lifecycle passed the 800-line soft cap.
 //
 // Sibling-internal header (the session_lanes.h / event_dispatch.h precedent) -- NOT part of
-// the public coop/ include surface; only the three translation units above include it.
+// the public coop/ include surface; only the two translation units above include it.
 
 #pragma once
 
@@ -17,7 +17,7 @@
 
 namespace coop::prop_lifecycle {
 
-// Cached session pointer (set on Install/InstallInventory via SetSession). Atomic because the
+// Cached session pointer (set on Install via SetSession). Atomic because the
 // observers fire from parallel-anim worker threads; defined in prop_lifecycle.cpp.
 extern std::atomic<coop::net::Session*> g_session_ptr;
 

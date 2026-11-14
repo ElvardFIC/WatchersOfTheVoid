@@ -34,6 +34,46 @@ class IncludeReachTests(unittest.TestCase):
         })
         self.assertEqual(counters["src.dead_declarations"], 0, detail)
 
+    def test_private_header_inherits_including_units_declarations(self):
+        counters, _, detail = self.measure({
+            "src/votv-coop/include/api/live.h": "void LiveAction();\n",
+            "src/votv-coop/src/unit.cpp": '#include "api/live.h"\n#include "parts/implementation.h"\nvoid LiveAction(){}\n',
+            "src/votv-coop/src/parts/implementation.h": "void Caller(){ LiveAction(); }\n",
+        })
+        self.assertEqual(counters["src.dead_declarations"], 0, detail)
+
+    def test_default_macro_include_sees_including_units_declarations(self):
+        counters, _, detail = self.measure({
+            "src/votv-coop/include/api/live.h": "void LiveAction();\n",
+            "src/votv-coop/src/unit.cpp": '#include "api/live.h"\n#ifndef APPLY_SOURCE\n#define APPLY_SOURCE "apply.inc"\n#endif\n#include APPLY_SOURCE\nvoid LiveAction(){}\n',
+            "src/votv-coop/src/apply.inc": "void Caller(){ LiveAction(); }\n",
+        })
+        self.assertEqual(counters["src.dead_declarations"], 0, detail)
+
+    def test_unused_or_undefined_macro_cannot_hide_dead_declaration(self):
+        header = "src/votv-coop/include/api/unused.h"
+        for directive in ('', '#undef APPLY_SOURCE\n#include APPLY_SOURCE\n'):
+            with self.subTest(directive=directive):
+                counters, _, detail = self.measure({
+                    header: "void UnusedAction();\n",
+                    "src/votv-coop/src/unit.cpp": '#include "api/unused.h"\n#define APPLY_SOURCE "apply.inc"\n' + directive + 'void UnusedAction(){}\n',
+                    "src/votv-coop/src/apply.inc": "void Caller(){ UnusedAction(); }\n",
+                })
+                self.assertEqual(counters["src.dead_declarations"], 1, detail)
+
+    def test_private_header_does_not_export_context_to_another_unit(self):
+        first = "src/votv-coop/include/api/first.h"
+        second = "src/votv-coop/include/api/second.h"
+        counters, _, detail = self.measure({
+            first: "namespace First {\nvoid SameAction();\n}\n",
+            second: "namespace Second {\nvoid SameAction();\n}\n",
+            "src/votv-coop/src/first.cpp": '#include "api/first.h"\n#include "private.h"\nvoid First::SameAction(){}\n',
+            "src/votv-coop/src/second.cpp": '#include "api/second.h"\n#include "private.h"\nvoid Second::SameAction(){}\nvoid Caller(){ Second::SameAction(); }\n',
+            "src/votv-coop/src/private.h": "void EmptyHelper(){}\n",
+        })
+        self.assertEqual(counters["src.dead_declarations"], 1, detail)
+        self.assertEqual(detail["src.dead_declarations"][first], ["SameAction"])
+
     def test_shared_fragment_does_not_export_context_to_other_unit(self):
         first = "src/votv-coop/include/api/first.h"
         second = "src/votv-coop/include/api/second.h"

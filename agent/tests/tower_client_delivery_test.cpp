@@ -1,0 +1,52 @@
+#define TOWER_OPS_NO_MAIN
+#include "tower_ops_test.cpp"
+int main(){using namespace test;N::Session session;
+ auto setup=[&]{Reset(session);session.mode=N::Role::Client;S::Install(&session);};
+ auto send=[&](uint8_t op,bool physical){S::ClientSend(&session,op,F::Kind::Coordinate,0,0,physical,&tower,op==N::kFuseTowerOpPull?&output:nullptr);};
+ setup();session.sendOk=false;send(N::kFuseTowerOpInsert,true);send(N::kFuseTowerOpButton,false);
+ CHECK(S::g_clientCommands.size()==2&&S::g_claims.size()==1&&session.sent.empty());
+ for(int i=0;i<8;++i){S::g_clientCommands[0]->at=0;S::DrainClientCommands();}
+ CHECK(S::g_clientCommands.size()==2&&session.sent.empty()&&!Count("insert")&&!Count("use"));
+ session.sendOk=true;S::g_clientCommands[0]->at=0;S::DrainClientCommands();
+ CHECK(session.sent.size()==1&&session.sent[0].packet.seq==1&&S::g_clientCommands.size()==2);
+ S::DrainClientCommands();CHECK(session.sent.size()==1);
+ S::OnAcks(1,0);S::DrainClientCommands();CHECK(session.sent.size()==2&&session.sent[1].packet.seq==2&&S::g_claims.empty());
+ S::OnAcks(2,0);CHECK(S::g_clientCommands.empty());
+ puts("PASS UI01 client FIFO survives refusal beyond five retries and retains accepted transport until ACK without native replay");
+ setup();session.onSend=[&]{S::OnAcks(1,0);send(N::kFuseTowerOpInsert,true);};send(N::kFuseTowerOpInsert,true);
+ CHECK(S::g_clientCommands.size()==1&&S::g_clientCommands[0]->p.seq==2&&session.sent.size()==1);
+ S::DrainClientCommands();CHECK(session.sent.size()==2&&session.sent[1].packet.seq==2);
+ setup();session.sendOk=false;send(N::kFuseTowerOpInsert,true);++tower.serial;S::DrainClientCommands();
+ CHECK(S::g_clientCommands.size()==1&&session.sent.empty());
+ puts("PASS UI01 nested ACK/new request preserves its successor; replaced target retains unresolved debt without retargeting");
+ setup();send(N::kFuseTowerOpPull,true);send(N::kFuseTowerOpInsert,true);
+ coop::players::Registry::Get().local=&body;grabReadable=pulledFuse=true;
+ hook=[&](const std::string& name){if(name=="destroyLocal")send(N::kFuseTowerOpInsert,true);};
+ S::OnAcks(1,1);CHECK(S::g_claims.size()==2&&S::g_claims[0].seq==2&&S::g_claims[1].seq==3&&Count("destroyLocal")==1);
+ setup();send(N::kFuseTowerOpPull,true);pulledFuse=true;++output.serial;
+ S::OnAcks(1,1);CHECK(!Count("destroyLocal"));
+ puts("PASS UI01 acknowledged claims detach before native reap; new claims survive and replaced contexts stop destruction");
+ setup();coop::players::Registry::Get().local=&body;grabReadable=pulledFuse=true;look=F::Look::Pull;paramOffset=0;
+ uint8_t locals[16]{4};ue_wrap::script_gate::Call call{};call.object=&tower;call.function=&fuse;call.locals=locals;call.stack=&body;call.depth=1;call.invocation=1;
+ CHECK(S::OnUsePre(call)==ue_wrap::script_gate::Verdict::Run);grabActor=&output;view.fuses[0]=0;S::OnUsePost(call);
+ CHECK(S::g_claims.size()==1&&S::g_claims[0].output.Get()==&output);grabActor=&otherOutput;S::OnAcks(1,1);
+ CHECK(lastDestroyed==&output&&S::g_unknownPulls.empty());
+ setup();S::ClientSend(&session,N::kFuseTowerOpPull,F::Kind::Coordinate,0,0,true,&tower);
+ S::OnAcks(1,1);CHECK(!lastDestroyed&&S::g_unknownPulls.size()==1);
+ puts("PASS UI03 refused pull deletes only its captured output, preserves another held fuse and records unknown cleanup");
+ setup();paramOffset=0;std::memcpy(locals,&call.function,sizeof(void*));view.fuses[0]=0;
+ CHECK(S::OnInsertPre(call)==ue_wrap::script_gate::Verdict::Run);view.fuses[0]=1;S::OnInsertPost(call);
+ view.fuses[0]=0;auto next=call;next.invocation=2;
+ CHECK(S::OnInsertPre(next)==ue_wrap::script_gate::Verdict::Cancel);
+ S::OnAcks(1,0);CHECK(S::OnInsertPre(next)==ue_wrap::script_gate::Verdict::Run);
+ puts("PASS UI03 paid insert admission waits for ACK before another native spend");
+ setup();std::memset(locals,0,sizeof locals);locals[0]=4;for(int i=1;i<=31;++i)S::g_claims.push_back({uint16_t(i),N::kFuseTowerOpInsert,F::Kind::Coordinate,0,0});S::g_seq=31;
+ look=F::Look::Pull;paramOffset=0;view.fuses[0]=0;CHECK(S::OnUsePre(call)==ue_wrap::script_gate::Verdict::Run);
+ bool nested=false;hook=[&](const std::string& name){if(name=="view"&&!nested){nested=true;auto child=call;child.depth=2;child.invocation=2;
+  CHECK(S::OnUsePre(child)==ue_wrap::script_gate::Verdict::Cancel);}};
+ S::OnUsePost(call);CHECK(nested&&S::g_claims.size()==32);
+ puts("PASS UI01 POST reserves its claim slot across nested native validation");
+ setup();for(int i=0;i<32;++i)send(N::kFuseTowerOpButton,false);const auto before=S::g_seq;
+ send(N::kFuseTowerOpButton,false);CHECK(S::g_clientCommands.size()==32&&S::g_seq==before);
+ puts("PASS UI01 unanswered control requests have bounded admission");
+}

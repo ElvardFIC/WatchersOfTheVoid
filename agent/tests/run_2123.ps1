@@ -1,11 +1,11 @@
-param([string]$Python = 'python')
+param([string]$Python = (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output = Join-Path $root '_research\tests_2123'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     function Check-Cpp([string]$Source, [string]$Name, [bool]$Stubs = $false, [bool]$Negative = $false) {
         $argsCl = @('/nologo', '/std:c++20', '/EHsc')
         if ($Stubs) { $argsCl += @('/I', 'agent\tests\stubs') }

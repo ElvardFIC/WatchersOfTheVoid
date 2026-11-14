@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <functional>
+
 namespace ue_wrap::window_canvas {
 
 // One dab, in the render target's pixel space.
@@ -39,17 +41,26 @@ bool IsStrokeDraw(void* sourceObject);
 // The last stroke's top-left corner (field A). Raw field read.
 bool ReadStrokeCorner(void* window, float& x, float& y);
 
+// Observe the exact native draw while its Blueprint caller frame is alive.
+// Uses the audited held/thrown wash call sites and their original material;
+// at most two pure scalar queries, with incarnation checks around each call.
+bool ReadStrokeDab(void* window,Dab& out,const std::function<bool()>& current);
+
 // The brush the player's held sponge (or mop) paints with: its size and the brush material's
 // current opac/col, which the sponge rewrites right before each dab. False when the player holds
 // no sponge. Game thread (reads the material parameters through UFunctions).
-bool ReadHeldBrush(void* mainPlayer, float& size, float& opac, float& col);
+bool ReadHeldBrush(void* mainPlayer, float& size, float& opac, float& col,
+                   const std::function<bool()>& current = {});
 
-// Signal playback owns the world's render-target canvas; the window refuses to draw meanwhile.
+// Signal playback owns the world's render-target canvas. Unknown/unreadable state
+// also returns true, so callers wait instead of taking an unproven shared canvas.
 bool IsSignalPlaying();
 
 // Replay one dab on `window`: open or join the session through Canvas, then draw with a brush
-// material instance this module owns. False when anything is unresolved. Game thread.
-bool DrawDab(void* window, const Dab& d);
+// material instance this module owns. Retry means no canvas draw was admitted;
+// Attempted means the admitted draw's outcome is uncertain and must not be replayed.
+enum class DrawResult { Retry, Attempted, Applied };
+DrawResult DrawDab(void* window, const Dab& d, const std::function<bool()>& current = {});
 
 // Release the owned brush material (session teardown). Game thread.
 void ReleaseBrush();

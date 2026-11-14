@@ -12,6 +12,7 @@
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"
 #include "ui/host_player_limit.h"
+#include "ui/host_game_mode.h"
 #include "ui/host_session_choices.h"     // the two-row selector these questions share
 #include "ui/host_window_native.h"      // step ONE -- what Back returns to
 #include "ui/input_focus.h"
@@ -637,7 +638,7 @@ void Show() {
     // rather than whatever was half-typed before leaving.
     TF::SetText(g_nameField, g_name);
     SetText(g_recapWorld,
-            g_choice.newGame ? std::wstring(L"World: a new game")
+            g_choice.newGame ? std::wstring(L"New game: ")+host_game_mode::Label(g_choice.mode)
                              : L"World: " + Widen(g_choice.slot),
             kDim);
     SetText(g_recapConn,

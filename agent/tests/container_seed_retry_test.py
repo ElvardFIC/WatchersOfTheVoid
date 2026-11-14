@@ -28,12 +28,14 @@ FIXTURE = r'''
 #include <map>
 #include <set>
 #include <vector>
+#include <functional>
+#include <string>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 #define UE_LOGI(...) ((void)0)
 #define UE_LOGW(...) ((void)0)
 int actor, targeted=0, fanouts=0, accepted=0;
 bool live=true, inventoryReady=true, readable=true, classReady=true;
-namespace coop::net {struct Session{bool connected()const{return true;}bool send=true;int blocked=-1;uint32_t generation=1;bool HasPeerConn(int)const{return true;}bool IsSlotWorldReady(int)const{return true;}uint32_t peerGenerationForSlot(int)const{return generation;}};inline constexpr int kMaxPeers=32;enum class ReliableKind{ContainerContents};}
+namespace coop::net {enum class Role{Host,Client}; struct Session{Role role()const{return Role::Host;} bool AnyWorldReadyPeer()const{return true;} bool connected()const{return true;}bool send=true;int blocked=-1;uint32_t generation=1;bool HasPeerConn(int)const{return true;}bool IsSlotWorldReady(int)const{return true;}uint32_t peerGenerationForSlot(int)const{return generation;}};inline constexpr int kMaxPeers=32;enum class ReliableKind{ContainerContents};}
 namespace coop::element {
 enum class ElementType{Prop};
 struct Registry {
@@ -49,6 +51,9 @@ bool IsContainer(void*){return true;}void* InventoryOf(void* p){return inventory
 bool IsWorldInventory(void*){return true;}void* OwnerOf(void* p){return p;}
 void RederiveShownState(void*,void*){}
 }
+namespace coop::net::session_serial {uint32_t Current(){return 1;}}
+namespace ue_wrap {struct CachedObjRef {void* p=nullptr;void Set(void* v){p=v;}void* Get()const{return live?p:nullptr;}};}
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return classReady?&actor:nullptr;}}
 namespace ue_wrap::world_identity {uint32_t Generation(){return 1;}}
 namespace ue_wrap::prop {bool WalksToBase(void*,void*){return true;}}
 namespace cb {
@@ -58,21 +63,29 @@ Owed FirstOwed(uint32_t,uint64_t){return Owed::None;}bool Awaited(void*,int){ret
 }
 namespace cw {
 constexpr uint64_t kBirthBase=~uint64_t{0};
-std::vector<uint8_t> Pack(uint32_t,uint64_t,const std::vector<SR::SaveRecord>&){return {1,2,3};}
-uint64_t ContentHash(uint32_t,const std::vector<SR::SaveRecord>&){return 99;}
+std::vector<uint8_t> Pack(uint32_t,const std::vector<SR::SaveRecord>&,uint8_t){return {1,2,3};}
+uint64_t RecordsHash(uint32_t,const std::vector<SR::SaveRecord>&){return 99;}
 }
 namespace wp {void NotePublished(uint32_t,uint64_t){}}
 namespace coop::blob_chunks {
 size_t MaxBlobBytes(){return 1000;}
-bool SendBlob(net::Session* s,net::ReliableKind,uint32_t,const std::vector<uint8_t>&){if(s->send)++fanouts;return s->send;}
-bool SendBlobToSlot(net::Session* s,int slot,net::ReliableKind,uint32_t,const std::vector<uint8_t>&){++targeted;const bool ok=s->send&&s->blocked!=slot;if(ok)++accepted;return ok;}
+bool SendBlobWhile(net::Session* s,net::ReliableKind,uint32_t,const std::vector<uint8_t>&,const std::function<bool()>& current){if(s->send&&current())++fanouts;return s->send&&current();}
+bool SendBlobToSlotWhile(net::Session* s,int slot,net::ReliableKind,uint32_t,const std::vector<uint8_t>&,const std::function<bool()>& current){++targeted;const bool ok=s->send&&s->blocked!=slot&&current();if(ok)++accepted;return ok;}
 }
 std::atomic<coop::net::Session*> g_session;
 std::set<uint32_t> g_dirty,g_retry;
 coop::props::ContainerSeedRetries g_seedRetry;
 std::array<uint32_t,32> g_seedScans{};
 void QueueConnectBroadcastForSlot(int);
-std::map<uint32_t,uint64_t> g_sentHash,g_baseHash;
+bool BroadcastContainer(coop::net::Session*,uint32_t,void*,int,bool);
+struct Seen {uint64_t records;uint8_t flags;};std::map<uint32_t,Seen> g_sent;
+uint64_t g_publishEpoch=0,g_noReadyRefusals=0,g_noReadyRetries=0;std::set<uint32_t> g_noReadyEids;
+bool CurrentSession(coop::net::Session* s){return s==g_session.load();}
+bool IsHostRole(){return true;}
+namespace ca{void Untrack(uint32_t){} void Track(uint32_t){}uint8_t ReadFlags(void*){return 0;}}
+namespace coop::dev::container_route_census{void NoteSliceSent(uint32_t){}}
+void Touch(uint32_t){}
+namespace cio{bool ReadRecords(void*,std::vector<SR::SaveRecord>& out){out.push_back({});return readable;}}
 uint32_t g_nextSeq=1;
 constexpr uint64_t kUnsentWarnMs=5000;
 bool IsHost(){return true;}uint64_t NowMs(){return 1000;}
@@ -83,7 +96,7 @@ enum class SliceRead{Ok,Unreadable,OverCap};
 SliceRead ReadContents(void*,std::vector<SR::SaveRecord>& out){out.push_back({});return readable?SliceRead::Ok:SliceRead::Unreadable;}
 @FUNCTIONS@
 int main(){
- coop::net::Session s;g_session=&s;g_sentHash[7]=99;
+ coop::net::Session s;g_session=&s;g_sent[7]=Seen{99,0};
  classReady=false;QueueConnectBroadcastForSlot(2);CHECK(g_seedScans[2]);classReady=true;RetrySeeds(&s);CHECK(!g_seedScans[2]&&accepted==1);targeted=accepted=0;
  s.send=false;QueueConnectBroadcastForSlot(2);CHECK(targeted==1&&g_seedRetry.Size()==1);
  s.send=true;RetrySeeds(&s);CHECK(targeted==2&&accepted==1&&g_seedRetry.Size()==0&&fanouts==0);
@@ -109,11 +122,11 @@ int main(){
 
 def main():
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    source = SOURCE.read_text(encoding="utf-8-sig")
+    source = SOURCE.read_text(encoding="utf-8-sig")+"\n"+SOURCE.with_name("container_contents_publish.cpp").read_text(encoding="utf-8-sig")
     bodies = "\n".join(function(source, name) for name in (
         "bool BroadcastContainer(", "void DrainDirty(", "void RetrySeeds(", "void QueueConnectBroadcastForSlot("))
     fixture = OUTPUT / "container-seed.cpp"
-    fixture.write_text(FIXTURE.replace("@FUNCTIONS@", bodies), encoding="utf-8")
+    fixture.write_text(FIXTURE.replace("@FUNCTIONS@", bodies.replace("internal::", "")), encoding="utf-8")
     exe = OUTPUT / "container-seed.exe"
     subprocess.run(["cl", "/nologo", "/std:c++20", "/EHsc", "/utf-8",
                     f"/I{CHECKOUT / 'src/votv-coop/include'}", f"/Fo{OUTPUT / 'container-seed.obj'}", f"/Fe{exe}", str(fixture)], check=True)
@@ -121,7 +134,7 @@ def main():
     # A failed targeted seed must not be hidden by an older fan-out's identical hash.
     legacy = bodies.replace("g_seedRetry.Queue(static_cast<uint32_t>(pr.id), peerSlot, s->peerGenerationForSlot(peerSlot));", "g_retry.insert(static_cast<uint32_t>(pr.id));")
     control = OUTPUT / "container-seed-legacy.cpp"
-    control.write_text(FIXTURE.replace("@FUNCTIONS@", legacy), encoding="utf-8")
+    control.write_text(FIXTURE.replace("@FUNCTIONS@", legacy.replace("internal::", "")), encoding="utf-8")
     control_exe = OUTPUT / "container-seed-legacy.exe"
     subprocess.run(["cl", "/nologo", "/std:c++20", "/EHsc", "/utf-8",
                     f"/I{CHECKOUT / 'src/votv-coop/include'}", f"/Fo{OUTPUT / 'container-seed-legacy.obj'}", f"/Fe{control_exe}", str(control)], check=True)

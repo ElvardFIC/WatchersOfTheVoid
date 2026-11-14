@@ -62,6 +62,9 @@ public:
     void SetTargetPose(const coop::net::PoseSnapshot& snap);
     void Tick();
 
+    // Refresh head and world-space flashlight aim after a chair/vehicle places the body.
+    void RefreshSeatView();
+
     // Ragdoll physics sync, on each fresh RagdollPose packet while the peer ragdolls: slaves the
     // mirror body's pelvis velocity to the sender's ragdoll and stamps the streamed pelvis rotation
     // the next ApplyToEngine drives. A no-op until a ragdoll body exists. Game thread only.
@@ -125,9 +128,14 @@ public:
 
     // True while a ragdoll display body is spawned: the peer is ragdolled (fainted, fell, died).
     bool IsRagdollDisplayed() const { return ragdoll_.Active(); }
+    bool CanPlayEmote() const {
+        return health_>0 && !ragdoll_.Active() &&
+            !(curStateBits_ & (net::kStateBitInAir | net::kStateBitSleeping |
+                               net::kStateBitRagdoll | net::kStateBitSitting | net::kStateBitComputer));
+    }
     bool IsSitting() const {
         return (curStateBits_ & net::kStateBitSitting) != 0 &&
-            (curStateBits_ & (net::kStateBitSleeping | net::kStateBitRagdoll)) == 0;
+            (curStateBits_ & (net::kStateBitSleeping | net::kStateBitRagdoll | net::kStateBitComputer)) == 0;
     }
     // The spawned playerRagdoll_C body and its GUObjectArray index, for a liveness-guarded deref in
     // tests.
@@ -160,6 +168,7 @@ private:
     // per frame whether or not interpolation is active, so nothing that moved the actor between
     // frames leaves drift.
     void ApplyToEngine();
+    void RefreshView();
 
     // Advance the open interpolation window to now (the cur* state gains dAlpha times the cached
     // error); a no-op with no window open. Sets dirty_ and does not push to the engine. Called

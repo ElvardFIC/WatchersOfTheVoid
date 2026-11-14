@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <functional>
 namespace coop::net {
+struct Config;
 inline constexpr int kMaxPeers=4;
 enum class Role {Host,Client};
 class Session {
@@ -15,6 +16,7 @@ public:
  std::vector<FoodBitePayload> bites;
  std::function<void()> beforeSend;
  bool running()const{return active;}bool connected()const{return linked;}Role role()const{return mode;}
+ bool AnyWorldReadyPeer() const {return ready;}
  bool IsSlotWorldReady(int)const{return ready;}
  bool SendReliableToSlot(int slot,ReliableKind k,const void* data,int n){
   auto fn=std::move(beforeSend);beforeSend={};if(fn)fn();

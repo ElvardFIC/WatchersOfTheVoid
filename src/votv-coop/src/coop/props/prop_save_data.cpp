@@ -52,17 +52,9 @@ constexpr uint8_t kBodyVersion = 1;
 // A Key is an Aprop_C save key: ASCII, at most WireKey's 31 chars.
 constexpr size_t kMaxKeyChars = 31;
 
-// The record ceiling, sized from what a record COSTS rather than from what the transport allows.
-// The transport would carry 56 KB, and the codec that decodes one allocates engine memory per
-// declared group and orphans it by this layer's out-param doctrine, so the transport's maximum is
-// an invitation rather than a bound. MEASURED on the test world: most covered props' records are a
-// few hundred bytes and the largest real one is 11.3 KB, so 32 KB is roughly three times the
-// biggest thing the game actually produces and still refuses a body shaped to make the decoder
-// allocate. [An 8 KB first guess was wrong and the run said so within a minute -- a cap picked
-// from an estimate rather than from a census refused a legitimate record.] A record over the cap
-// is REFUSED and logged, never truncated: half a record through loadData is worse than none, and
-// the peer that still holds the whole prop can re-publish.
-constexpr size_t kMaxRecordBytes = 32768;
+// A full disc of server requests exceeds 32 KiB. Bound the complete serialized body by the
+// transport capacity; decoder shape limits and per-sender rate/park budgets still apply.
+constexpr size_t kMaxRecordBytes = coop::blob_chunks::MaxBlobBytes();
 size_t MaxRecordBytes() { return kMaxRecordBytes; }
 
 // The park: records whose prop has not arrived, or whose apply has not had a budget slot yet.
@@ -409,6 +401,11 @@ void ExpectRecordFor(void* actor, const std::wstring& key, uint8_t senderSlot) {
     if(!g_applying.count(key) && !g_publishing.count(key) && parked!=g_parked.end() && parked->second.senderSlot==senderSlot){
         parked->second.awaited=a.seq;parked->second.preserveGrillRuntime=false;
     }
+}
+
+bool AwaitsRecordFrom(const std::wstring& key, uint8_t senderSlot) {
+    const auto it = g_awaiting.find(key);
+    return it != g_awaiting.end() && it->second.senderSlot == senderSlot && NowMs() < it->second.deadlineMs;
 }
 
 // True while the author's record for this key has not landed here. A wait that has run out is

@@ -7,8 +7,12 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  $source=Get-Content 'src/votv-coop/src/coop/props/remote_prop.cpp' -Raw
- $block=[regex]::Match($source,'(?ms)^struct HoldGate \{.*?^bool IsRejectedRelease\(.*?^\}').Value
- if(-not $block){throw 'Production drive helpers missing'}
+ $drive=Get-Content 'src/votv-coop/src/coop/props/remote_prop_drive.cpp' -Raw
+ $header=Get-Content 'src/votv-coop/src/coop/props/remote_prop_drive.h' -Raw
+ $gate=[regex]::Match($header,'(?ms)^struct HoldGate \{.*?^\};').Value
+ $helpers=[regex]::Match($drive,'(?ms)^void NoteConflict\(.*?^bool IsRejectedRelease\(.*?^\}').Value
+ if(-not $gate -or -not $helpers){throw 'Production drive helpers missing'}
+ $block=$gate+"`nstd::array<HoldGate, coop::players::kMaxPeers> g_holds{};`n"+$helpers
  [IO.File]::WriteAllText((Join-Path $output 'drive.h'),$block,[Text.UTF8Encoding]::new($false))
  $release=$source.Substring($source.IndexOf('void OnRelease('))
  if($release.IndexOf('if (IsRejectedRelease(') -lt 0 -or $release.IndexOf('if (IsRejectedRelease(') -gt $release.IndexOf('coop::pvp::NoteThrow(')){throw 'Conflict guard missing or too late'}

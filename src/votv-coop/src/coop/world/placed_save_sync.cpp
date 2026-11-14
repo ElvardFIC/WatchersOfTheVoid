@@ -11,6 +11,7 @@
 #include "coop/player/roster_ledger.h"
 #include "coop/player/hand_item.h"
 #include "ue_wrap/actors/placed_save.h"
+#include "ue_wrap/actors/llama_marker.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
@@ -506,6 +507,10 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
     // Legacy identity is host-authored and schema-limited. Unknown tombstones
     // carry no schema, so their lookup below must enforce that same class gate.
     auto it = g_rows.find(record.key);
+    // The console marker is host world state. A client may ask for a known
+    // snapshot, but no personal placement/removal/resource verb may mutate it.
+    if (Host() && ((P::ClassKind(record.className)==P::Kind::Marker && op!=Refresh) ||
+        (it!=g_rows.end() && P::ClassKind(it->second.record.className)==P::Kind::Marker && op!=Refresh))) return;
     if (!Ours(record.key)) {
         if (Host()) {
             const bool knownGardenRemoval = op == Remove && it != g_rows.end() && it->second.accepted &&
@@ -838,7 +843,7 @@ bool OwnsClientWall(const std::wstring& key,void* actor,uint8_t slot,uint16_t pl
     const auto& row=it->second;return row.accepted && !row.dead && row.spawnedForClient && row.ref.Is(actor) &&
         row.owner==slot && row.playerNo==playerNo && row.record.className==L"customWall_unfinished_C";
 }
-void OnDisconnect() { wall_build_sync::OnDisconnect(); g_session = nullptr; ResetWorld(); }
+void OnDisconnect() { wall_build_sync::OnDisconnect(); g_session = nullptr; ResetWorld(); ue_wrap::llama_marker::OnDisconnect(); }
 bool SendGardenAction(const std::vector<uint8_t>& bytes,const std::function<bool()>& current) {
     return Active() && !Host() && bytes.size() <= 64 * 1024 &&
         blob_chunks::SendBlobWhile(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes,current);

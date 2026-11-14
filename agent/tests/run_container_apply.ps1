@@ -19,16 +19,14 @@ if($LASTEXITCODE){throw 'Container apply regression failed'}
 if($FaultControls) {
     $source=Get-Content (Join-Path $output 'container_apply_production.inc') -Raw
     $park=Get-Content (Join-Path $root 'src/votv-coop/src/coop/props/container_park.cpp') -Raw
-    foreach($name in @('unchecked-record','stale-commit','lost-relay','whole-byte-boundary','old-park-replay','lost-new-park','false-empty-slice')) {
+    foreach($name in @('unchecked-record','stale-commit','lost-binding','early-complete','lost-new-park')) {
         $mutant=$source;$parkMutant=$park
         switch($name) {
             'unchecked-record' {$mutant=$source.Replace('const bool complete=SR::WriteSaveRecordChecked(', 'const bool complete=(SR::WriteSaveRecord(').Replace('recs[i],resolve);','recs[i],resolve),true);')}
             'stale-commit' {$mutant=$source.Replace('return source.Current() && actorRef.Get()', 'return true && actorRef.Get()')}
-            'lost-relay' {$mutant=$source.Replace('g_seedRetry.Queue(eid,slot,peer);','(void)eid;')}
-            'whole-byte-boundary' {$mutant=$source.Replace('return ci::IsWorldInventory(inv);','int32_t off=-1;uint8_t mask=0;return R::FindBoolProperty(R::ClassOf(inv),L"Player",off,mask) && !*(static_cast<uint8_t*>(inv)+off);')}
-            'old-park-replay' {$mutant=$source.Replace('pk::Retire(eid,parked);','(void)parked;')}
+            'lost-binding' {$mutant=$source.Replace('identity->second.Matches(actor,inv,ue_wrap::inventory::ResolveSaveSlot(),ci::WorldContentsSlot(inv))','true')}
+            'early-complete' {$mutant=$source.Replace('const int32_t n = static_cast<int32_t>(recs.size());','if(committed)committed(); const int32_t n = static_cast<int32_t>(recs.size());')}
             'lost-new-park' {$parkMutant=$park.Replace(' || it->second.revision!=snapshot.revision','')}
-            'false-empty-slice' {$mutant=$source.Replace('SR::Arr objs{};if(!SR::TryReadArr(slot,0,objs))return SliceRead::Unreadable;','const SR::Arr objs=SR::ReadArr(slot,0);')}
         }
         if($mutant -eq $source -and $parkMutant -eq $park){throw "Missing control site: $name"}
         $control=Join-Path $output $name

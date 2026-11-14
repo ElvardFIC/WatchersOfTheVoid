@@ -1,10 +1,13 @@
 // coop/props/prop_drop_intent.cpp -- see coop/props/prop_drop_intent.h for the design.
 
 #include "coop/props/prop_drop_intent.h"
+#include "coop/props/container_contents_sync.h"
 #include "coop/comms/peer_action_feed.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_snapshot.h"
 
+#include "coop/config/config.h"             // the throw arms' dev knobs
+#include "coop/dev/container_route_census.h"   // IsEnabled -- the dev read of the last place spawn is kept only while it runs
 #include "coop/dev/prop_birth_key_probe.h"   // the seam's key-timing and drain-exit instrumentation
 #include "coop/element/registry.h"          // EidForActor (drain: tracked/mirror exclusion)
 #include "coop/net/protocol.h"
@@ -19,10 +22,12 @@
 #include "coop/props/prop_spawn_authoring.h" // BirthIsPlayerAuthored (the spawn menu / the toolgun)
 #include "coop/props/water_pour_sync.h"
 #include "ue_wrap/actors/floor_bed.h"
+#include "coop/props/prop_drive_rules.h"    // kRestVelCmS: the floor under which a spawn is written no velocity
+#include "coop/props/prop_throw.h"          // ThrowSeqFor: the throw that launched a drained place
 #include "coop/props/prop_wire_parity.h"    // PhysFlagsOf, the one builder of a live prop's flags
 #include "coop/props/prop_element_tracker.h"// GetPropElementIdForActor
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
-#include "coop/props/container_contents_sync.h"  // TakeObjInFlight -- mark a container-extraction birth
+#include "coop/props/container_writer_watch.h"   // TakeObjInFlight -- mark a container-extraction birth
 #include "coop/props/container_birth.h"           // a thrown container's birth slice
 #include "coop/session/world_load_episode.h"  // InEpisode (quiet during the join loadObjects churn)
 #include "ue_wrap/core/call.h"                   // ParamFrame + Call (setKey on the host re-spawn)
@@ -70,6 +75,10 @@ namespace R  = ue_wrap::reflection;
 namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
+
+// The throw arms' read of what the host gave a thrown copy at its spawn (|v| cm/s of the latest, 0 when none was written).
+uint32_t g_launches = 0;
+float    g_lastLaunch = 0.f;
 
 UE_FACT_FN(kRowFinishSpawningActor, "prop_drop_intent", L"GameplayStatics", L"FinishSpawningActor", Declared);
 
@@ -124,6 +133,7 @@ struct DrainScope {
     DrainScope() { g_draining = true; }
     ~DrainScope() { g_draining = false; }
 };
+ue_wrap::CachedObjRef g_lastPlace;           // GT-only; the most recent pending place spawn's actor (dev read only)
 constexpr size_t kMaxPending  = 32;          // runaway backstop (a settled client rarely has >1 in flight)
 constexpr int    kMaxKeyTries = 8;           // ~8 net-pump ticks (~64 ms) for the Key to restore, then give up
 
@@ -214,7 +224,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
     if (!actor || !R::IsLive(actor)) return;
     if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;  // a host-authored mirror we adopt, not a place
     if (!ue_wrap::prop::IsDescendantOfProp(actor)) return;          // keyed Aprop_C lineage only
-    if (PT::GetPropElementIdForActor(actor) != coop::element::kInvalidId) return;  // already tracked = not a fresh place
+    if (coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId) return;  // already tracked = not a fresh place
     // The hand-axis exclusion, the enqueue half (a fast path only, not load-bearing here: at
     // finish-spawn return the hold update has not yet written the holding actor, so the freshly
     // spawned hand view actor can pass this check; the drain-time re-check in Tick is the
@@ -236,6 +246,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
             actor, R::ClassNameOf(actor), ue_wrap::prop::GetInteractableKeyString(actor),
             fromContainerExtract);
     }
+    if (coop::dev::container_route_census::IsEnabled()) g_lastPlace.Set(actor);   // the census drill's read, armed by its row only
     g_pending.emplace_back(actor, fromContainerExtract, playerAuthored);
     if (fromContainerExtract)
         UE_LOGI("[PROP-DROP] CLIENT enqueued container-EXTRACT birth actor=%p (admitted at drain)", actor);
@@ -291,7 +302,7 @@ void Tick(coop::net::Session* session) {
     PlacementTick(session);
     std::erase_if(g_awaitingHost, [](const AwaitingHost& row) {
         void* a = row.actor.Get();
-        return !a || (row.recordSubmitted && PT::GetPropElementIdForActor(a) != coop::element::kInvalidId);
+        return !a || (row.recordSubmitted && coop::element::Registry::Get().EidForActor(a) != coop::element::kInvalidId);
     });
     if (g_pending.empty() || g_draining) return;
     DrainScope scope;
@@ -479,6 +490,13 @@ void Tick(coop::net::Session* session) {
         p.rotYaw   = ue_wrap::NormalizeAxis(rot.Yaw);
         p.rotRoll  = ue_wrap::NormalizeAxis(rot.Roll);
         p.scaleX = scl.X; p.scaleY = scl.Y; p.scaleZ = scl.Z;
+        ue_wrap::FVector launch{}, spin{};
+        if (ue_wrap::engine::GetActorRootPhysicsVelocity(actor, launch, spin)) {
+            p.linVel[0] = launch.X; p.linVel[1] = launch.Y; p.linVel[2] = launch.Z;
+            p.angVel[0] = spin.X; p.angVel[1] = spin.Y; p.angVel[2] = spin.Z;
+        }
+        if (!stillCurrent()) continue;
+        p.throwSeq = coop::prop_throw::ThrowSeqFor(actor);
         if (ue_wrap::food::IsFood(actor)) {
             ue_wrap::food::Condition food{};
             if (!ue_wrap::food::Read(actor, food) ||
@@ -520,7 +538,7 @@ void Tick(coop::net::Session* session) {
                              : isNotebookSheet ? "authored-notebook-sheet"
                                              : "authored-drop-intent",
                              e.tries, key);
-        UE_LOGI("[PROP-DROP] CLIENT authored %s key='%ls' cls='%ls' name='%ls' loc=(%.1f,%.1f,%.1f)%s",
+        UE_LOGI("[PROP-DROP] CLIENT authored %s key='%ls' cls='%ls' name='%ls' loc=(%.1f,%.1f,%.1f) drain |v|=%.1f cm/s throw seq %u%s",
                 freshBirth     ? "FRESH-BIRTH intent"
                 : e.playerSpawn ? "PLAYER-SPAWN intent"
                 : isNotebookSheet ? "NOTEBOOK-SHEET intent"
@@ -528,6 +546,8 @@ void Tick(coop::net::Session* session) {
                 key.c_str(), cls.c_str(),
                 WireToWide(p.propName.len, p.propName.data, sizeof(p.propName.data)).c_str(),
                 p.locX, p.locY, p.locZ,
+                std::sqrt(p.linVel[0]*p.linVel[0]+p.linVel[1]*p.linVel[1]+p.linVel[2]*p.linVel[2]),
+                unsigned(p.throwSeq),
                 coop::prop_save_data::Covers(actor) ? " +record" : "");
     }
     if (epoch != g_pendingEpoch) return;
@@ -578,7 +598,7 @@ void OnPlacementResult(const net::PropPlacementResultPayload& p, int senderSlot)
         }
         if (it->parked) NoteClientKeyedDestroy(it->key);
         void* actor = it->actor.Get();
-        if (actor && PT::GetPropElementIdForActor(actor) == coop::element::kInvalidId)
+        if (actor && coop::element::Registry::Get().EidForActor(actor) == coop::element::kInvalidId)
             g_refusedPlacements.push_back(it->actor); // recover locally by picking it back up
         g_awaitingHost.erase(it);
         coop::peer_action_feed::AnnounceDirect(coop::players::Registry::Get().LocalPeerId(),
@@ -653,8 +673,9 @@ bool FreshPlacementAllowed(const net::PropDropIntentPayload& p, uint8_t senderSl
     // hash (drive_payload_sync).
     return true;
 }
-void ReceivePlacement(net::Session& session, const net::PropDropIntentPayload& p,
+void ReceivePlacement(net::Session& session, const net::PropDropIntentPayload& sent,
                       uint8_t slot, net::ReliableKind kind) {
+    net::PropDropIntentPayload p=sent;
     if (!BeginPlacement(session,p,slot,kind)) return;
     const uint64_t epoch = g_pendingEpoch;
     void* world = ue_wrap::world_identity::CurrentWorld();
@@ -697,10 +718,18 @@ void ReceivePlacement(net::Session& session, const net::PropDropIntentPayload& p
                 return;
             }
         }
+    if (!coop::prop_throw::JudgeDropIntent(p,slot)) {
+        if (current()) FinishPlacement(slot,p.requestId,net::PropPlacementCode::Refused);
+        return;
+    }
     void* actor = HostSpawnPlacedProp(p,cls,key,slot);
     if (!current()) return;
     FinishPlacement(slot,p.requestId,actor ? net::PropPlacementCode::Accepted : net::PropPlacementCode::Refused,actor);
     if (actor) coop::drive_payload_sync::NoteClientBrought(actor,slot);
+    if (actor && current() && p.throwSeq) {
+        const float at[3]={p.locX,p.locY,p.locZ};
+        coop::prop_throw::NoteMark(key,slot,p.throwSeq,at);
+    }
 }
 } // namespace
 
@@ -731,6 +760,13 @@ void Reset() {
     g_pending.clear();
     g_parkedKeys.clear();
     g_parkFifo.clear();
+    g_lastPlace.Reset();
 }
+
+namespace dev {
+void* LastClientPlaceSpawn() { return g_lastPlace.Get(); }
+uint32_t LaunchesApplied() { return g_launches; }
+float LastAppliedLaunch() { return g_lastLaunch; }
+}  // namespace dev
 
 }  // namespace coop::prop_drop_intent

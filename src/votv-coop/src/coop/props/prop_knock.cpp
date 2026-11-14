@@ -2,6 +2,7 @@
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/local_prop_hold.h"
+#include "coop/player/players_registry.h"
 #include "coop/props/prop_drive_host.h"
 #include "coop/props/remote_prop.h"
 #include "ue_wrap/actors/prop.h"
@@ -44,6 +45,14 @@ SG::Verdict OnKnock(const SG::Call& c) {
         void* parent=R::OuterOf(owner);
         if(parent==owner)return SG::Verdict::Run;
         owner=parent;
+    }
+    // Player bodies are not props. Their contacts still start the same bounded,
+    // host-owned coasting stream as a prop pushed by a held prop.
+    if(WorldProp(owner) && other && R::IsLive(other) &&
+       ue_wrap::world_identity::WorldOf(other)==ue_wrap::world_identity::CurrentWorld() &&
+       (other==players::Registry::Get().Local() || players::Registry::Get().IsPuppetBody(other))) {
+        if(Movable(owner) && !Queued(owner) && g_count<g_pending.size())g_pending[g_count++].Set(owner);
+        return SG::Verdict::Run;
     }
     if(!WorldProp(owner) || !WorldProp(other) || owner==other)return SG::Verdict::Run;
     const bool fromOwner=Source(owner),fromOther=Source(other);

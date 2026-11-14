@@ -20,12 +20,13 @@
 namespace coop::wisp_grab_hold {
 
 // VICTIM peer: our own player was grabbed (WispGrab accepted). Attach the local player
-// to the local mirror of wisp `wispEid` (retry each Tick until it resolves, bounded by
+// to the local mirror of wisp `wispEid` (retry at 100 ms cadence until it resolves, bounded by
 // `killDelayMs` -- the mirror can race the reliable message by a frame). Game thread.
 void EngageSelf(uint32_t wispEid, uint32_t killDelayMs);
 
 // HOST/THIRD peer: hold the puppet of `victimSlot` at wisp `wispEid`'s 'playerGrab'
-// socket until the wisp or the puppet goes away. Idempotent per (slot). Game thread.
+// socket until that exact wisp/victim dies or retires. Repeated readiness attempts
+// do not bind an older attack to a replacement in the same slot. Game thread.
 void EngagePuppet(uint32_t wispEid, uint8_t victimSlot);
 
 // VICTIM peer: undo the self grab (detach + restore movement/camera flags). Called by

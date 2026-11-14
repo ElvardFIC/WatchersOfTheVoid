@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/types.h"
 
 #include <cstdint>
@@ -62,12 +63,31 @@ bool SetActorRootMovable(void* actor);
 // mirror needs 3 to land.
 bool SetActorRootCollisionEnabled(void* actor, uint8_t collisionType);
 
+// The root primitive's GetCollisionEnabled (0 None, 1 QueryOnly, 2 PhysicsOnly, 3 QueryAndPhysics; the actor's own
+// collision flag is folded in by the engine), or -1 when the root is not a primitive or the call did not run.
+int GetActorRootCollisionEnabled(void* actor);
+
+// GetCollisionEnabled and SetCollisionEnabled on one primitive component, as the root forms above (-1 / false for
+// anything that is not a live primitive component).
+int GetComponentCollisionEnabled(void* component);
+bool SetComponentCollisionEnabled(void* component, uint8_t collisionType);
+
+// `actor`'s OWN primitive components, root first: the root and every component below it in the attach tree, at any
+// depth, that the actor owns (OuterOf == actor). A component another actor owns (an attached actor's) is neither
+// listed nor descended. Up to `max` into `out`; returns the count, 0 for a dead actor or a root that is not a
+// primitive, and -1 when `max` or the walk's bound would leave the list partial. Game thread.
+int OwnPrimitiveComponents(void* actor, void** out, int max);
+
 // SetNotifyRigidBodyCollision on the root; false keeps the collision but silences the
 // OnComponentHit BP events (a mirror clump's landing handler would spawn a second pile).
 bool SetActorRootNotifyRigidBodyCollision(void* actor, bool notify);
 
 // The root's linear (cm/s) and angular (deg/s) velocity: the throw-energy transfer on release.
 bool GetActorRootPhysicsVelocity(void* actor, FVector& outLin, FVector& outAng);
+
+// The root's linear velocity (cm/s) alone, for a caller that reads it per row: `root` caches the root component,
+// resolved from `actor` when it is not alive, so a row costs one dispatch and never the angular one. Game thread.
+bool GetActorRootLinearVelocity(CachedObjRef& root, void* actor, FVector& outLin);
 
 bool SetActorRootPhysicsVelocity(void* actor, const FVector& lin, const FVector& ang);
 

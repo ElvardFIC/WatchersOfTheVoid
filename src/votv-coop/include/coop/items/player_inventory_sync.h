@@ -61,14 +61,18 @@ bool HasPendingApply();
 // other load in the process -- a later Host-with-save above all -- is left alone.
 // A newer request cancels older callbacks. One owned profile revision supplies
 // items/vitals/pose; failed/obsolete restores cannot open profile reporting. Any thread.
-void BeginJoinApply();
+// gameMode is the transferred host mode, published atomically with the request;
+// the local GameInstance may still describe a previous campaign at this point.
+void BeginJoinApply(int gameMode = 0);
 
 // CLIENT: where the join's world appearance puts this player, taken once: a later body in the same
-// session is a respawn, which belongs at the start point. ProfilePose fills x, y, z and yaw with where
+// session is a respawn, which belongs at the map's start point. ProfilePose fills x, y, z and yaw with where
 // the applied profile says the player stood. AtHost (the dev row join_at_host) leaves the player where
 // the transferred save put it, the host's own position. StartPoint on a first join, for a player who
-// left dead, with no profile applied, and for every later body. Game thread.
-enum class JoinPlacement : uint8_t { StartPoint, ProfilePose, AtHost };
+// left dead, with no profile applied, and for later bodies outside Tutorial. Game thread.
+// NativeMap retains the level/save position on Tutorial and later respawns:
+// the main map's KPP coordinates are outside Tutorial's protected geometry.
+enum class JoinPlacement : uint8_t { StartPoint, ProfilePose, AtHost, NativeMap };
 JoinPlacement TakeJoinPlacement(float& x, float& y, float& z, float& yaw);
 
 // Per-slot disconnect (host): drop partial receive/order state and re-arm that slot's join push. The leaver's profile stays

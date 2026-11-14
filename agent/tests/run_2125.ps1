@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research\tests_2125'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\radio.obj" "/Fe$output\radio.exe" agent\tests\radio_2125_test.cpp
     if ($LASTEXITCODE -ne 0) { throw 'Radio harness compilation failed' }
     & "$output\radio.exe"
@@ -15,9 +15,9 @@ try {
     $sourcePath=Join-Path $root 'src\votv-coop\src\coop\world\radio_sync.cpp'
     $source=[IO.File]::ReadAllText($sourcePath)
     $cases=@(
-        @{Name='prediction';Before='if (Predicted(id)) return;';After='/* prediction fence removed */'},
+        @{Name='prediction';Before='Predicted(id)';After='false'},
         @{Name='automatic_end';Before='? SG::Verdict::Cancel : SG::Verdict::Run;';After='? SG::Verdict::Run : SG::Verdict::Run;'},
-        @{Name='retry_bound';Before='now-attempt.since<15000';After='true'}
+        @{Name='retry_bound';Before='Elapsed(now,attempt.since)<15000';After='true'}
     )
     foreach ($case in $cases) {
         if (-not $source.Contains($case.Before)) { throw "Mutation target changed: $($case.Name)" }

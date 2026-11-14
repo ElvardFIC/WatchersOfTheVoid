@@ -1,6 +1,6 @@
 // coop/props/prop_lifecycle.cpp -- the Aprop_C spawn seams: the Init watch that expresses a keyed
 // prop's birth on the wire, the install of the destroy seam, and the class predicates. The destroy
-// seam body lives in prop_destroy_seam.cpp and the container extract in prop_container_extract.cpp.
+// seam body lives in prop_destroy_seam.cpp.
 
 #include "coop/props/prop_lifecycle.h"
 
@@ -257,8 +257,8 @@ void GrabObserver_Aprop_Init_POST_Body(void* self) {
         // class's loadData has filled anything on a save load, and on a fresh spawn there is
         // nothing to carry yet -- the record would be the class default, and broadcasting a
         // default over an author's real copy is how a client's ejected disc came back blank. The
-        // record's publishers are the seams where the state exists: the container extract POST,
-        // the snapshot drain, the runtime-adoption express, the client's own drop intent, and the
+        // record's publishers are the seams where the state exists: the snapshot drain,
+        // the runtime-adoption express, the client's own drop intent, and the
         // host's spawn-seam drain (host_spawn_watcher), which runs this body a tick after the birth.
     }
     // Self-claim: this peer just expressed the spawn, so an open snapshot bracket's sweep must not

@@ -1,5 +1,6 @@
 #include "coop/props/dingus_music_sync.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/element/intent_authority.h"
 #include "coop/player/hand_item.h"
@@ -23,12 +24,12 @@ namespace M=ue_wrap::dingus_music;
 namespace SG=ue_wrap::script_gate;
 namespace R=ue_wrap::reflection;
 using Packet=net::DingusMusicPayload;
-struct Targets {std::array<uint16_t,net::kMaxPeers> people{};std::array<uint64_t,net::kMaxPeers> epochs{};};
+struct Targets {std::array<uint16_t,net::kMaxPeers> people{};std::array<uint64_t,net::kMaxPeers> epochs{};std::array<uint32_t,net::kMaxPeers> connections{};};
 struct Row {Packet state{};ue_wrap::CachedObjRef actor;uint32_t pending=0;uint64_t at=0;Targets targets{};
     M::Clock clock{};M::Playback playback{};uint64_t clockAt=0;double position=0;uint32_t episode=0;float transit=0;};
 struct Intent {Packet state{};uint64_t expires=0;uint8_t slot=0;uint64_t peerEpoch=0;};
 struct Pulse {Packet state{};uint64_t expires=0;uint32_t pending=0;bool play=false;Targets targets{};};
-struct Capture {ue_wrap::CachedObjRef actor;std::wstring key;uint64_t invocation=0,epoch=0,peerEpoch=0;uint16_t person=0;uint8_t slot=0;bool alt=false;};
+struct Capture {ue_wrap::CachedObjRef actor,function;void* stack=nullptr;std::wstring key;uint64_t invocation=0,epoch=0,peerEpoch=0;uint16_t person=0;uint8_t slot=0;bool alt=false,ready=false;};
 std::unordered_map<std::wstring,Row> g_rows;
 std::deque<Intent> g_intents;
 std::deque<Pulse> g_pulses;
@@ -45,41 +46,67 @@ uint64_t g_epoch=0,g_poll=0,g_rateAt[net::kMaxPeers]{};
 uint8_t g_rateCount[net::kMaxPeers]{};
 uint16_t g_people[net::kMaxPeers]{};
 bool g_ticking=false;
+uint32_t g_serial=0,g_connections[net::kMaxPeers]{};
+bool g_running=false,g_linked=false;
+uint64_t g_now=0;
+size_t g_sendBudget=0;
 uint32_t Next(uint32_t& n){if(!++n)++n;return n;}
 bool After(uint32_t a,uint32_t b){return int32_t(a-b)>0;}
-bool Current(){return g_session && g_session->connected() && g_session->role()==g_role && g_world==ue_wrap::world_identity::Generation();}
-void Target(Targets& targets,int slot){targets.people[slot]=roster_ledger::Get(slot).playerNo;targets.epochs[slot]=g_peerEpoch[slot];}
-bool Recipient(const Targets& targets,int slot){return targets.people[slot]==roster_ledger::Get(slot).playerNo && targets.epochs[slot]==g_peerEpoch[slot];}
+bool Current(){return g_session && g_session->running() && g_session->connected() && g_session->role()==g_role &&
+    g_serial==net::session_serial::Current() && g_running==g_session->running() && g_linked==g_session->connected() && g_world==ue_wrap::world_identity::Generation();}
+void Target(Targets& targets,int slot){targets.people[slot]=roster_ledger::Get(slot).playerNo;targets.epochs[slot]=g_peerEpoch[slot];targets.connections[slot]=g_session->peerGenerationForSlot(slot);}
+bool Recipient(const Targets& targets,int slot){return targets.people[slot] && targets.people[slot]==roster_ledger::Get(slot).playerNo && targets.epochs[slot]==g_peerEpoch[slot] && targets.connections[slot]==g_session->peerGenerationForSlot(slot);}
 void Reconcile(){for(int slot=1;slot<net::kMaxPeers;++slot){const auto person=roster_ledger::Get(slot).playerNo;
-    if(person!=g_people[slot]){if(g_people[slot])OnPeerLeft(slot);g_people[slot]=person;}}}
+    const auto connection=g_session->peerGenerationForSlot(slot);
+    if(person!=g_people[slot] || connection!=g_connections[slot]){if(g_people[slot])OnPeerLeft(slot);g_people[slot]=person;g_connections[slot]=connection;}}}
+bool Fresh(uint64_t expires){return Current() && active_drive::NowMs()>=g_now && active_drive::NowMs()<expires;}
+void Scope(net::Session* session){
+    if(session!=g_session || g_world!=ue_wrap::world_identity::Generation() || g_serial!=net::session_serial::Current() ||
+       (session && (session->role()!=g_role || session->running()!=g_running || session->connected()!=g_linked))){
+        OnDisconnect();g_session=session;g_world=ue_wrap::world_identity::Generation();g_serial=net::session_serial::Current();
+        if(session){g_role=session->role();g_running=session->running();g_linked=session->connected();}
+    }
+    const auto now=active_drive::NowMs();
+    if(now<g_now){++g_epoch;g_captures.clear();g_intents.clear();g_pulses.clear();g_rows.clear();g_sampleRevision.clear();g_poll=0;
+        std::fill(std::begin(g_rateAt),std::end(g_rateAt),0);std::fill(std::begin(g_rateCount),std::end(g_rateCount),0);}
+    g_now=now;
+}
 bool Eligible(void* a){return M::IsDingus(a) && !hand_item::IsHandAxisActor(a) &&
     ue_wrap::world_identity::CurrentWorld() && ue_wrap::world_identity::WorldOf(a)==ue_wrap::world_identity::CurrentWorld();}
 bool SoundEligible(void* a){return M::IsSqueakyToy(a) && !hand_item::IsHandAxisActor(a) &&
     ue_wrap::world_identity::CurrentWorld() && ue_wrap::world_identity::WorldOf(a)==ue_wrap::world_identity::CurrentWorld();}
-std::wstring Key(void* actor){auto key=ue_wrap::prop::GetInteractableKeyString(actor);
-    return key.empty() || key==L"None" || key.size()>sizeof(Packet{}.key.data)?std::wstring{}:key;}
+bool ValidKey(const std::wstring& key){if(key.empty() || key==L"None" || key.size()>sizeof(Packet{}.key.data))return false;
+    return std::all_of(key.begin(),key.end(),[](wchar_t c){return c>=33 && c<=126;});}
+std::wstring Key(void* actor){auto key=ue_wrap::prop::GetInteractableKeyString(actor);return ValidKey(key)?key:std::wstring{};}
 bool SameKey(void* actor,const std::wstring& key,uint64_t epoch){
     ue_wrap::CachedObjRef identity;identity.Set(actor);
     return Current() && epoch==g_epoch && identity.Get() && Key(actor)==key &&
         Current() && epoch==g_epoch && identity.Get();
 }
 constexpr int kPlushUse=0x44494E48;
-bool CaptureCurrent(const Capture& capture){return Current() && capture.epoch==g_epoch && capture.actor.Get() &&
+bool CaptureCurrent(const Capture& capture){return capture.ready && Current() && capture.epoch==g_epoch && capture.actor.Get() && capture.function.Get() &&
     !capture.key.empty() && SameKey(capture.actor.Get(),capture.key,capture.epoch) &&
     capture.person && capture.person==roster_ledger::Get(capture.slot).playerNo && capture.peerEpoch==g_peerEpoch[capture.slot] &&
     (g_role==net::Role::Host?capture.slot==0:capture.slot==players::Registry::Get().LocalPeerId()) && SG::IsInvocationActive(capture.invocation);}
-void PruneCaptures(){std::erase_if(g_captures,[](const Capture& row){return !CaptureCurrent(row);});}
+void PruneCaptures(){std::erase_if(g_captures,[](const Capture& row){return row.epoch!=g_epoch || !SG::IsInvocationActive(row.invocation) || !row.actor.Get() || !row.function.Get();});}
 Capture CaptureAction(const SG::Call& call){
-    if(!Current() || call.fromOurCode || !call.invocation || !SoundEligible(call.object))return {};
+    if(!Current() || call.fromOurCode || !call.invocation || !call.function || !SoundEligible(call.object))return {};
     Reconcile();PruneCaptures();const auto slot=g_role==net::Role::Host?0:players::Registry::Get().LocalPeerId();
     if(slot>=net::kMaxPeers || g_captures.size()>=32)return {};Capture row{};row.actor.Set(call.object);row.invocation=call.invocation;
+    row.function.Set(call.function);row.stack=call.stack;
     row.slot=uint8_t(slot);row.person=roster_ledger::Get(slot).playerNo;row.peerEpoch=g_peerEpoch[slot];row.epoch=g_epoch;
+    if(std::any_of(g_captures.begin(),g_captures.end(),[&](const Capture& c){return c.invocation==row.invocation;}))return {};
+    g_captures.push_back(row); // Own capacity before key/parameter preparation can re-enter.
     row.key=Key(call.object);
-    row.alt=call.tag==kPlushUse && M::IsAltUse(call.function,call.locals);
-    if(CaptureCurrent(row)){g_captures.push_back(row);return row;}return {};
+    row.ready=true;
+    if(CaptureCurrent(row) && call.tag==kPlushUse)row.alt=M::IsAltUse(call.function,call.locals);
+    const bool valid=CaptureCurrent(row);
+    auto found=std::find_if(g_captures.begin(),g_captures.end(),[&](const Capture& c){return c.invocation==row.invocation && c.epoch==row.epoch;});
+    if(found==g_captures.end())return {};
+    if(valid){*found=row;return row;}g_captures.erase(found);return {};
 }
 Capture TakeCapture(const SG::Call& call){
-    const auto it=std::find_if(g_captures.begin(),g_captures.end(),[&](const Capture& row){return row.invocation==call.invocation && row.actor.Raw()==call.object;});
+    const auto it=std::find_if(g_captures.begin(),g_captures.end(),[&](const Capture& row){return row.ready && row.invocation==call.invocation && row.actor.Raw()==call.object && row.function.Get()==call.function && row.stack==call.stack;});
     if(it==g_captures.end())return {};auto row=*it;g_captures.erase(it);return row;
 }
 uint32_t Mask(){uint32_t m=0;for(int s=1;s<net::kMaxPeers;++s)if(g_session->IsSlotWorldReady(s))m|=1u<<s;return m;}
@@ -170,28 +197,30 @@ void AfterAction(const SG::Call& c) {
     }
 }
 void AfterTouch(const SG::Call& c){const auto captured=TakeCapture(c);if(CaptureCurrent(captured) && g_role==net::Role::Host && !c.fromOurCode && Eligible(c.object))Sample(c.object,active_drive::NowMs());}
-void DrainPulses(uint64_t now) {
+void DrainPulses() {
     const auto epoch=g_epoch;const size_t budget=(std::min)(size_t(4),g_pulses.size());
     uint32_t blocked=0;std::deque<Pulse> retained;
     for(size_t i=0;i<budget;++i) {
         auto pulse=g_pulses.front();g_pulses.pop_front();
-        if(now>pulse.expires)continue;
+        if(!Fresh(pulse.expires))continue;
         if(pulse.play) {
             const auto key=net::StringFromWireKey(pulse.state.key);
             void* actor=prop_element_tracker::FindLiveActorByKey(key);
             ue_wrap::CachedObjRef live;live.Set(actor);
-            const auto valid=[&]{return SameKey(actor,key,epoch) && live.Get() && SoundEligible(actor);};
+            const auto valid=[&]{return SameKey(actor,key,epoch) && live.Get() && SoundEligible(actor) && Fresh(pulse.expires);};
             if(SoundEligible(actor) && M::Squeak(actor,pulse.state.volume,valid))pulse.play=false;
             if(epoch!=g_epoch || !Current())return;
         }
         for(int slot=1;slot<net::kMaxPeers;++slot)if((pulse.pending&~blocked)&(1u<<slot)) {
+            if(!Fresh(pulse.expires))break;
             if(!g_session->IsSlotWorldReady(slot) || !Recipient(pulse.targets,slot)){pulse.pending&=~(1u<<slot);continue;}
+            if(!g_sendBudget)break;--g_sendBudget;
             const bool sent=g_session->SendReliableToSlot(slot,net::ReliableKind::DingusMusic,&pulse.state,sizeof(pulse.state));
             if(epoch!=g_epoch || !Current())return;
             if(sent || !Recipient(pulse.targets,slot))pulse.pending&=~(1u<<slot);
         }
         blocked|=pulse.pending;
-        if(pulse.play || pulse.pending)retained.push_back(pulse);
+        if(Fresh(pulse.expires) && (pulse.play || pulse.pending))retained.push_back(pulse);
     }
     // Keep retries before the untouched tail; rotating the first four to the
     // back lets a later sequence overtake them and the receiver rejects them.
@@ -199,26 +228,28 @@ void DrainPulses(uint64_t now) {
 }
 }
 void Install(net::Session* s) {
-    const auto world=ue_wrap::world_identity::Generation();
-    if(g_session!=s || world!=g_world || (s && s->role()!=g_role)){OnDisconnect();g_session=s;g_world=world;if(s)g_role=s->role();}
+    Scope(s);
     SG::WatchClassName(L"prop_dingus_C",L"actionOptionIndex",0x44494E47,&BeforeAction,&AfterAction);
     SG::WatchClassName(L"prop_dingus_C",L"touch",0x44494E47,&BeforeTouch,&AfterTouch);
     SG::WatchClassName(L"prop_abplush_C",L"player_use",kPlushUse,&BeforeAction,&AfterAction);
     SG::ResolvePendingNames();
 }
 void Tick() {
+    Scope(g_session);
     if(!Current() || g_ticking)return;
     struct Guard{Guard(){g_ticking=true;}~Guard(){g_ticking=false;}} guard;
     Reconcile();
     PruneCaptures();
     const auto epoch=g_epoch,now=active_drive::NowMs();
+    g_sendBudget=64;
     if(g_session->role()==net::Role::Host && !g_session->AnyWorldReadyPeer())return;
-    DrainPulses(now);if(epoch!=g_epoch || !Current())return;
+    DrainPulses();if(epoch!=g_epoch || !Current())return;
     if(g_session->role()==net::Role::Client) {
         while(!g_intents.empty()) {
             const auto item=g_intents.front();
-            if(now>item.expires || !OwnIntent(item)){g_intents.pop_front();continue;}
+            if(!Fresh(item.expires) || !OwnIntent(item)){g_intents.pop_front();continue;}
             if(!g_session->IsSlotWorldReady(0))break;
+            if(!g_sendBudget)break;--g_sendBudget;
             const bool sent=g_session->SendReliableToSlot(0,net::ReliableKind::DingusMusic,&item.state,sizeof(item.state));
             if(epoch!=g_epoch || !Current())return;if(!OwnIntent(item))continue;if(!sent)break;
             if(!g_intents.empty() && g_intents.front().state.sequence==item.state.sequence)g_intents.pop_front();
@@ -262,6 +293,8 @@ void Tick() {
         for(int slot=1;slot<net::kMaxPeers;++slot)if(row.pending&(1u<<slot)) {
             if(!sourceCurrent()){if(epoch!=g_epoch || !Current())return;break;}
             const bool ready=g_session->IsSlotWorldReady(slot) && Recipient(row.targets,slot);
+            if(ready && !g_sendBudget)break;
+            if(ready)--g_sendBudget;
             auto outgoing=row.state;if(outgoing.episode)outgoing.elapsed+=float(now>=row.at?now-row.at:0)/1000.f*outgoing.pitch;
             const bool sent=!ready || g_session->SendReliableToSlot(slot,net::ReliableKind::DingusMusic,&outgoing,sizeof(outgoing));
             if(epoch!=g_epoch || !Current())return;
@@ -270,14 +303,16 @@ void Tick() {
         }
     }
 }
-void Receive(const Packet& p,uint8_t sender) {
+void Receive(const Packet& packet,uint8_t sender) {
+    const Packet p=packet;
+    Scope(g_session);
     if(!Current() || !p.sequence || !p.key.len || p.key.len>sizeof(p.key.data) || p.op>4 ||
        p.playing>1 || p.used>1 || p.reserved || !std::isfinite(p.volume) || p.volume<0 || p.volume>10)return;
     if(p.op>=3 && (p.volume<=0 || p.playing || p.used))return;
     if(p.op==0){if(p.playerNo || !std::isfinite(p.pitch) || p.pitch<=0 || p.pitch>10 || !std::isfinite(p.elapsed) || p.elapsed<0 || p.elapsed>1.e6f ||
         (p.episode && !p.playing) || (!p.episode && p.elapsed))return;}
     else if(p.elapsed || p.pitch || p.episode || (p.op==4?p.playerNo!=0:p.playerNo==0))return;
-    const auto key=net::StringFromWireKey(p.key);if(key.empty() || key==L"None" || key.find(L'\0')!=std::wstring::npos)return;
+    const auto key=net::StringFromWireKey(p.key);if(!ValidKey(key))return;
     const auto now=active_drive::NowMs(),epoch=g_epoch;
     Reconcile();
     if(g_session->role()==net::Role::Host) {
@@ -286,25 +321,28 @@ void Receive(const Packet& p,uint8_t sender) {
            p.playing || p.used || (p.op<3 && p.volume) || (g_seen[sender] && !After(p.sequence,g_seen[sender])))return;
         if(now-g_rateAt[sender]>=1000){g_rateAt[sender]=now;g_rateCount[sender]=0;}
         if(g_rateCount[sender]>=8)return;
-        ++g_rateCount[sender];g_seen[sender]=p.sequence;
+        if(p.op==3 && g_pulses.size()>=32)return;
+        ++g_rateCount[sender];if(p.op!=3)g_seen[sender]=p.sequence;
+        const auto person=roster_ledger::Get(sender).playerNo;const auto peerEpoch=g_peerEpoch[sender];
+        const auto connection=g_session->peerGenerationForSlot(sender);
         void* actor=prop_element_tracker::FindLiveActorByKey(key);if(!(p.op==3?SoundEligible(actor):Eligible(actor)))return;
         ue_wrap::CachedObjRef live;live.Set(actor);
-        const auto person=roster_ledger::Get(sender).playerNo;const auto peerEpoch=g_peerEpoch[sender];
         if(!element::IntentTarget::ForClientIntent(*g_session,sender,400.f).Authorize(actor) ||
-           !Current() || epoch!=g_epoch || !live.Get() || !person || roster_ledger::Get(sender).playerNo!=person || g_peerEpoch[sender]!=peerEpoch)return;
+           !Current() || epoch!=g_epoch || !live.Get() || !person || roster_ledger::Get(sender).playerNo!=person || g_peerEpoch[sender]!=peerEpoch || g_session->peerGenerationForSlot(sender)!=connection)return;
         const auto sourceCurrent=[&]{return Current() && epoch==g_epoch && live.Get() && g_peerEpoch[sender]==peerEpoch && roster_ledger::Get(sender).playerNo==person &&
-            g_session->IsSlotWorldReady(sender) && (p.op==3?SoundEligible(actor):Eligible(actor));};
+            g_session->peerGenerationForSlot(sender)==connection && g_session->IsSlotWorldReady(sender) && (p.op==3?SoundEligible(actor):Eligible(actor));};
         const auto valid=[&]{return sourceCurrent() && Key(actor)==key && sourceCurrent();};
         if(!valid())return;
-        if(p.op==3){QueuePulse(p,sender);return;}
+        if(p.op==3){if(g_pulses.size()>=32 || (g_seen[sender] && !After(p.sequence,g_seen[sender])))return;
+            QueuePulse(p,sender);g_seen[sender]=p.sequence;return;}
         if(M::Interact(actor,p.op==1,valid) && valid())Sample(actor,active_drive::NowMs(),p.op==1);
         return;
     }
     if(sender!=0)return;
     if(p.op==4) {
         if(g_lastPulse && !After(p.sequence,g_lastPulse))return;
-        g_lastPulse=p.sequence;
-        if(g_pulses.size()<32)g_pulses.push_back({p,now+1500,0,true});
+        if(g_pulses.size()>=32)return;
+        g_pulses.push_back({p,now+1500,0,true});g_lastPulse=p.sequence;
         return;
     }
     if(p.op)return;
@@ -317,7 +355,7 @@ void QueueConnect(int slot){if(Current() && g_session->role()==net::Role::Host &
 void OnPeerLeft(int slot){if(slot>0 && slot<net::kMaxPeers){++g_peerEpoch[slot];g_people[slot]=0;g_seen[slot]=0;g_rateAt[slot]=0;g_rateCount[slot]=0;
     std::erase_if(g_intents,[slot](const Intent& item){return item.slot==slot;});std::erase_if(g_captures,[slot](const Capture& row){return row.slot==slot;});
     for(auto& [key,row]:g_rows)row.pending&=~(1u<<slot);for(auto& p:g_pulses)p.pending&=~(1u<<slot);}}
-void OnDisconnect(){++g_epoch;g_session=nullptr;g_world=g_sequence=g_request=0;g_poll=0;g_rows.clear();g_intents.clear();
+void OnDisconnect(){++g_epoch;g_session=nullptr;g_world=g_sequence=g_request=0;g_poll=g_now=0;g_serial=0;g_running=g_linked=false;g_rows.clear();g_intents.clear();
     g_pulses.clear();g_captures.clear();g_lastPulse=g_episode=0;g_sampleRevision.clear();
     for(int i=0;i<net::kMaxPeers;++i){g_seen[i]=0;g_rateAt[i]=0;g_rateCount[i]=0;g_people[i]=0;}}
 }

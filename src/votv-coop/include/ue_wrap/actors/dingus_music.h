@@ -5,7 +5,7 @@
 namespace ue_wrap::dingus_music {
 struct State { bool playing=false,used=false; float volume=0,pitch=1,elapsed=0;uint32_t episode=0; };
 struct Clock {CachedObjRef audio,sound;float duration=0,pitch=1;};
-struct Playback {CachedObjRef audio,sound;uint32_t episode=0;};
+struct Playback {CachedObjRef audio,sound;uint32_t episode=0;uint64_t revision=0;};
 bool IsDingus(void* actor);
 // Sound-only support also covers prop_abplush's qwak component.
 bool IsSqueakyToy(void* actor);

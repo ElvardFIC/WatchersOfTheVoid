@@ -4,6 +4,7 @@
 // and the shared sender-eid range check; see coop/dispatch/event_dispatch.h.
 
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
+#include "coop/props/llama_sync.h"
 
 #include "coop/element/registry.h"
 #include "coop/creatures/grayboar_actions.h"
@@ -27,6 +28,7 @@
 #include "coop/world/desk_short_circuit_sync.h"
 #include "coop/world/madness_sync.h"
 #include "coop/props/dingus_music_sync.h"
+#include "coop/player/emote_sync.h"
 #include "coop/props/watoy_sync.h"
 #include "coop/interactables/grill_hand_sync.h"
 #include "coop/interactables/grill_edits.h"
@@ -46,8 +48,8 @@
 #include "coop/player/sit_pose.h"
 #include "coop/player/players_registry.h"
 #include "coop/world/explosion_sync.h"
-#include "coop/world/coord_tower_ops.h"
-#include "coop/world/coord_tower_rows.h"
+#include "coop/world/fuse_tower_ops.h"
+#include "coop/world/fuse_tower_rows.h"
 #include "coop/world/firefly_sync.h"
 #include "coop/world/power_grid.h"
 #include "coop/items/inventory_pickup_sync.h"
@@ -203,10 +205,20 @@ bool HandleWorldEvent(net::Session& session,
         net::DingusMusicPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
         coop::dingus_music_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
     }
+    case net::ReliableKind::EmoteState: {
+        if(msg.payloadLen!=sizeof(net::EmoteStatePayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::EmoteStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::emote_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
     case net::ReliableKind::MadnessState: {
         if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::MadnessStatePayload))break;
         net::MadnessStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
         coop::madness_sync::Receive(p,0);break;
+    }
+    case net::ReliableKind::LlamaState: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::LlamaStatePayload))break;
+        net::LlamaStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::llama_sync::Receive(p,0);break;
     }
     case net::ReliableKind::HookRetrieve: {
         if(msg.payloadLen!=sizeof(net::HookRetrievePayload) || msg.senderPeerSlot<0 ||
@@ -472,22 +484,28 @@ bool HandleWorldEvent(net::Session& session,
         coop::power_grid::OnReliable(gp, gslot);
         break;
     }
-    case net::ReliableKind::CoordTowerState: {
-        // The coordinate towers: the host's rows (host to all) or a client's op on one, a press or a fuse it moved
-        // (client to host). Role, reach and trust gates live in the two modules.
-        if (msg.payloadLen < sizeof(net::CoordTowerPayload)) {
-            UE_LOGW("event_feed: CoordTowerState payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::CoordTowerPayload));
+    case net::ReliableKind::CoordTowerState:
+        // Retained published ID. New peers use FuseTowerState for both tower kinds.
+        break;
+    case net::ReliableKind::FuseTowerState: {
+        // The fuse towers, coordinate and radio: the host's rows (host to all) or a client's op on one, a press or
+        // a fuse it moved (client to host). Role, reach and trust gates live in the two modules; the rows are
+        // admitted here (a row no tower sends is dropped), and an op's kind, op and index are judged at the host.
+        if (msg.payloadLen < sizeof(net::FuseTowerPayload)) {
+            coop::fuse_tower_ops::OnShortPayload(static_cast<size_t>(msg.payloadLen));
             break;
         }
-        net::CoordTowerPayload tp{};
+        net::FuseTowerPayload tp{};
         std::memcpy(&tp, msg.payload, sizeof(tp));
         if (msg.senderPeerSlot < 0 || msg.senderPeerSlot >= net::kMaxPeers) break;
         const auto tslot = static_cast<uint8_t>(msg.senderPeerSlot);
-        if (tp.op == net::kCoordTowerOpRows) {
-            if (tslot == 0) coop::coord_tower_rows::OnRows(tp);  // the host's alone
+        if (tp.op == net::kFuseTowerOpRows) {
+            if (tslot == 0) {  // the host's alone
+                coop::fuse_tower_rows::AdmitRows(tp);
+                coop::fuse_tower_rows::OnRows(tp);
+            }
         } else {
-            coop::coord_tower_ops::OnOp(tp, tslot);
+            coop::fuse_tower_ops::OnOp(tp, tslot);
         }
         break;
     }

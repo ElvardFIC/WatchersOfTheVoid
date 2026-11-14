@@ -33,9 +33,8 @@ std::atomic<WorldKind> g_worldKind{WorldKind::Unknown};
 // reclassify the other untitled maps from gameplay to other, from reap-here to
 // flee-from-here; none is a travel target, so the two forms behave the same today, and the
 // exact form wants its own verified change. The authoritative spelling stays on the version
-// surface. Everything else is Other: the menu, the preload and the tutorial maps, which the
-// gamemode's own level array enumerates as the travel set, not the full map list, hence a
-// complement rather than a list.
+// surface. Tutorial's current tutorial3 and its two chapter maps are playable as
+// well. Menu and preload remain Other, so session teardown still observes them.
 constexpr const wchar_t* kGameplayWorldSubstr = L"ntitled";
 
 // Resolution, name-driven: the version surface.
@@ -170,7 +169,8 @@ void RefreshOnGameThread_() {
     // a cached one: naming a world requires dereferencing it, and every consumer is forbidden to.
     WorldKind kind = WorldKind::Unknown;
     if (world && R::IsLive(world)) {
-        kind = R::NameContains(R::NameOf(world), kGameplayWorldSubstr) ? WorldKind::Gameplay
+        kind = (R::NameContains(R::NameOf(world), kGameplayWorldSubstr) ||
+                R::NameContains(R::NameOf(world),L"tutorial3")) ? WorldKind::Gameplay
                                                                       : WorldKind::Other;
     }
     g_worldKind.store(kind, std::memory_order_relaxed);

@@ -1,0 +1,221 @@
+// coop/dev/dronesack_drill_detail.h -- what the drone sack drill's files share: its bounds, the chat lines the two
+// peers say to each other, the record of destroys the seam hooks fill, the client's state and the reads of a record
+// count.
+// Impl-private: nothing outside coop/dev includes it. Game thread.
+
+#pragma once
+
+#include "coop/dev/director/aimed_grab.h"
+#include "coop/dev/director/director.h"
+
+#include "ue_wrap/core/cached_obj_ref.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace coop::net { class Session; }
+
+namespace coop::dev::dronesack_drill::detail {
+
+// ---- the measure ----
+
+inline constexpr float    kSackAheadCm = 300.f;    // the sack stands this far in front of the host
+inline constexpr float    kCrateAboveCm = 150.f;   // arm 1: the crate starts this far above the sack's origin
+inline constexpr float    kFloorDownCm = 400.f;
+inline constexpr float    kMinColumnCm = 20.f;
+inline constexpr float    kRiseCm = 40.f;          // a spawned prop starts this far above its floor
+inline constexpr uint64_t kWatchMs = 15000;        // arm 1: the host watches the crate this long from the drop
+
+// Arm 2: the loose props and the client's carry.
+inline constexpr int      kPropCount = 6;          // loose props round the sack
+inline constexpr float    kPropRingCm = 150.f;     // ... on a ring this far from the sack's origin
+inline constexpr int      kPropSpots = 12;         // ... tried at this many angles for a floor
+inline constexpr float    kGrabReachCm = 150.f;    // the client's walk ends this near a prop it grabs
+inline constexpr float    kSackReachCm = 55.f;     // ... and this near the sack's origin (flat) when it carries one
+inline constexpr float    kFeetCm = 150.f;         // a carry has arrived only with the player this near the sack's height
+// The release window, measured on the held prop: within kOverFlatCm of the sack's origin, flat, and between
+// kOverMinCm and kOverMaxCm above it. The aim steers the held prop toward kOverAimCm above the origin.
+inline constexpr float    kOverFlatCm = 35.f;
+inline constexpr float    kOverMinCm = 40.f;
+inline constexpr float    kOverMaxCm = 90.f;
+inline constexpr float    kOverAimCm = 65.f;
+inline constexpr int      kAimTicks = 40;          // the aim is corrected for at most this many ticks per prop
+inline constexpr float    kAimStepDeg = 3.f;       // ... by at most this much on each axis per tick
+inline constexpr float    kAimGain = 0.5f;         // ... and half of the measured angle between the prop and its target
+inline constexpr int      kGrabTries = 2;
+inline constexpr int      kWalkDeadlineS = 300;    // the director's own bound on one walk
+
+// ---- failure bounds of the instrument, never a wait for a milestone ----
+
+inline constexpr uint64_t kPlaceBoundMs = 60000;   // a floor in front of the host
+inline constexpr uint64_t kEidBoundMs = 30000;     // a spawned prop takes its element id
+inline constexpr uint64_t kBoundBoundMs = 120000;  // the client says its sack mirror is bound
+inline constexpr uint64_t kMirrorBoundMs = 120000; // the client's mirror of the host's sack or prop exists
+inline constexpr uint64_t kDriveBoundMs = 60000;   // a host-spawned prop leaves the host's drive
+inline constexpr uint64_t kPutBoundMs = 15000;     // a prop let go over the sack is seen to die on the client
+inline constexpr uint64_t kFillItemBoundMs = 10000; // arm 3: a dropped item is absorbed within this, else it is logged as missed
+inline constexpr uint64_t kTakeBoundMs = 180000;    // arm 4: the client says whether it took from the sold sack
+inline constexpr uint64_t kClientBoundMs = 1800000; // the client's whole route
+inline constexpr uint64_t kPutsSettleMs = 20000;   // the host waits this long for the props still outside the sack
+inline constexpr uint64_t kParkBoundMs = 240000;   // a drone in flight at the call lands within minutes
+inline constexpr uint64_t kSaleBoundMs = 600000;   // the drone flies out, sells and the container is cleared
+inline constexpr uint64_t kCensusLaterMs = 5000;  // arm 2: the census after the sale is read again this long after it
+
+// ---- the chat lines ("rest" is the text after the prefix) ----
+
+inline constexpr const char* kSackPrefix = "sack host sack ";     // host: the sack's element id
+inline constexpr const char* kBoundPrefix = "sack client bound "; // client: its mirror of that id is bound
+inline constexpr const char* kCratePrefix = "sack host crate ";   // host: arm 1: the crate's element id
+inline constexpr const char* kPropsPrefix = "sack host props ";   // host: arm 2: the loose props' element ids, comma-separated
+inline constexpr const char* kIndexPrefix = "sack host index ";   // host: arm 3: the crate's inventory index, when it read
+inline constexpr const char* kTookPrefix = "sack client took ";   // client: arm 4: "<took> <reply>", see below
+// The reply of the arm 4 line: -1 nothing to take (the sale's publication came first), -2 the client's take did not run,
+// else the refusal reason of the press (0 when it was granted). `took` is 1 when an item came out of the sold sack.
+inline constexpr int kReplyNothing = -1;
+inline constexpr int kReplyFailed = -2;
+inline constexpr const char* kPutsDoneLine = "sack client puts done"; // client: arm 2: every prop was tried
+inline constexpr const char* kCallLine = "sack host call";        // host: arm 2: the census before is taken, the drone is called
+inline constexpr const char* kSoldLine = "sack host sold";        // host: arm 2: the drone container is cleared
+inline constexpr const char* kDoneLine = "sack host done";        // host: the run is over
+
+// ---- shared state (dronesack_drill.cpp) ----
+
+// One destroy of a watched actor seen on this peer while the drill is armed: an exact prop_container_C, or, in
+// arm 2, an exact prop_C.
+struct Destroyed {
+    void* actor = nullptr;
+    uint32_t eid = 0;
+    uint64_t ms = 0;            // GetTickCount64 at the destroy
+    std::wstring by;            // the caller's class, or "<native>"
+    bool broadcast = false;     // the destroy seam sent a PropDestroy for it
+    bool wire = false;          // this peer was destroying it on the wire's word (the echo guard's mark)
+    bool container = false;     // a prop_container_C, else a prop_C
+    bool printed = false;
+};
+
+// A PropDestroy for a watched eid that arrived from a client (host only).
+struct Received {
+    uint32_t eid = 0;
+    int slot = 0;
+    uint64_t ms = 0;
+    bool alive = false;         // the actor still lived on this peer when it arrived
+    bool printed = false;
+};
+
+uint64_t NowMs();
+void Say(const std::string& line);
+bool Rest(const std::string& prefix, std::string* rest);
+bool Heard(const std::string& line);
+
+// 1 or 2: the run's arm (the dronesack_drill row's value).
+int Mode();
+// Start recording the destroys the hooks see. Resolves the container class (and, in arm 2, prop_C); false when one
+// does not.
+bool Arm(bool isHost);
+// The crate named by its element id and key: the received-PropDestroy hook matches it.
+void SetCrate(uint32_t eid, const std::string& key);
+// Arm 2: the loose props' element ids, which the received-PropDestroy hook matches.
+void SetWatch(const std::vector<uint32_t>& eids);
+// Prints one recorded destroy once: the crate's own line (`crateEid` its element id, `withBroadcast` the client's
+// form) or an "other" line; times are +ms from `refMs`.
+void PrintDestroy(const char* peer, Destroyed& d, uint32_t crateEid, uint64_t refMs, bool withBroadcast);
+std::vector<Destroyed>& Destroys();
+std::vector<Received>& Recv();
+uint32_t CrateEid();
+
+// The record count of a container actor's propInventory slot, or -1 when it does not read.
+int RecordsOf(void* containerActor);
+// The container a holder (a drone sack, the drone) is bound to through its `container` field, or null.
+void* ContainerOf(void* holder);
+// The record count of the container a drone sack is bound to (sack.container), or -1.
+int SackRecords(void* sack);
+
+// ---- the client's state (dronesack_drill.cpp; arm 4's half in dronesack_drill_take.cpp) ----
+
+enum class ClientPh : uint8_t { Wait, Mirror, Props, Route, Watch, Done };
+// One loose prop's walk, grab, carry and release (arm 2).
+enum class Put : uint8_t { Pick, Resolve, Drive, Walk, Grab, Carry, Over, Settle };
+// Arm 4: the client's take from the sold sack, through the act: the screen is opened before the sale (Opening, Open),
+// the press is made only if the mirror still lists records 2 s after the sale's marker.
+enum class Take : uint8_t { Idle, Opening, Open, Pressed, Settling, Done };
+
+struct Client {
+    ClientPh                    ph = ClientPh::Wait;
+    uint64_t              phaseMs = 0, armMs = 0;
+    uint32_t              sackEid = 0;
+    ue_wrap::CachedObjRef sack;
+    // arm 2
+    std::vector<uint32_t> eids;
+    size_t                i = 0;
+    Put                   st = Put::Pick;
+    uint64_t              stMs = 0;
+    int                   grabTries = 0;
+    ue_wrap::CachedObjRef prop;
+    int                   aimTicks = 0;                 // the Over leg: ticks spent steering the held prop
+    float                 bestMiss = 1e9f, bestFlat = 0.f, bestAbove = 0.f;   // ... and the nearest it came to the window
+    bool                  letGo = false;                // the Settle leg: the drop was called, not yet checked
+    int                   census = 0;   // 0 none yet, 1 before taken, 2 after taken, 3 after+5s taken and compared
+    uint64_t              soldSeenMs = 0;     // arm 4: when this peer first saw the host's sold line
+    bool                  probed[4] = {};     // ... and which of the after-sale reads have been made
+    int                   took = -1;          // ... and whether the client took a record out of the sold sack (-1: not yet)
+    Take                  take = Take::Idle;  // ... the take's step, and what it measured around the press
+    uint64_t              takeMs = 0;
+    int                   mirror = 0;         // ... whether the mirror of the sack read 0 in time (0 watching, 1 yes, 2 no)
+    int                   mirrorN = -1;       // ... and what it read when the sale's marker arrived
+    int                   mirrorPeak = 0;     // ... the most records it read before and at the marker
+    int                   mirrorLeft = 0;     // ... and what it still read when the 2 s ran out (mirror 2)
+    bool                  takeOk = false;     // ... whether the press was refused Gone with nothing out, or never made
+    bool                  verdicted = false;
+    bool                  noRoute = false;    // ... and whether no route reaches the sack
+    ue_wrap::CachedObjRef sackContainer;      // ... the sack's container, resolved once for the arm
+    int                   reply = 0, ownBefore = -1, propsBefore = -1;
+    uint32_t              takesBefore = 0;
+    uint64_t              afterMs = 0;
+    std::shared_ptr<coop::director::BackgroundWalk> walk;
+    std::unique_ptr<coop::director::AimedGrab>      grab;
+};
+
+extern Client g_c;
+
+// The state of the client's background walk: 0 walking, 1 arrived, 2 failed or none.
+inline int WalkState() { return g_c.walk ? g_c.walk->state.load() : 2; }
+
+// ---- arm 4: the client's take from the sold sack (dronesack_drill_take.cpp) ----
+
+// Before the sale the client walks to the sack, so the screen of a take stays open; sets g_c.noRoute when no route
+// reaches it, and fails the take when the local player is not resolved.
+void WalkToSack();
+// The take's start once the walk is done, and its steps; the mirror's watch for the sack to read 0.
+void TakeStart(uint64_t now);
+void TakeTick(uint64_t now);
+void MirrorWatch(uint64_t now);
+
+// ---- the census (dronesack_drill_census.cpp), arm 2 ----
+
+// The three moments a peer reads every world container: after the puts and before the drone is called, right after
+// the sale, and kCensusLaterMs after that.
+enum class Moment : uint8_t { Before, After, AfterLater };
+// Logs one line per world container and the length of the save slot's GObjStack, and keeps the rows. `role` is
+// "host" or "client".
+void CensusTake(const char* role, Moment m);
+// Logs the containers that differ between the Before and AfterLater rows, then the count; the sack's container and
+// the drone's are excluded. `sack` is this peer's sack (null: only the drone's is excluded).
+void CensusDiff(const char* role, void* sack);
+// Arm 3: logs which of the Moment's containers report GObjStack index `index` (the one read off the dropped crate), or that
+// none does. A negative index (unread) is said and skipped.
+void CensusIndexHolders(const char* role, Moment m, int32_t index);
+void CensusReset();
+// The GObjStack index the container's propInventory holds, or -1.
+int32_t ContainerIndex(void* container);
+// Whether the container is one of container_contents_sync's world containers on this peer (it has an element id and
+// ForEachWorldContainer walks it).
+bool ContainerInSyncScope(void* container);
+
+// ---- the roles ----
+
+void HostTick(coop::net::Session* s);
+void HostReset();
+
+}  // namespace coop::dev::dronesack_drill::detail

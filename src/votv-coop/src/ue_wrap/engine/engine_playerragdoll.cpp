@@ -88,6 +88,12 @@ bool StartBodySim(void* comp) {
     ParamFrame blend(R::FindDispatchFunctionCached(cls, L"SetAllBodiesPhysicsBlendWeight"));
     if (!blend.Set<float>(L"PhysicsBlendWeight", 1.f) || !blend.Set<bool>(L"bSkipCustomPhysicsType", false) ||
         !Call(comp, blend) || !ref.Get()) return false;
+    // Body simulation and skinning are separate switches. The replacement rig
+    // uses a single-node reference pose, so explicitly give physics ownership
+    // of the rendered bones and ensure its component can refresh them.
+    ParamFrame render(R::FindDispatchFunctionCached(cls, L"SetEnablePhysicsBlending"));
+    if(!render.Set<bool>(L"bNewBlendPhysics",true) || !Call(comp,render) || !ref.Get() ||
+       !SetComponentTickEnabled(comp,true) || !ref.Get())return false;
     ParamFrame check(R::FindDispatchFunctionCached(cls, L"IsAnySimulatingPhysics"));
     return check.valid() && Call(comp, check) && ref.Get() && check.Get<bool>(L"ReturnValue");
 }

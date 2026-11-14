@@ -4,6 +4,8 @@
 namespace ue_wrap::reflection {
 void* FindClass(const wchar_t*){std::abort();}void* FindFunction(void*,const wchar_t*){std::abort();}
 void* FindObjectByClass(const wchar_t*){std::abort();}
+int32_t InstanceOffset::Of(void*){std::abort();}
+void* FindDispatchFunctionCached(void*,const wchar_t*){std::abort();}
 }
 namespace ue_wrap {
 ParamFrame::ParamFrame(void*){std::abort();}
@@ -15,6 +17,7 @@ namespace ue_wrap::engine {
 bool TryGetActorLocation(void*,FVector&){std::abort();}bool TryGetActorRotation(void*,FRotator&){std::abort();}
 bool SetActorLocation(void*,const FVector&){std::abort();}bool SetActorRotation(void*,const FRotator&){std::abort();}
 bool SetActorTickEnabled(void*,bool){std::abort();}
+bool TryGetRootPoseRaw(void*,FVector&,FRotator&){std::abort();}
 }
 namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){std::abort();}}
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){std::abort();}}

@@ -132,11 +132,12 @@ public:
     PoseTurn TrashCarryPoseTurn(uint32_t eid, bool ahead) const;
     void PublishTrashCarryPose(const TrashClumpPoseSnapshot& pose, bool ahead);
 
-    // Host: a driven prop's turn and its pose for the next PropDrivePose send. A pose superseded
+    // A driven prop's turn and its pose for the next PropDrivePose send (the host's to every peer, a
+    // client's to the host). A pose superseded
     // before a send is the only kind that never goes out, which keeps the publisher's delta baseline
     // consistent. Game thread.
     PoseTurn PropDrivePoseTurn(uint32_t eid) const;
-    void PublishPropDrivePose(const PropPoseSnapshot& pose);
+    void PublishPropDrivePose(const PropDriveRow& pose);
 
     // Per-peer reads; false if peerSlot is out of range, the slot has no pose yet, or the session
     // is not Connected. outIsNew tells a fresh arrival from a re-read of the last one.
@@ -184,11 +185,18 @@ public:
     // Client: swap out the trash-clump and driven-prop poses received since the last take, newest
     // per eid; `out` comes in empty and keeps its capacity.
     bool TakeRemoteTrashCarryBatch(std::vector<TrashClumpPoseSnapshot>& out);
-    bool TakeRemotePropDriveBatch(std::vector<PropPoseSnapshot>& out);
+    bool TakeRemotePropDriveBatch(std::vector<PropDriveRow>& out);
+
+    // Host: each client slot's driven-prop rows since the last take, into out[slot]; the bits of the slots with rows.
+    uint32_t TakeRemotePropDriveBatches(std::vector<PropDriveRow> (&out)[kMaxPeers]);
 
     // Game thread: queue a reliable message to every connected client (host) or to the host
     // (client). False on an oversize payload or no peer. `skipSlot` skips one slot (-1: none): MTA pSkip.
     bool SendReliable(ReliableKind kind, const void* payload, int len, int skipSlot = -1);
+
+    // `count` equal-sized payloads as one run no join gate splits (SendBacklog::SendOrQueueBatch); the blob chunker's.
+    bool SendReliableBatch(ReliableKind kind, const void* payloads, int payloadLen, int count);
+    bool SendReliableBatchToSlot(int peerSlot, ReliableKind kind, const void* payloads, int payloadLen, int count);
 
     // Single-target reliable send; false if peerSlot is out of range, not connected, or the payload
     // does not fit. `senderSlot` is the header's origin (0 = self; the late-join replay passes the
@@ -220,19 +228,23 @@ public:
     // drop world-mutating kinds to it (IsPreWorldSendableKind in session_lanes.h); the world-ready
     // connect replay rebuilds that state.
     void MarkSlotWorldReady(int peerSlot, bool ready) {
-        if (peerSlot >= 0 && peerSlot < kMaxPeers)
+        if (peerSlot >= 0 && peerSlot < kMaxPeers) {
             slotWorldReady_[peerSlot].store(ready, std::memory_order_release);
+            if (!ready) slotWorldReadyRevision_[peerSlot].fetch_add(1, std::memory_order_acq_rel);
+        }
     }
     bool IsSlotWorldReady(int peerSlot) const {
         return peerSlot >= 0 && peerSlot < kMaxPeers &&
                slotWorldReady_[peerSlot].load(std::memory_order_acquire);
     }
+    // A reset invalidates world-bound delivery receipts even if ready becomes true between pumps.
+    uint64_t SlotWorldReadyRevision(int peerSlot) const {
+        return peerSlot >= 0 && peerSlot < kMaxPeers ?
+            slotWorldReadyRevision_[peerSlot].load(std::memory_order_acquire) : 0;
+    }
     // The net-thread view of the same event: relay-eligible since the ClientWorldReady receipt on
     // exactly this hConn.
-    bool IsRelayEligible(int peerSlot, uint32_t hConn) const {
-        return peerSlot >= 0 && peerSlot < kMaxPeers && hConn != 0 &&
-               relayEligible_[peerSlot].load(std::memory_order_acquire) == hConn;
-    }
+    bool IsRelayEligible(int peerSlot, uint32_t hConn) const;
 
     // Is a remote connection registered in this slot (any state)?
     bool HasPeerConn(int peerSlot) const {
@@ -242,12 +254,7 @@ public:
     // Does any live peer pass the world-ready gate? A fan-out with zero eligible receivers is a
     // vacuous success for a save-and-seed-covered lane, not a reason to re-broadcast. Game or net
     // thread. `skipSlot` leaves a slot out, as SendReliable's does: one gate for both.
-    bool AnyWorldReadyPeer(int skipSlot = -1) const {
-        for (int i = 0; i < kMaxPeers; ++i)
-            if (i != skipSlot && peerConns_[i].load() != 0 &&
-                slotWorldReady_[i].load(std::memory_order_acquire)) return true;
-        return false;
-    }
+    bool AnyWorldReadyPeer(int skipSlot = -1) const;
 
     // A receive lane parked at its flood bound pauses this session's receive loop, keyed by the kind it
     // parks (coop/net/apply_pause.h); true when the call changed it. Set on the game thread.
@@ -321,6 +328,10 @@ public:
     // for it. False for an out-of-range slot, a slot with no connection, or a failed read. Game
     // thread. Not const: SendBacklog::DepthBytes is not.
     bool SlotReliableIdle(int slot);
+
+    void OpenJoinGateForSnapshot(int slot);  // a re-snapshot, no announce: the slot's Default-lane sends wait behind it (SendBacklog::OpenJoinGateForSnapshot)
+    void ReleaseAnnounceHold(int slot);      // the announce's replay has run: its hold on the gate ends (SendBacklog::ReleaseAnnounceHold)
+    void CloseJoinGate(int slot);  // the snapshot completed: the held sends join the Default lane (SendBacklog::CloseJoinGate)
 
     // What the net thread last published about this slot's link: delivered and still-owed reliable
     // bytes, with the sample's time on the net clock. See SendRateControl::Published. Any thread.
@@ -428,7 +439,7 @@ private:
     int  SerializeLocalTrashCarryBatch(uint8_t* buf);
     void StoreRemoteTrashCarryBatch(const void* data, int len, uint32_t seq);
     int  SerializeLocalPropDriveBatch(uint8_t* buf);
-    void StoreRemotePropDriveBatch(const void* data, int len, uint32_t seq);
+    void StoreRemotePropDriveBatch(int originSlot, const void* data, int len, uint32_t seq);
     // Voice receive store (session_voice.cpp): validate one VoiceFrame, queue it, host-relay it.
     // Net thread.
     void StoreVoiceFrame(int routeSlot, int peerSlot, const void* data, int len);
@@ -479,6 +490,13 @@ private:
         if (!connected()) return false;
         std::lock_guard<std::mutex> lk(remoteMutex_);
         return (host_.*stream).Take(out);
+    }
+    template <class S, class T>
+    uint32_t TakeOrigins(S OriginStreams::*stream, T (&out)[kMaxPeers]) {   // slots 1.., one lock; the slots with data
+        uint32_t got = 0; std::lock_guard<std::mutex> lk(remoteMutex_);
+        for (int slot = 1; connected() && slot < kMaxPeers; ++slot)
+            if ((origin_[slot].*stream).Take(out[slot])) got |= 1u << slot;
+        return got;
     }
 
     // Host relay of an unreliable datagram from `originSlot` to every other client: the header's
@@ -667,13 +685,14 @@ private:
     // net thread's send round copies the samples and serializes the batches, both under localMutex_.
     std::mutex localMutex_;
     OutboundStreams outbound_;
-    // The host-originated trash-carry and driven-prop queues, each with its own mutex (what a client
-    // receives of them is in host_).
+    // The trash-carry queue (host-originated) and the driven-prop queue (the host's rows, or on a client the
+    // rows of a prop it syncs, sent to the host alone), each with its own mutex (what a client receives of
+    // them is in host_; what the host receives of a client's driven-prop rows is in origin_).
     EidPoseQueue<TrashClumpPoseSnapshot> trashCarryPoses_;
-    EidPoseQueue<PropPoseSnapshot>       propDrivePoses_;
+    EidPoseQueue<PropDriveRow>       propDrivePoses_;
     // The batch kinds only the host originates: a host refuses each from a client, said once per
     // kind and per session (the net thread sets, Stop clears).
-    enum class HostBatch : uint8_t { Npc, WorldActor, TrashCarry, PropDrive, Count };
+    enum class HostBatch : uint8_t { Npc, WorldActor, TrashCarry, Count };
     std::array<std::atomic<bool>, static_cast<size_t>(HostBatch::Count)> saidClientBatch_{};
     // HOST: a client sent `kind`, which only a host originates; dropped, said once. Net thread.
     void RefuseClientBatch(HostBatch kind, const char* tag, const char* msgName);
@@ -719,11 +738,12 @@ private:
 
     // Per-slot world-ready flags (see MarkSlotWorldReady).
     std::array<std::atomic<bool>, kMaxPeers> slotWorldReady_{};
+    std::array<std::atomic<uint64_t>, kMaxPeers> slotWorldReadyRevision_{};
     // The receive lanes holding the receive loop paused (see SetApplyPause); reset by Start.
     ApplyPauseSet applyPause_;
     // The receive edge's refusals of a kind no client may author (client_authorship.h): the first of each value
     // in a session said with its number, the rest summed. Net thread; reset by the stop, after the join.
-    std::array<bool, 256> saidHostKind_{};
+    std::array<bool, kReliableKindCount + 1> saidHostKind_{};
     RefusalTally hostKindRefusals_{"net"};
     // The epoch latch's drops (HandleMessage), each cause folded on its own: a zero epoch is a sender's bug, an
     // earlier connection's epoch a benign reconnect race. Net thread; cleared with the one above.

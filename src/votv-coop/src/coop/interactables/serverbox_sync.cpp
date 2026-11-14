@@ -396,6 +396,7 @@ sg::Verdict OnFixPre(const sg::Call& call) {
     coop::net::ServerRepairPayload p{};
     p.box = static_cast<uint8_t>(box);
     ReadWidgetReward(call.callerObject, p);
+    g_counts.lastSentLol = (p.flags & coop::net::kRepairLol) != 0;
     if (s->SendReliableToSlot(0, coop::net::ReliableKind::ServerRepair, &p, sizeof(p))) ++g_counts.repairsSent;
     UE_LOGI("serverbox_sync: this player's repair of box %d sent to the host (%llu sent)", box,
             static_cast<unsigned long long>(g_counts.repairsSent));
@@ -448,8 +449,18 @@ void DriveWatches() {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    // Install is the per-pump-tick "ensure" path, not a reset: when this session is already
+    // installed, only the watch drive (itself latched) may run. The poll cursor and the per-slot
+    // delivered rows ARE the delivery dedup -- clearing them each tick turned one unchanged box
+    // state into a reliable full-state send to every joiner 60 times a second, and made each of
+    // those rows re-apply the whole server list on the client.
+    const uint32_t serial = coop::net::session_serial::Current();
+    if (g_session.load(std::memory_order_acquire) == session && g_sessionSerial == serial) {
+        DriveWatches();
+        return;
+    }
     ++g_epoch;
-    g_sessionSerial = coop::net::session_serial::Current();
+    g_sessionSerial = serial;
     g_polledWorldGen = 0; g_polledGm = nullptr; g_polledGmSerial = 0;
     g_lastPollMs = 0;
     for (int slot = 0; slot < g_delivery.size(); ++slot) g_delivery[slot] = {};
@@ -559,6 +570,9 @@ void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot)
     int32_t record = 0;
     const int32_t reward = PayRepairReward(s, root, payload, repair.damaged, record);
     if (!Current(s, root)) return;
+    g_counts.lastPaid = reward;
+    g_counts.lastRecord = record;
+    g_counts.lastPaidLol = (payload.flags & coop::net::kRepairLol) != 0;
     UE_LOGI("serverbox_sync: HOST ran slot %u's repair of box %u (reward %d, record %d%s)", slot, payload.box,
             reward, record, (payload.flags & coop::net::kRepairSettles) ? "" : ", the sender sent no reward fields");
     BroadcastIfChanged(s);

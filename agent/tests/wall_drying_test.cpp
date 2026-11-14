@@ -19,6 +19,7 @@ void* out=nullptr;
 ue_wrap::script_gate::PostFn saved=nullptr,loaded=nullptr;
 void Callback(){auto fn=std::move(inOffset);inOffset={};if(fn)fn();}
 }
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){std::abort();}}
 namespace ue_wrap::reflection {
 void* EngineAlloc(size_t n,uint32_t){if(!test::allocation||(test::failIn&&!--test::failIn))return nullptr;void* p=std::malloc(n);CHECK(p);test::buffers.insert(p);++test::allocs;return p;}
 void EngineFree(void* p){if(!p)return;CHECK(test::buffers.erase(p)==1);++test::frees;std::free(p);}

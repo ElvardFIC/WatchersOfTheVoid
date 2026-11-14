@@ -9,13 +9,17 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace coop::rider_hold {
 
-// Hold `movement` still. False, holding nothing, when it did not tick and no hold here had stopped it.
-bool Take(void* movement);
+// Each successful acquisition has its own token. Zero owns nothing. A stale or
+// already returned token cannot release a successor at a reused object address.
+using Token = uint64_t;
+Token Take(void* movement);
 
 // Give back one hold; the last one lets it tick again. A movement that died is forgotten. Null-safe.
-void Give(void* movement);
+void Give(void* movement, Token token);
 
 // The session ended: every movement still held ticks again, and the holds are forgotten.
 void OnDisconnect();

@@ -10,17 +10,20 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/field_io.h"
+#include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/engine/data_table.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
 #include <string>
 #include <unordered_map>
@@ -503,6 +506,81 @@ bool ReadHoldFacts(void* prop, HoldFacts& out) {
     f.saveClass = !IsEmptySaveClass(prop) && !IsHosePlacing(prop);
     if (!HasEquipRow(name, &f.equipRow)) return false;
     out = f;
+    return true;
+}
+
+bool ReadRowFlags(const std::wstring& name, PropDataFlags& out, bool& found) {
+    UE_ASSERT_GAME_THREAD("prop_gather::ReadRowFlags");
+    out = PropDataFlags{};
+    found = false;
+    void* mesh = nullptr;
+    return ListPropsRow(Lower(name), out, &mesh, &found);
+}
+
+namespace {
+
+// The game's own name -> volume table: the gamemode's propRenderer names (TArray<FName>) beside the gamemode's
+// prop_volumes (TArray<float>), which Get Volume with no mesh reads as prop_volumes[Array_Find(names, name)]. It is
+// read into a map from lowercased name to index (an FName compares without case; the first name wins, as Array_Find
+// does); the volume is read from prop_volumes[index] on each call, and the map is built again when the renderer or the
+// names array changes. A name the table lacks is unknown with no engine call.
+struct VolumeTable {
+    void* gmCls = nullptr;       // the gamemode class the offsets below were read from
+    int32_t renderer = -1;       // mainGamemode_C.propRenderer
+    int32_t volumes = -1;        // mainGamemode_C.prop_volumes
+    void* rendererCls = nullptr;
+    int32_t names = -1;          // propProcessor_C.names
+    void* builtFor = nullptr;    // the renderer the map was built from
+    int32_t namesNum = -1;
+    std::unordered_map<std::wstring, int32_t> byName;   // lowercased name -> its index in both arrays
+};
+VolumeTable g_volumeTable;
+
+void RebuildVolumeTable(VolumeTable& t, const save_record::Arr& names) {
+    t.byName.clear();
+    t.byName.reserve(static_cast<size_t>(names.num));
+    for (int32_t i = 0; i < names.num; ++i) {
+        R::FName n{};
+        std::memcpy(&n, names.data + static_cast<size_t>(i) * sizeof(R::FName), sizeof n);
+        t.byName.emplace(Lower(R::ToString(n)), i);   // emplace keeps the first of a repeated name
+    }
+}
+
+}  // namespace
+
+bool VolumeOfName(const std::wstring& name, float& out, bool& valid) {
+    UE_ASSERT_GAME_THREAD("prop_gather::VolumeOfName");
+    out = 0.f;
+    valid = false;
+    void* const gm = world_singleton::Gamemode();
+    if (!gm) return false;
+    VolumeTable& t = g_volumeTable;
+    if (void* const gmCls = R::ClassOf(gm); gmCls != t.gmCls) {
+        t.gmCls = gmCls;
+        t.renderer = R::FindPropertyOffset(gmCls, L"propRenderer");
+        t.volumes = R::FindPropertyOffset(gmCls, L"prop_volumes");
+    }
+    if (t.renderer < 0 || t.volumes < 0) return false;
+    void* const renderer = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(gm) + t.renderer);
+    if (!renderer || !R::IsLive(renderer)) return false;
+    if (void* const rCls = R::ClassOf(renderer); rCls != t.rendererCls) {
+        t.rendererCls = rCls;
+        t.names = R::FindPropertyOffset(rCls, L"names");
+    }
+    if (t.names < 0) return false;
+    const save_record::Arr names = save_record::ReadArr(renderer, t.names);
+    const save_record::Arr volumes = save_record::ReadArr(gm, t.volumes);
+    if (names.num <= 0 || volumes.num <= 0) return false;   // the game has not filled its table yet
+    if (renderer != t.builtFor || names.num != t.namesNum) {
+        RebuildVolumeTable(t, names);
+        t.builtFor = renderer;
+        t.namesNum = names.num;
+    }
+    const auto it = t.byName.find(Lower(name));
+    if (it == t.byName.end() || it->second >= volumes.num) return true;   // unknown: valid stays false
+    // The value is read live, so a volume the game changes is seen without a rebuild.
+    std::memcpy(&out, volumes.data + static_cast<size_t>(it->second) * sizeof out, sizeof out);
+    valid = true;
     return true;
 }
 

@@ -2,7 +2,7 @@
 #include "ue_wrap/actors/save_record.h"
 
 namespace ue_wrap::placed_save {
-enum class Kind { None, Faucet, Hose, Plant, WallOutline, Wall, DirtHole };
+enum class Kind { None, Faucet, Hose, Plant, WallOutline, Wall, DirtHole, Marker };
 inline bool IsWall(Kind kind) { return kind == Kind::WallOutline || kind == Kind::Wall; }
 Kind Type(void* actor);
 Kind ClassKind(const std::wstring& name);

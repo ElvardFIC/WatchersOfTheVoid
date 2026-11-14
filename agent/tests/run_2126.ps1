@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research\tests_2126'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     foreach ($name in @('native_result','power_door')) {
         & cl /nologo /std:c++20 /EHsc /Gy /Gw /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$name.obj" "/Fe$output\$name.exe" "agent\tests\${name}_2126_test.cpp" /link /OPT:REF /OPT:ICF
         if ($LASTEXITCODE -ne 0) { throw "Harness compilation failed: $name" }
@@ -27,7 +27,7 @@ try {
         $harness=[IO.File]::ReadAllText((Join-Path $PSScriptRoot ($case.Suite+'_test.cpp')))
         $harness=$harness.Replace('../../src/votv-coop/src/'+$case.File,($mutant -replace '\\','/'))
         $copy=Join-Path $output ($case.Name+'_test.cpp');[IO.File]::WriteAllText($copy,$harness)
-        & cl /nologo /std:c++20 /EHsc /Gy /Gw /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $copy /link /OPT:REF /OPT:ICF
+        & cl /nologo /std:c++20 /EHsc /Gy /Gw "/I$PSScriptRoot" /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$($case.Name).obj" "/Fe$output\$($case.Name).exe" $copy /link /OPT:REF /OPT:ICF
         if ($LASTEXITCODE -ne 0) { throw "Mutation compile failed: $($case.Name)" }
         & "$output\$($case.Name).exe"
         if ($LASTEXITCODE -eq 0) { throw "Mutation not detected: $($case.Name)" }

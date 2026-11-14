@@ -1,14 +1,17 @@
 // ue_wrap/hotbar/icons.cpp -- see ue_wrap/hotbar/icons.h.
 
 #include "ue_wrap/hotbar/icons.h"
+#include "ue_wrap/hotbar/icon_cache.h"
 
 #include "ue_wrap/actors/inventory.h"
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/world/game_mode.h"
 
 #include <chrono>
 
@@ -139,11 +142,60 @@ bool Read(State& out) {
     }
     // texs_GAMEINST lives on the GAME INSTANCE, which outlives the world: that is why a second
     // world load in one process finds the icons already built and never shows this defect.
-    if (void* gi = world_singleton::GameInstance()) s.iconTextures = ArrayAt(gi, g_off.texsGameInst).num;
+    if (void* gi = world_singleton::GameInstance()) {
+        const auto textures = ArrayAt(gi, g_off.texsGameInst);
+        s.iconTextures = textures.num;
+        for (int32_t i = 0; i < textures.num; ++i)
+            if (reinterpret_cast<void* const*>(textures.data)[i]) ++s.validIconTextures;
+    }
     s.carried = INV::LivePersonalStoreCount();
 
     out = s;
     return true;
+}
+
+bool PrepareForWorld(int mode) {
+    if (mode == game_mode::kTutorial) return true;
+    if (!game_mode::IsValid(mode)) return false;
+    void* gi = world_singleton::GameInstance();
+    void* gm = world_singleton::Gamemode();
+    if (!gi || !gm) return false;
+    CachedObjRef owner, worldOwner;
+    owner.Set(gi); worldOwner.Set(gm);
+    void* cls = R::FindClass(L"lib_C");
+    void* fn = cls ? R::FindFunction(cls, L"GetAssetFolder") : nullptr;
+    void* lib = cls ? R::FindClassDefaultObject(L"lib_C") : nullptr;
+    if (!fn || !lib) return false;
+    ParamFrame f(fn);
+    if (!f.valid()) return false;
+    f.Set<bool>(L"skipCreation", true);
+    f.Set<void*>(L"__WorldContext", gm);
+    if (!Call(lib, f) || owner.Get() != gi || worldOwner.Get() != gm ||
+        game_mode::ReadFrom(gi) != mode) return false;
+    const auto path = f.Get<R::FString>(L"path");
+    if (!path.Data || path.Num <= 1 || path.Num > 32768 || path.Max < path.Num) return false;
+    const std::filesystem::path folder =
+        std::filesystem::path(std::wstring(path.Data, path.Num - 1)) / L"icons" / L"items";
+    unsigned removed = 0;
+    std::error_code error;
+    // Even a partial cleanup must invalidate the in-process cache before retry.
+    const bool clean = RemoveEmptyItemIcons(folder, removed, error);
+    static R::InstanceOffset texturesOffset{L"texs_GAMEINST"};
+    const int32_t offset = texturesOffset.Of(gi);
+    SR::Arr textures;
+    if (offset < 0 || !SR::TryReadArr(gi, offset, textures)) return false;
+    bool invalid = removed != 0;
+    for (int32_t i = 0; i < textures.num && !invalid; ++i)
+        invalid = reinterpret_cast<void* const*>(textures.data)[i] == nullptr;
+    if (invalid) {
+        // TArray<UTexture2D*> elements have trivial destruction. Retain its
+        // allocation/Max; only clear Num, as native Empty/Reset would do.
+        *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(gi) + offset + sizeof(void*)) = 0;
+        UE_LOGI("item_icons: rejected cache before mode %d travel (empty files=%u, textures=%d)",
+                mode, removed, textures.num);
+    }
+    if (!clean) UE_LOGW("item_icons: cache cleanup refused (%d); world boot will retry", error.value());
+    return clean;
 }
 
 std::wstring SlotTexture(const State& s, int i) {

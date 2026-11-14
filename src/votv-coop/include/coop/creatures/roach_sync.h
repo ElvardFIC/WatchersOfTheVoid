@@ -30,8 +30,8 @@ void Install(coop::net::Session* session);
 // 1 Hz driver (TickGameplay, game thread).
 //
 // HOST: poll the roaches array and broadcast a PAGED full snapshot -- RoachState carries a seq, a
-// page, and per roach a location and scale -- on a population change, on drift, and as a periodic
-// keepalive.
+// page, and per roach a location and scale -- on population/drift changes and keepalive.
+// Delivery progresses separately per recipient and occupancy generation, including empty joins.
 //
 // CLIENT: liveness-scan the tracked mirror set and send a RoachConsumed intent for a roach eaten or
 // stomped locally. Client SUPPRESSION itself lives in coop/world/spawn_authority: it refuses the
@@ -44,11 +44,10 @@ void Tick();
 // come from the host. Game thread (event_feed drain).
 //
 // Applied by ORDINAL -- the k-th valid slot -- because both sides' arrays keep null holes, so an
-// ordinal and not a raw index is the stable mapping. With equal counts it drives positions and
-// scales onto the components; with differing counts it REBUILDS, calling the game's own
-// deleteRoach(idx, crush=false) for every local roach and then addRoach(loc, size,
-// bypassCheck=true) per snapshot entry, so the array, its count and its collision stay consistent
-// with single-player.
+// ordinal and not a raw index is the stable mapping. Complete, validated snapshots are retained
+// for Tick. Population reconciliation uses native deleteRoach/addRoach, with at most four
+// mutations per tick; uncertain mutations await a fresh snapshot. Reversible pose/scale writes
+// retry, and application never generates a consumption intent.
 void OnState(const coop::net::RoachStatePayload& payload);
 
 // HOST receive: a client consumed a roach locally, by eating or stomping it -- delete the nearest

@@ -13,6 +13,7 @@
 #include "ui/voice_panel.h"          // Close() on flee -- don't leave the voice panel open across the transition
 #include "coop/dev/dev_lanes.h"
 #include "coop/dev/leak_probe.h"
+#include "coop/session/host_world_settle.h"  // the host world's settle walk and its ready line
 #include "coop/dev/heap_probe.h"
 #include "coop/dev/perf_probe.h"
 #include "coop/element/element_deleter.h"
@@ -71,7 +72,7 @@ namespace R = ue_wrap::reflection;
 namespace P = ue_wrap::profile;
 
 // The cached local mainPlayer_C, on top of Registry::Local() so the hot pump path skips its atomic
-// load. A CachedObjRef: probed at 125 Hz through teardown windows, where a bare IsLive dereference
+// load. A CachedObjRef: probed at ~60 Hz through teardown windows, where a bare IsLive dereference
 // is unsafe.
 ue_wrap::CachedObjRef g_netLocal;
 // The cached controller for the same pawn (two dispatches saved per tick); reset with g_netLocal.
@@ -234,6 +235,9 @@ void TearDownSession(coop::net::Session& session, const char* why) {
         coop::subsystems::DisconnectSlot(session, slot);
     }
     coop::subsystems::DisconnectAll();
+    // The next session's `rig: READY hosting` is owed; the world's settle latch stays. Here and not in
+    // DisconnectAll, which also runs when a host's last client leaves and the session lives on.
+    coop::host_world_settle::OnSessionEnd();
     // Every session-scoped overlay dies here: the last lines would otherwise ride their 11 s TTL into
     // the menu, and one stale nameplate re-activates the whole HUD there through hud::IsActive(). Not
     // in DisconnectAll, which also runs on a host whose client left, and the host keeps its UI.
@@ -284,6 +288,7 @@ void Tick(coop::net::Session& session) {
     coop::subsystems::HoldSessionGate();
     coop::prop_key_index::Tick();  // a seed still owed, the births that finished loading: before any inbox read
     coop::subsystems::InstallLoadWatchers(session);
+    coop::trash_morph_gate::Tick();  // drives the gate's name resolve until its three watches are live
 
     // ---- Hitch and source probe (diagnostic, always on, near free) ----
     // [HITCH] times the gap between consecutive game-thread Ticks (the whole frame); [HITCH-SRC],
@@ -332,6 +337,10 @@ void Tick(coop::net::Session& session) {
     // UObject census is flat but RAM climbs; installs ucrtbase malloc/free detours on its first
     // armed tick.
     coop::dev::heap_probe::Tick();
+
+    // The host's world-settle walk, ahead of the transfer tick that holds a join for it, and ungated by
+    // the local player: a world is settling before one exists. A no-op on a client.
+    coop::host_world_settle::Tick(session);
 
     // The host's pending save-transfer chunk sends; a no-op without an active stream.
     if (session.role() == coop::net::Role::Host) coop::save_transfer::TickHost();
@@ -432,7 +441,7 @@ void Tick(coop::net::Session& session) {
             // held goes. A client's session ends instead, below or through the join's abort drain,
             // and TearDownSession takes all of it then.
             const auto stats = coop::subsystems::DisconnectAll();
-            UE_LOGI("net: all peers gone -- cleared %zu un-enumerated snapshot candidate(s) + %zu Init-processed entries; takeObjInFlight=0",
+            UE_LOGI("net: all peers gone -- cleared %zu un-enumerated snapshot candidate(s) + %zu Init-processed entries",
                     stats.snapPending, stats.initProcessedDropped);
         }
 
@@ -532,6 +541,9 @@ void Tick(coop::net::Session& session) {
             namespace PIS = coop::player_inventory_sync;
             float x = 0, y = 0, z = 0, yaw = 0;
             switch (PIS::TakeJoinPlacement(x, y, z, yaw)) {
+            case PIS::JoinPlacement::NativeMap:
+                UE_LOGI("net_pump: CLIENT spawn -> native map placement (Tutorial; no KPP/profile teleport)");
+                break;
             case PIS::JoinPlacement::ProfilePose:
                 coop::teleport_client::ApplyLocally({x, y, z, 0.f, yaw, 0.f});
                 UE_LOGI("net_pump: CLIENT spawn -> the profile's pose (%.0f, %.0f, %.0f) yaw=%.0f",
@@ -592,7 +604,7 @@ void Tick(coop::net::Session& session) {
             }
         }
         // Re-resolve the controller only when missing or invalidated (it is stable between possess
-        // events); ~250 dispatches a second saved at the 125 Hz pump.
+        // events); ~120 dispatches a second saved at the ~60 Hz pump.
         if (g_netLocalController.Raw() && !g_netLocalController.Alive()) g_netLocalController.Reset();
         if (!g_netLocalController.Raw())
             g_netLocalController.Set(ue_wrap::engine::GetController(g_netLocal.Raw()));
@@ -618,12 +630,11 @@ void Tick(coop::net::Session& session) {
     if (worldUp) {
         coop::puppet_drive::DriveTick(session,
                                       HasAnnouncedWorldReady());
-        coop::sit_pose::DriveRemotes();
-        coop::sit_pose::DriveAtvDrivers();
-
         // The receiver-side held-prop driver: the latest PropPose applied (a Key lookup on first
         // arrival, transform writes after); a stream stop over 500 ms is an implicit release.
         { PP::Scope _s{PP::Bucket::RemoteProp}; coop::remote_prop::Tick(session); }
+        coop::sit_pose::DriveRemotes();
+        coop::sit_pose::DriveAtvDrivers();
     }  // worldUp (puppet drive + ragdoll + pose-diag + remote prop)
 
     // Session events (joins, disconnects) to the feed, and our Join; g_netLocal goes along so

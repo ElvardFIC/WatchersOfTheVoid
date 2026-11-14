@@ -36,7 +36,7 @@ std::function<bool(void*,const std::wstring&,uint8_t)> onPrint;
 std::function<void(void*,const std::wstring&,uint8_t)> beforePrint;
 std::vector<std::wstring> printAttempts;
 int consumes=0,nativeRuns=0;
-bool failWriteWatch=false;
+bool failWriteWatch=false,readWriteOk=true;
 void Fail(int line,const char* expression){std::fprintf(stderr,"FAIL %s line %d: %s\n",scenario,line,expression);std::exit(1);}
 Obj* Make(){objects.push_back({int(slots.size())});auto* p=&objects.back();slots.push_back(p);return p;}
 void Native(const char* name,void* p){if(p){auto* obj=static_cast<Obj*>(p);if(!obj->live)Fail(__LINE__,"native call on retired widget");++obj->reads;}const auto callback=onNative;if(callback)callback(name,p);}
@@ -105,7 +105,7 @@ bool ReadProcessing(void* p,bool& busy){test::Native("ReadProcessing",p);busy=st
 bool WriteProcessing(void* p,bool busy){test::Native("WriteProcessing",p);static_cast<test::Obj*>(p)->busy=busy;return true;}
 bool WritePanel(void*,void*){return true;}
 bool ReadEnterCommandLine(const uint8_t* raw,std::wstring& line){auto* args=reinterpret_cast<const test::Args*>(raw);line=args->text;test::Native("ReadEnterCommandLine",args->owner);return true;}
-bool ReadWriteToLogArgs(const uint8_t* raw,std::wstring& text,uint8_t& type){const auto* args=reinterpret_cast<const test::Args*>(raw);text=args->text;type=args->type;test::Native("ReadWriteToLogArgs",args->owner);return true;}
+bool ReadWriteToLogArgs(const uint8_t* raw,std::wstring& text,uint8_t& type){const auto* args=reinterpret_cast<const test::Args*>(raw);text=args->text;type=args->type;test::Native("ReadWriteToLogArgs",args->owner);return test::readWriteOk;}
 bool ReadName(void* p,std::wstring& name){name=L"root";test::Native("ReadName",p);return true;}
 bool ReadLog(void* p,std::wstring& log){log=static_cast<test::Obj*>(p)->log;return true;}
 void* ReadUsed(void* p){test::Native("ReadUsed",p);return nullptr;}
@@ -134,6 +134,7 @@ namespace coop::player_handshake {const std::string& GuidForSlot(int slot){retur
 
 namespace test {
 void Reset(Role role=Role::Client){
+ readWriteOk=true;
  onNative={};onConsume={};onPrint={};beforePrint={};session.onSend={};other.onSend={};S::OnDisconnect();
  for(const auto& p:objects)CHECK(p.pins==0);
  objects.clear();slots.resize(1);local=Make();world=1;++serial;consumes=nativeRuns=0;active.clear();printAttempts.clear();
@@ -286,8 +287,36 @@ void WatchRollback(){
  failWriteWatch=false;S::g_watchRetry={};S::EnsureWatched();CHECK(S::g_watched&&watches.size()==3);
  CHECK(watches.at(L"ExecuteUbergraph_ui_console").pre==S::OnBodyPre);
 }
+void ExactPost(){
+ for(int mode=0;mode<3;++mode){
+  Reset();Frame frame;CHECK(Enter(frame,local,L"help")==V::Run);
+  auto wrong=frame.call;if(mode==0)wrong.stack=local;else if(mode==1)wrong.locals=nullptr;else ++wrong.tag;
+  S::OnBodyPost(wrong);CHECK(S::g_bodies.size()==1);Post(frame);CHECK(S::g_bodies.empty());
+ }
+}
+void OwnedBody(){
+ Reset(Role::Host);Frame first;CHECK(Enter(first,local,L"clr")==V::Run);
+ const auto saved=S::ActiveBody(local,true);CHECK(saved&&saved->clear);
+ // Reallocation and erasure must leave the captured command's attribution intact.
+ S::g_bodies.reserve(1024);S::g_bodies.clear();
+ Frame second;CHECK(Enter(second,local,L"help")==V::Run);CHECK(saved->clear&&saved->invocation==first.call.invocation);
+ CHECK(!S::ActiveBody(local,true)->clear);Post(second);active.erase(first.call.invocation);
+}
+void LongInput(){
+ Reset();const std::wstring line=L"sv.ping "+std::wstring(256,L'x');local->command=line;
+ Frame frame;CHECK(Enter(frame,local,line)==V::Cancel);CHECK(consumes==0&&session.sent.empty()&&local->command==line);
+}
+void InvalidOutput(){
+ for(bool host:{false,true}){
+  Reset(host?Role::Host:Role::Client);if(host)HostPeer();Frame frame;CHECK(Enter(frame,local,L"help")==V::Run);
+  readWriteOk=false;CHECK(Write(local,L"unreadable")==V::Cancel);readWriteOk=true;
+  CHECK(Write(local,std::wstring(S::kMaxLogChars+1,L'x'))==V::Cancel);CHECK(Write(local,L"bad type",9)==V::Cancel);
+  CHECK(session.sent.empty()&&S::LaneCounts().linesReturned==0);Post(frame);
+ }
+}
 }
 int main(int argc,char** argv){using namespace test;struct Case{const char* name;void(*run)();};const Case cases[]={
+ {"exact-post",ExactPost},{"owned-body",OwnedBody},{"long-input",LongInput},{"invalid-output",InvalidOutput},
  {"consume-failure",ConsumeFailure},{"client-retirement",ClientRetirement},{"consume-reentry",ConsumeReentry},{"consume-before-send",ConsumeBeforeSend},
  {"stale-post",StalePost},{"nested-clear",NestedClear},{"unwound-frame",UnwoundFrame},{"local-graph",LocalGraph},{"write-retirement",WriteRetirement},{"display-failure-clear",DisplayFailureClear},{"display-failure-append",DisplayFailureAppend},
  {"display-retirement",DisplayRetirement},{"host-display-reset",HostDisplayReset},{"replay-attribution",ReplayAttribution},{"replay-new-session",ReplayNewSession},{"replay-preclaim",ReplayPreclaim},{"watch-rollback",WatchRollback}};

@@ -161,7 +161,7 @@ msgstr ""
 
 #: src/coop/player/sleep_sync.cpp
 #, c-format
-msgid "%1$s is asleep -- the world runs faster"
+msgid "%1$s is asleep"
 msgstr ""
 
 #: src/coop/session/player_handshake.cpp
@@ -352,7 +352,7 @@ msgstr ""
 msgid "Also refuses anyone connecting from the same address -- people who share their router or their provider's address are refused too. It only works on a direct connection: a player who comes through a relay is refused by their identity alone."
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "Another player is using that item."
 msgstr ""
 
@@ -573,6 +573,10 @@ msgstr ""
 
 #: src/ui/dev_menu.cpp
 msgid "Each surface picks its own family; applies on the next frame."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp
+msgid "Empty it before putting it in a shared container."
 msgstr ""
 
 #: src/ui/chat_input.cpp
@@ -854,7 +858,11 @@ msgstr ""
 msgid "Nobody in the registry yet (players are recorded when they join)."
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp
+msgid "Not enough space."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "Not ready yet, try again in a moment."
 msgstr ""
 
@@ -1132,14 +1140,6 @@ msgstr ""
 msgid "Skin: %s"
 msgstr ""
 
-#: src/ui/dev_menu.cpp
-msgid "Skins"
-msgstr ""
-
-#: src/ui/skins_panel.cpp
-msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
-msgstr ""
-
 #: src/coop/props/prop_act_request.cpp
 msgid "Someone else has that item."
 msgstr ""
@@ -1179,15 +1179,27 @@ msgstr ""
 msgid "Teleport to me"
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "That can't be done right now."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp
+msgid "That can't go in there."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp
+msgid "That container is locked."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp
+msgid "That container is too far away."
 msgstr ""
 
 #: src/coop/props/remover_request.cpp
 msgid "That is being held"
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "That item is gone."
 msgstr ""
 
@@ -1247,7 +1259,7 @@ msgstr ""
 msgid "The host could not accept the connection."
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "The host could not be asked; try again."
 msgstr ""
 
@@ -1465,7 +1477,7 @@ msgstr ""
 msgid "Tidy up multivoid.ini"
 msgstr ""
 
-#: src/coop/props/prop_act_request.cpp
+#: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "Too many actions at once, try again."
 msgstr ""
 
@@ -1475,6 +1487,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "Too many password attempts. Try again in ten minutes."
+msgstr ""
+
+#: src/coop/props/container_act_request.cpp
+msgid "Try again in a moment."
 msgstr ""
 
 #: include/coop/commands/command_dispatcher.h
@@ -1823,10 +1839,6 @@ msgstr ""
 
 #: src/ui/chat_input.cpp
 msgid "say:"
-msgstr ""
-
-#: src/ui/dev_menu.cpp
-msgid "starting up"
 msgstr ""
 
 #: src/ui/loading_screen.cpp

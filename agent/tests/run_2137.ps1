@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research/tests_2137'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . .\_toolchain\env.ps1
+ . (Join-Path $root '../_toolchain/env.ps1')
  function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
   & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
@@ -24,8 +24,8 @@ try {
  @{Name='reach';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='if(!allowed)continue;';After=''},
  @{Name='duplicate';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='if(r->have&&!After(p.sequence,r->state.sequence))return;';After=''},
  @{Name='age';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='value.fuel-value.fuelSpeed*float(now>=r.received?now-r.received:0)/1000.f';After='value.fuel'},
- @{Name='cancel';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='actor.Is(a)&&world==world_identity::Generation()&&IsProp(a)&&current()';After='true'},
- @{Name='subclass';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='Verb(a,L"ignite",&state.fuel,base)';After='Verb(a,L"ignite",&state.fuel)'}
+ @{Name='cancel';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='actor.Is(a)&&world==world_identity::Generation()&&FuelActor(a)&&current()';After='true'},
+ @{Name='subclass';Suite='prop_fire_wrapper';File='ue_wrap/actors/prop_fire.cpp';Before='Verb(a,L"ignite",&state.fuel,base,valid)';After='Verb(a,L"ignite",&state.fuel,nullptr,valid)'}
  )
  foreach($case in $cases){
   $source=[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/'+$case.File)))

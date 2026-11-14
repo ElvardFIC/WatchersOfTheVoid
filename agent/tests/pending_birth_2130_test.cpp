@@ -17,6 +17,7 @@ int actor=0,world=0,nextWorld=0,serial=1,publishes=0,claims=0;
 int keyReads=0,readableAfter=100000;
 void* currentWorld=&world;
 bool live=true,authored=true,extract=false,hand=false,mirror=false,tracked=false,readable=true;
+bool registeredMirror=false;
 bool floorActor=false,mintOk=true;
 bool locationOk=true,rotationOk=true;
 std::wstring className=L"prop_test_C";
@@ -43,7 +44,7 @@ void Enqueue(){D::OnClientFinishSpawn(nullptr,nullptr,&actor);}
 void Reset(){currentWorld=&world;D::Reset();session.drops.clear();session.linked=true;D::g_session=&session;
     locationOk=rotationOk=true;
     className=L"prop_test_C";
-    live=authored=readable=true;extract=hand=mirror=tracked=false;serial=1;currentWorld=&world;
+    live=authored=readable=true;extract=hand=mirror=tracked=registeredMirror=false;serial=1;currentWorld=&world;
     foodActor=false;foodReadable=foodWritable=true;finished=false;destroys=foodWrites=invalidates=0;condition={300.f,0.75f,2};duringFinish={};session.sendOK=true;session.mode=coop::net::Role::Client;
     publishes=claims=keyReads=mints=begins=expresses=notices=0;floorActor=false;mintOk=keySetOK=finishOK=parityOK=scaleOK=true;duringKey={};
     indexed=nullptr;indexRead=coop::prop_key_index::Read::Miss;
@@ -96,7 +97,7 @@ namespace coop::prop_wire_parity {uint8_t PhysFlagsOf(void*){return 0;}}
 namespace coop::element {
 Registry::Registry()=default;Registry::~Registry()=default;
 Registry& Registry::Get(){static Registry r;return r;}
-ElementId Registry::EidForActor(void*)const{return test::tracked?1:kInvalidId;}
+ElementId Registry::EidForActor(void*)const{return (test::tracked || test::registeredMirror)?1:kInvalidId;}
 }
 namespace coop::prop_element_tracker {coop::element::ElementId GetPropElementIdForActor(void*){return test::tracked?1:coop::element::kInvalidId;}}
 namespace coop::prop_spawn_authoring {bool BirthIsPlayerAuthored(void*){return test::authored;}}
@@ -309,3 +310,16 @@ int main(){using namespace test;
 }
 
 namespace ue_wrap::notebook { bool IsNotebookSheet(void*){return false;} }
+
+namespace coop::dev::container_route_census { bool IsEnabled(){return false;} }
+
+// Throw election is checked by the upstream container/throw suites; these are placement lifecycle boundaries.
+namespace coop::prop_throw {
+uint16_t ThrowSeqFor(void*){return 0;}
+bool JudgeDropIntent(net::PropDropIntentPayload&,uint8_t){return true;}
+void NoteMark(const std::wstring&,uint8_t,uint16_t,const float*){std::abort();}
+}
+namespace ue_wrap::engine {
+bool GetActorRootPhysicsVelocity(void*,FVector& lin,FVector& ang){lin={};ang={};return true;}
+bool SetActorRootPhysicsVelocity(void*,const FVector&,const FVector&){std::abort();}
+}

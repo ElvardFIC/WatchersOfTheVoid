@@ -8,6 +8,7 @@
 
 #include "ue_wrap/actors/save_record.h" // the loaded world save's object records (Fstruct_save)
 #include "ue_wrap/core/call.h"      // ParamFrame / Call -- the GameplayStatics spawn (SpawnMirror)
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"  // StringToFName -- SpawnMirror's key
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/media_player.h"
@@ -626,11 +627,15 @@ bool ReadTpLocation(void* atv, FVector& out) {
 }
 
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
-    if (!atv || !EnsureResolved()) return false;
+    const FVector target=loc;const FRotator facing=rot;
+    for(float v:{target.X,target.Y,target.Z,facing.Pitch,facing.Yaw,facing.Roll})if(!std::isfinite(v))return false;
+    if (!atv || !EnsureResolved() || !R::IsLive(atv) || !IsAtv(atv)) return false;
+    CachedObjRef actor,cls,function;actor.Set(atv);cls.Set(R::ClassOf(atv));
+    const auto generation=world_identity::Generation();void* world=world_identity::CurrentWorld();
     // The memoised lookup, on the rig's own class: a warp comes at up to 20 Hz and a hit renders no
     // name, and the answer is held by slot and serial, so a class a world change replaced is asked
     // again and a miss is held as a miss while its class lives.
-    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(atv), L"teleportVehicle");
+    void* const fn = R::FindDispatchFunctionCached(cls.Get(), L"teleportVehicle");
     if (!fn) {
         static bool sWarned = false;
         if (!sWarned) {
@@ -640,11 +645,16 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
         }
         return false;
     }
-    ParamFrame f(fn);
+    function.Set(fn);
+    const auto current=[&]{return actor.Get() && cls.Get() && function.Get() && world &&
+        generation==world_identity::Generation() && world==world_identity::CurrentWorld() &&
+        world_identity::WorldOf(atv)==world && R::ClassOf(atv)==cls.Get() &&
+        R::FindDispatchFunctionCached(cls.Get(),L"teleportVehicle")==function.Get();};
+    if(!current())return false;
+    ParamFrame f(function.Get());
     if (!f.valid()) return false;
-    f.Set<FVector>(L"NewLocation", loc);
-    f.Set<FRotator>(L"NewRotation", rot);
-    return Call(atv, f);
+    if (!f.Set<FVector>(L"NewLocation", target) || !f.Set<FRotator>(L"NewRotation", facing) || !current()) return false;
+    return Call(atv, f) && current();
 }
 
 const char* SpawnFailText(SpawnFail why) {
@@ -657,8 +667,11 @@ const char* SpawnFailText(SpawnFail why) {
         case SpawnFail::NoOffset:      return "the class has no key property";
         case SpawnFail::NameNone:      return "the key did not convert to a name";
         case SpawnFail::BeginFailed:   return "the deferred spawn failed";
-        case SpawnFail::FinishFailed:  return "finishing the spawn failed (the orphan was destroyed)";
-        case SpawnFail::KeyMismatch:   return "the mirror was born under another key (destroyed)";
+        case SpawnFail::FinishFailed:  return "finishing the spawn failed";
+        case SpawnFail::KeyMismatch:   return "the mirror was born under another key";
+        case SpawnFail::InvalidPose:   return "the requested pose is non-finite";
+        case SpawnFail::Retired:       return "captured spawn dependencies were retired";
+        case SpawnFail::PlacementFailed:return "the whole rig could not be placed";
     }
     return "unknown";
 }
@@ -674,70 +687,90 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     SpawnFail local = SpawnFail::None;
     SpawnFail& fail = why ? *why : local;
     fail = SpawnFail::None;
+    const std::wstring wantedClass=className,wantedKey=key;
+    const FVector target=loc;const FRotator facing=rot;
+    for(float v:{target.X,target.Y,target.Z,facing.Pitch,facing.Yaw,facing.Roll})
+        if(!std::isfinite(v)){fail=SpawnFail::InvalidPose;return nullptr;}
     if (!EnsureResolved()) { fail = SpawnFail::Unresolved; return nullptr; }
-    if (className.empty() || key.empty()) { fail = SpawnFail::NoKey; return nullptr; }
-    void* actorClass = R::FindClass(className.c_str());
+    if (wantedClass.empty() || wantedKey.empty()) { fail = SpawnFail::NoKey; return nullptr; }
+    const auto generation=world_identity::Generation();void* const world=world_identity::CurrentWorld();
+    CachedObjRef context,contextClass;context.Set(engine::GetWorldContext());
+    contextClass.Set(context.Get()?R::ClassOf(context.Get()):nullptr);
+    if(!world || !context.Get() || !contextClass.Get()){fail=SpawnFail::Unresolved;return nullptr;}
+    const auto worldCurrent=[&]{return generation==world_identity::Generation() && world==world_identity::CurrentWorld() &&
+        context.Get() && contextClass.Get() && R::ClassOf(context.Get())==contextClass.Get() && engine::GetWorldContext()==context.Get();};
+    void* actorClass = R::FindClass(wantedClass.c_str());
     if (!actorClass) { fail = SpawnFail::ClassNotFound; return nullptr; }
     // Trust boundary: the className arrives over the wire -- only spawn ATV-lineage classes.
     void* atvCls = AtvClass();
     if (!atvCls || !R::IsDescendantOfAny(actorClass, &atvCls, 1)) { fail = SpawnFail::NotAnAtv; return nullptr; }
+    CachedObjRef requestedClass,baseClass;requestedClass.Set(actorClass);baseClass.Set(atvCls);
     const int32_t keyOff = R::FindPropertyOffset(actorClass, L"key");
     if (keyOff < 0) { fail = SpawnFail::NoOffset; return nullptr; }
-    const R::FName keyName = fname_utils::StringToFName(key);
+    const auto classCurrent=[&]{return requestedClass.Get() && baseClass.Get() &&
+        requestedClass.Is(R::FindClass(wantedClass.c_str())) && baseClass.Is(AtvClass()) &&
+        R::FindPropertyOffset(requestedClass.Get(),L"key")==keyOff;};
+    const R::FName keyName = fname_utils::StringToFName(wantedKey);
     if (keyName.ComparisonIndex == 0) { fail = SpawnFail::NameNone; return nullptr; }
-    // GameplayStatics spawn refs (resolved once; same pair npc_mirror drives).
-    static void* sGsCdo   = nullptr;
-    static void* sBeginFn = nullptr;
-    static void* sFinishFn = nullptr;
-    if (!sGsCdo) sGsCdo = R::FindClassDefaultObject(L"GameplayStatics");
-    if (sGsCdo && (!sBeginFn || !sFinishFn)) {
-        if (void* gc = R::FindClass(L"GameplayStatics")) {
-            sBeginFn  = R::FindFunction(gc, L"BeginDeferredActorSpawnFromClass");
-            sFinishFn = R::FindFunction(gc, L"FinishSpawningActor");
-        }
+    if(!worldCurrent() || !classCurrent()){fail=SpawnFail::Retired;return nullptr;}
+    // Spawning is infrequent. Resolve a fresh checked service tuple rather than
+    // retaining raw class/CDO/function pointers across joins and reloads.
+    CachedObjRef serviceClass,service,beginFn,finishFn;
+    serviceClass.Set(R::FindClass(L"GameplayStatics"));service.Set(R::FindClassDefaultObject(L"GameplayStatics"));
+    if(serviceClass.Get()){
+        beginFn.Set(R::FindFunction(serviceClass.Get(),L"BeginDeferredActorSpawnFromClass"));
+        finishFn.Set(R::FindFunction(serviceClass.Get(),L"FinishSpawningActor"));
     }
-    if (!sGsCdo || !sBeginFn || !sFinishFn) {
-        static bool sWarned = false;
-        if (!sWarned) { sWarned = true;
-            UE_LOGW("atv: SpawnMirror -- GameplayStatics BeginDeferred/Finish unresolved; cannot spawn an ATV mirror"); }
-        fail = SpawnFail::Unresolved;
-        return nullptr;
-    }
-    void* worldCtx = engine::GetWorldContext();
-    if (!worldCtx) { fail = SpawnFail::Unresolved; return nullptr; }
+    if(!serviceClass.Get() || !service.Get() || !beginFn.Get() || !finishFn.Get()){fail=SpawnFail::Unresolved;return nullptr;}
+    const auto current=[&]{return worldCurrent() && classCurrent() && serviceClass.Get() && service.Get() && beginFn.Get() && finishFn.Get() &&
+        serviceClass.Is(R::FindClass(L"GameplayStatics")) && service.Is(R::FindClassDefaultObject(L"GameplayStatics")) &&
+        R::ClassOf(service.Get())==serviceClass.Get() &&
+        beginFn.Is(R::FindFunction(serviceClass.Get(),L"BeginDeferredActorSpawnFromClass")) &&
+        finishFn.Is(R::FindFunction(serviceClass.Get(),L"FinishSpawningActor"));};
 
     FTransform xform{};
-    engine::RotatorToQuat(rot.Pitch, rot.Yaw, rot.Roll, xform.RotX, xform.RotY, xform.RotZ, xform.RotW);
-    xform.TX = loc.X; xform.TY = loc.Y; xform.TZ = loc.Z;  // scale stays unit (ctor default)
+    engine::RotatorToQuat(facing.Pitch, facing.Yaw, facing.Roll, xform.RotX, xform.RotY, xform.RotZ, xform.RotW);
+    xform.TX = target.X; xform.TY = target.Y; xform.TZ = target.Z;
 
     void* spawned = nullptr;
     {
-        ParamFrame begin(sBeginFn);
+        ParamFrame begin(beginFn.Get());
         if (!begin.valid()) { fail = SpawnFail::BeginFailed; return nullptr; }
-        begin.Set<void*>(L"WorldContextObject", worldCtx);
-        begin.Set<void*>(L"ActorClass", actorClass);
-        begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
-        begin.Set<uint8_t>(L"CollisionHandlingOverride", uint8_t{1});  // AlwaysSpawn
-        begin.Set<void*>(L"Owner", nullptr);
-        if (!Call(sGsCdo, begin)) { fail = SpawnFail::BeginFailed; return nullptr; }
-        spawned = begin.Get<void*>(L"ReturnValue");
+        if (!begin.Set<void*>(L"WorldContextObject", context.Get()) ||
+            !begin.Set<void*>(L"ActorClass", actorClass) ||
+            !begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform)) ||
+            !begin.Set<uint8_t>(L"CollisionHandlingOverride", uint8_t{1}) ||  // AlwaysSpawn
+            !begin.Set<void*>(L"Owner", nullptr)) { fail = SpawnFail::BeginFailed; return nullptr; }
+        if(!current()){fail=SpawnFail::Retired;return nullptr;}
+        if (!Call(service.Get(), begin)) { fail = SpawnFail::BeginFailed; return nullptr; }
+        if(!begin.GetRaw(L"ReturnValue",&spawned,sizeof(spawned))){fail=SpawnFail::BeginFailed;return nullptr;}
     }
-    if (!spawned) { fail = SpawnFail::BeginFailed; return nullptr; }
+    if (!spawned || !R::IsLive(spawned)) { fail = SpawnFail::BeginFailed; return nullptr; }
+    CachedObjRef body,bodyClass;body.Set(spawned);bodyClass.Set(R::ClassOf(spawned));
+    // A foreign return is never a licence to overwrite its key or destroy it.
+    if(!bodyClass.Is(requestedClass.Raw()) || world_identity::WorldOf(spawned)!=world){fail=SpawnFail::BeginFailed;return nullptr;}
+    const auto owns=[&]{return body.Get() && bodyClass.Get() && bodyClass.Is(requestedClass.Raw()) &&
+        R::ClassOf(spawned)==bodyClass.Get() && generation==world_identity::Generation() &&
+        world_identity::CurrentWorld()==world && world_identity::WorldOf(spawned)==world;};
+    const auto discard=[&]{if(owns())DestroyMirror(spawned);};
+    if(!current() || !owns()){discard();fail=SpawnFail::Retired;return nullptr;}
     // While the actor is still deferred: its construction script runs in the finish.
     *reinterpret_cast<R::FName*>(reinterpret_cast<char*>(spawned) + keyOff) = keyName;
     {
-        ParamFrame finish(sFinishFn);
+        ParamFrame finish(finishFn.Get());
         if (!finish.valid()) {
             // The BeginDeferred actor was created but never finished -- UE does NOT GC it (it lingers
             // in the world). Destroy the orphan, exactly as npc_mirror does on the same failure.
-            DestroyMirror(spawned);
+            discard();
             fail = SpawnFail::FinishFailed;
             return nullptr;
         }
-        finish.Set<void*>(L"Actor", spawned);
-        finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
-        if (!Call(sGsCdo, finish)) {
-            DestroyMirror(spawned);  // don't leak the half-spawned actor
+        void* finished = nullptr;
+        if(!finish.Set<void*>(L"Actor",spawned) || !finish.SetRaw(L"SpawnTransform",&xform,sizeof(xform))){discard();fail=SpawnFail::FinishFailed;return nullptr;}
+        if(!current() || !owns()){discard();fail=SpawnFail::Retired;return nullptr;}
+        if (!Call(service.Get(), finish) ||
+            !finish.GetRaw(L"ReturnValue", &finished, sizeof(finished)) || finished != spawned) {
+            discard();
             fail = SpawnFail::FinishFailed;
             return nullptr;
         }
@@ -745,16 +778,20 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     // FinishSpawning moves the actor root. The wheels are separate bodies, and only the game's
     // own teleport places them with it. Without this the body can sit beside the save ATV while
     // the wheels stay where the class default left them.
-    if (!TeleportRig(spawned, loc, rot))
-        UE_LOGW("atv: SpawnMirror teleportVehicle failed for %p -- wheels may not have followed", spawned);
+    if(!current() || !owns()){discard();fail=SpawnFail::Retired;return nullptr;}
+    if (!TeleportRig(spawned,target,facing)){discard();fail=SpawnFail::PlacementFailed;return nullptr;}
+    if(!current() || !owns()){discard();fail=SpawnFail::Retired;return nullptr;}
     // The construction script's keeping of a preset key is read back, not assumed: a mirror that stands
     // under another key, a case-different one included (the index and the prune file key exactly), would
     // be filed by the caller under the host's and be pruned as a stranger by the next pass. The same rig
     // destroy as the failures above.
-    const std::wstring born = GetKeyString(spawned);
-    if (born != key) {
+    const R::FName actual=*reinterpret_cast<const R::FName*>(reinterpret_cast<const char*>(spawned)+keyOff);
+    const std::wstring born=R::ToString(actual);
+    if(!current() || !owns()){discard();fail=SpawnFail::Retired;return nullptr;}
+    const R::FName finalKey=*reinterpret_cast<const R::FName*>(reinterpret_cast<const char*>(spawned)+keyOff);
+    if (born != wantedKey || actual.ComparisonIndex!=finalKey.ComparisonIndex || actual.Number!=finalKey.Number) {
         if (bornKey) *bornKey = born;
-        DestroyMirror(spawned);
+        discard();
         fail = SpawnFail::KeyMismatch;
         return nullptr;
     }
@@ -770,9 +807,15 @@ bool Dismount(void* atv) {
 }
 
 bool FindCompanionLocation(void* atv, FVector& location) {
+    if(!atv || !R::IsLive(atv) || !IsAtv(atv))return false;
+    CachedObjRef source,cls;source.Set(atv);cls.Set(R::ClassOf(atv));
+    const auto generation=world_identity::Generation();void* world=world_identity::CurrentWorld();
+    const auto current=[&]{return source.Get() && cls.Get() && world && generation==world_identity::Generation() &&
+        world==world_identity::CurrentWorld() && world_identity::WorldOf(atv)==world && R::ClassOf(atv)==cls.Get();};
+    if(!current())return false;
     FVector loc{}, center{}, half{}; FRotator rot{};
-    if (!GetRootTransform(atv, loc, rot) || !engine::GetActorBounds(atv, true, center, half) ||
-        !std::isfinite(rot.Pitch) || !std::isfinite(rot.Roll) ||
+    if (!GetRootTransform(atv, loc, rot) || !current() || !engine::GetActorBounds(atv, true, center, half) || !current() ||
+        !std::isfinite(rot.Pitch) || !std::isfinite(rot.Yaw) || !std::isfinite(rot.Roll) ||
         std::abs(NormalizeAxis(rot.Pitch)) > 10.f || std::abs(NormalizeAxis(rot.Roll)) > 10.f)
         return false;
     for (float v : {loc.X, loc.Y, loc.Z, center.X, center.Y, center.Z, half.X, half.Y, half.Z})
@@ -780,6 +823,7 @@ bool FindCompanionLocation(void* atv, FVector& location) {
     if (half.X < 25.f || half.Y < 25.f || half.Z < 15.f ||
         half.X > 250.f || half.Y > 250.f || half.Z > 200.f) return false;
     FVector fwd = engine::GetActorForwardVector(atv);
+    if(!current() || !std::isfinite(fwd.Z))return false;
     const float length = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
     if (!std::isfinite(length) || length < 0.01f) return false;
     fwd = {fwd.X / length, fwd.Y / length, 0.f};
@@ -798,8 +842,10 @@ bool FindCompanionLocation(void* atv, FVector& location) {
                                    {half.X*.8f,-half.Y*.8f,0}, {half.X*.8f,half.Y*.8f,0}};
         for (const auto& offset : offsets) {
             FVector point{};
-            if (!trace::FindFloor(atv, {target.X+offset.X,target.Y+offset.Y,bottom+40.f},
-                                      {target.X+offset.X,target.Y+offset.Y,bottom-60.f}, point)) {
+            const bool hit=trace::FindFloor(atv, {target.X+offset.X,target.Y+offset.Y,bottom+40.f},
+                                               {target.X+offset.X,target.Y+offset.Y,bottom-60.f}, point);
+            if(!current())return false;
+            if (!hit) {
                 supported = false; break;
             }
             lowest = (std::min)(lowest, point.Z);
@@ -812,8 +858,18 @@ bool FindCompanionLocation(void* atv, FVector& location) {
         FVector start = center;
         start.Z = (std::max)(center.Z + 4.f, target.Z);
         FVector end = target; end.Z = start.Z;
-        if (trace::BoxBlocked(atv, start, end, half) != 0 ||
-            trace::BoxBlocked(atv, end, {target.X,target.Y,target.Z-1.f}, half) != 0) continue;
+        const int swept=trace::BoxBlocked(atv, start, end, half);
+        if(!current())return false;
+        if(swept!=0)continue;
+        const int parked=trace::BoxBlocked(atv, end, {target.X,target.Y,target.Z-1.f}, half);
+        if(!current())return false;
+        if(parked!=0)continue;
+        FVector settled{};FRotator facing{};
+        if(!GetRootTransform(atv,settled,facing) || !current())return false;
+        for(float v:{settled.X,settled.Y,settled.Z,facing.Pitch,facing.Yaw,facing.Roll})if(!std::isfinite(v))return false;
+        if(std::abs(settled.X-loc.X)>1.f || std::abs(settled.Y-loc.Y)>1.f || std::abs(settled.Z-loc.Z)>1.f ||
+           std::abs(NormalizeAxis(facing.Pitch-rot.Pitch))>1.f || std::abs(NormalizeAxis(facing.Yaw-rot.Yaw))>1.f ||
+           std::abs(NormalizeAxis(facing.Roll-rot.Roll))>1.f)return false;
         location = {loc.X + target.X - center.X, loc.Y + target.Y - center.Y, loc.Z + target.Z - center.Z};
         return true;
     }

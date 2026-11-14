@@ -59,10 +59,11 @@
 #include "coop/player/stat_orders_wire.h"
 #include "coop/props/container_birth.h"
 #include "coop/props/container_park.h"
-#include "coop/props/container_write_policy.h"
+#include "coop/props/container_act_host.h"
 #include "coop/props/prop_act_host.h"
 #include "coop/props/prop_lifecycle.h"
 #include "coop/props/prop_snapshot.h"
+#include "coop/props/trash_morph_gate.h"
 #include "coop/save/save_guard.h"
 #include "coop/save/save_transfer.h"
 #include "coop/session/join_beacon.h"
@@ -70,7 +71,6 @@
 #include "coop/session/local_grants.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/player_handshake.h"
-#include "coop/session/rig_ready.h"
 #include "coop/session/server_settings_sync.h"
 #include "coop/text/utf8_codec.h"
 #include "coop/session/session_manager.h"
@@ -247,6 +247,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And a take or use of a shared prop: the host's judge and the order it reads in, the reply a verdict sends, the
     // commit's rows and the client's reply decision, each from a stated input.
     coop::prop_act_host::RunSelftest();
+    // And a container act: the codec and its hostile blobs, one record's hash, the record lookup, the holds, the host's
+    // judge and the order it reads in, the commit's rows and the client's reply decision, each from a stated input.
+    coop::props::container_act_host::RunSelftest();
     // And the deferred-destroy table's retire rule: a destroy naming an element leaves with a spawn of
     // that element only, a key-only destroy with a spawn of its key, a None or empty key with nothing.
     coop::element::quiescence_drain::RunDestroyDeferSelftest();
@@ -290,12 +293,7 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the permission model: a resolution that answers wrong reads as working until a player is
     // refused or let in.
     coop::permissions::RunSelftest();
-    // And the container arbitration's own arithmetic: the base that is refused, the host change in
-    // flight, and the sequence a third peer walks into -- which no two-peer run can reach, because
-    // the peer that is judged against a stale baseline is the one that learned the world from a
-    // relay rather than from its own join seed.
-    coop::props::container_write_policy::RunSelftest();
-    // And the pen beside it, whose cap has never fired in a run: every park a measured join
+    // And the readiness pen, whose cap has never fired in a run: every park a measured join
     // produced was host-authored, and those are deliberately not capped.
     coop::props::container_park::RunSelftest();
     // And the transfer of a thrown container, whose cap, departure and deadline no run reaches.
@@ -340,6 +338,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // client's spawners tick from its world's first frame, and nothing orders that after the pawn
     // subsystems::Install waits for. Idempotent across Stop/Start.
     coop::spawn_authority::Install(&g_session);
+    // And the trash morph gate's three verbs: a joiner's pile loads with the save, and the watch is
+    // by class and name, so no pile runs a morph unjudged. Idempotent across Stop/Start.
+    coop::trash_morph_gate::Install(&g_session);
     if (netCfg.role == coop::net::Role::Host) {
         // Snapshot the canonical save before coop injects state (host only; clients are
         // save-blocked); synchronous, so it completes before Start.
@@ -370,8 +371,8 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
             netCfg.role == coop::net::Role::Host ? "host" : "client",
             netCfg.topology == coop::net::Topology::P2P ? "p2p" : "lan-direct",
             ok ? "" : " -- START FAILED");
-    // Every host start is made in a loaded world (the boot load or the picker's load comes first).
-    if (ok && netCfg.role == coop::net::Role::Host) coop::rig_ready::Say("hosting");
+    // The host starts in a loaded level whose world may still be starting up: `rig: READY hosting` is
+    // said by host_world_settle once that world has settled, and a join waits for the same edge.
     return ok;
 }
 

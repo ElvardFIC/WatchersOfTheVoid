@@ -1,113 +1,83 @@
-// coop/player/flashlight_click_sound.cpp -- see flashlight_click_sound.h.
-
+// Remote flashlight clicks. Local use remains the game's native sound.
 #include "coop/player/flashlight_click_sound.h"
-
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
-#include "ue_wrap/core/call.h"
-#include "ue_wrap/engine/engine.h"
-#include "ue_wrap/core/log.h"
-#include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/engine/engine.h"
+#include <cmath>
 
 namespace coop::flashlight_click_sound {
 namespace {
-
-namespace P = ue_wrap::profile;
-namespace R = ue_wrap::reflection;
-
-// Per-peer last-applied state. Keyed on peerSlot NOT raw puppet pointer
-// (the pointer would dangle after disconnect + respawn for the same peer
-// slot). Sized to coop::players::kMaxPeers so a future bump of the central
-// constant propagates here automatically (the prior local `kMaxPeers = 4`
-// hardcode silently capped at 4 regardless). -1 = no apply yet (first
-// packet's state always differs -> click plays).
-//
-// ApplyToPuppet (the only caller) runs on the game thread via GT::Post
-// so plain int is safe -- no atomic needed.
-// Reset when the slot's occupant changes (PerSlotState), so a newcomer starts with no apply.
-struct LastApplied { int state = -1; };
-coop::roster_ledger::PerSlotState<LastApplied> g_lastAppliedStateByPeer;
-
-}  // namespace
-
-void PlayIfStateChanged(void* puppetActor, uint8_t peerSlot, bool newState) {
-    if (!puppetActor) return;
-
-    // 1) State-change gate: skip if state matches last apply for this peer.
-    //    Hold-F mode-change packets keep state=on (just mutate cones) -- those
-    //    MUST NOT click. Press-F toggles always pass.
-    const int curState = newState ? 1 : 0;
-    bool stateChanged = false;
-    if (peerSlot < coop::players::kMaxPeers) {
-        stateChanged = (g_lastAppliedStateByPeer[peerSlot].state != curState);
-        g_lastAppliedStateByPeer[peerSlot].state = curState;
-    } else {
-        // Out-of-range peer slot (defensive). Treat every apply as a state
-        // change so we still click; the array is sized to the central
-        // coop::players::kMaxPeers so this branch only fires on a
-        // legitimately invalid peerSlot.
-        stateChanged = true;
-    }
-    if (!stateChanged) return;
-
-    // 2) Lazy-resolve the sound asset + attenuation. Each retried until
-    //    non-null so we don't permanently cache nullptr if an early packet
-    //    arrives before asset load. The GameplayStatics CDO + the
-    //    PlaySoundAtLocation UFunction are resolved + cached INSIDE
-    //    ue_wrap::engine::PlaySoundAtLocation (section 5) now, so they no
-    //    longer live here (RULE 2 -- one dispatch, shared with the trash-clump
-    //    throw whoosh in coop::prop_sound).
-    static void* sSoundAsset  = nullptr;
-    static void* sAttenuation = nullptr;
-
-    if (!sSoundAsset) {
-        sSoundAsset = R::FindObject(P::name::FlashlightClickSoundName,
-                                    P::name::SoundWaveClass);
-    }
-
-    // 3) RULE 1 native path: construct our own USoundAttenuation through
-    //    UGameplayStatics::SpawnObject, with no coupling to VOTV's cooked `att_*` content assets.
-    //    Principle 7 puts the SpawnObject call, the eight raw att:: offset writes and AddToRoot
-    //    behind ue_wrap::engine::SpawnSoundAttenuation; gameplay code holds only the cached
-    //    pointer.
-    //
-    //    Sphere shape, sized a third of the generic baseline: 6.67 m full volume falling off to
-    //    silence by ~73 m, where the baseline is 20 m and 220 m. Both terms are scaled by 1/3 so
-    //    the whole envelope shrinks uniformly. The baseline carries a click across VOTV's outdoor
-    //    map, which is right for the local player and too far for a REMOTE one's toggle.
-    //
-    //    Puppet-only by construction: PlayIfStateChanged is ONLY ever called from
-    //    item_activate::ApplyToPuppet, the receiver path. The local player's own flashlight click
-    //    is VOTV's native sound, which this code never touches, so the 1/3 affects only how far
-    //    OTHERS hear a remote player's toggle.
-    if (!sAttenuation) {
-        ue_wrap::engine::SoundAttenuationConfig cfg{};  // generic baseline
-        cfg.extents[0]      /= 3.f;   // 2000cm (20m)   -> 667cm  (6.67m)
-        cfg.falloffDistance /= 3.f;   // 20000cm (200m) -> 6667cm (66.7m)
-        sAttenuation = ue_wrap::engine::SpawnSoundAttenuation(cfg);
-        if (sAttenuation) {
-            UE_LOGI("flashlight: constructed native USoundAttenuation %p "
-                    "(sphere r=6.67m, falloff=66.7m, inverse; a third of the "
-                    "baseline, for a remote player's toggle)", sAttenuation);
-        }
-    }
-
-    // 4) Read the puppet's world location; no click without one.
-    ue_wrap::FVector loc{};
-    if (!ue_wrap::engine::TryGetActorLocation(puppetActor, loc)) return;
-
-    // 5) Fire the click via the shared PlaySoundAtLocation wrapper (resolves +
-    //    caches the GameplayStatics CDO + UFunction internally; tolerates a
-    //    null attenuation -> 2D). Owned by the puppet so it plays in its world.
-    if (sSoundAsset) {
-        ue_wrap::engine::PlaySoundAtLocation(puppetActor, sSoundAsset, loc, sAttenuation);
-        UE_LOGI("flashlight: click sound played at puppet pos (%.0f, %.0f, %.0f) "
-                "attenuation=%p (sphere r=6.67m falloff=66.7m)",
-                loc.X, loc.Y, loc.Z, sAttenuation);
-    } else {
-        UE_LOGW("flashlight: click sound NOT played -- asset unresolved (%p)", sSoundAsset);
-    }
+namespace R=ue_wrap::reflection;
+struct Resource {
+    ue_wrap::CachedObjRef object,cls;
+    void Set(void* value){object.Set(value);cls.Set(object.Get()?R::ClassOf(object.Get()):nullptr);}
+    bool Current()const{return object.Get() && cls.Get() && R::ClassOf(object.Get())==cls.Get();}
+};
+struct LastApplied {
+    int state=-1,pending=-1;bool busy=false;
+    uint32_t serial=0,world=0;uint16_t person=0;uint64_t revision=0;
+    ue_wrap::CachedObjRef puppet;
+};
+roster_ledger::PerSlotState<LastApplied> g_lastAppliedStateByPeer;
+Resource g_sound,g_attenuation;
+uint64_t g_revision=0;
+bool g_constructingAttenuation=false;
+uint64_t NextRevision(){if(!++g_revision)++g_revision;return g_revision;}
 }
 
-}  // namespace coop::flashlight_click_sound
+void PlayIfStateChanged(void* actor,uint8_t slot,bool enabled){
+    if(slot>=players::kMaxPeers || !actor || !R::IsLive(actor))return;
+    auto& registry=players::Registry::Get();
+    if(registry.IsLocal(actor) || registry.PeerIdOfActor(actor)!=slot)return;
+    Resource puppet;puppet.Set(actor);
+    const auto serial=net::session_serial::Current(),world=ue_wrap::world_identity::Generation();
+    const auto person=roster_ledger::Get(slot).playerNo;
+    auto& row=g_lastAppliedStateByPeer[slot];
+    if(row.serial!=serial || row.world!=world || row.person!=person || !row.puppet.Is(actor)){
+        row={};row.serial=serial;row.world=world;row.person=person;row.puppet=puppet.object;
+    }
+    const int desired=enabled?1:0;
+    if(row.busy && row.pending==desired)return;
+    // A nested different state supersedes preparation even when it equals the
+    // last admitted state. Give it a new revision before considering dedup.
+    if(row.state==desired){if(row.busy){row.revision=NextRevision();row.busy=false;row.pending=-1;}return;}
+    const auto revision=row.revision=NextRevision();row.busy=true;row.pending=desired;
+    struct Finish {
+        LastApplied& row;uint64_t revision;
+        ~Finish(){if(row.revision==revision){row.busy=false;row.pending=-1;}}
+    } finish{row,revision};
+    const auto current=[&]{return row.revision==revision && row.busy && puppet.Current() &&
+        serial==net::session_serial::Current() && world==ue_wrap::world_identity::Generation() &&
+        person==roster_ledger::Get(slot).playerNo && !registry.IsLocal(actor) && registry.PeerIdOfActor(actor)==slot &&
+        ue_wrap::world_identity::CurrentWorld() && ue_wrap::world_identity::WorldOf(actor)==ue_wrap::world_identity::CurrentWorld();};
+    if(!current())return;
+    if(!g_sound.Current()){
+        Resource candidate;candidate.Set(R::FindObject(ue_wrap::profile::name::FlashlightClickSoundName,ue_wrap::profile::name::SoundWaveClass));
+        if(!g_sound.Current() && candidate.Current())g_sound=candidate;
+    }
+    if(!current() || !g_sound.Current())return;
+    const auto sound=g_sound;
+    if(!g_attenuation.Current()){
+        if(g_constructingAttenuation)return;
+        g_constructingAttenuation=true;
+        struct Construction {~Construction(){g_constructingAttenuation=false;}} construction;
+        ue_wrap::engine::SoundAttenuationConfig cfg{};
+        cfg.extents[0]/=3.f;cfg.falloffDistance/=3.f;
+        Resource candidate;candidate.Set(ue_wrap::engine::SpawnSoundAttenuation(cfg));
+        // This constant shared resource is independent of a particular puppet.
+        if(!g_attenuation.Current() && candidate.Current())g_attenuation=candidate;
+    }
+    if(!current() || !sound.Current() || !g_attenuation.Current())return;
+    const auto attenuation=g_attenuation;
+    ue_wrap::FVector position{};
+    if(!ue_wrap::engine::TryGetActorLocation(actor,position) || !std::isfinite(position.X) ||
+       !std::isfinite(position.Y) || !std::isfinite(position.Z) || !current() || !sound.Current() || !attenuation.Current())return;
+    // Commit immediately before the one native attempt. A reentrant mode packet
+    // cannot replay this click; unknown native dispatch completion is not retried.
+    row.state=desired;row.busy=false;row.pending=-1;
+    ue_wrap::engine::PlaySoundAtLocation(actor,sound.object.Get(),position,attenuation.object.Get());
+}
+}

@@ -51,6 +51,25 @@ Found Get(const std::string&,std::vector<uint8_t>& out){++join_test::gets;out=jo
 void Quarantine(const std::string&){++join_test::quarantines;}
 }
 int main(){using namespace join_test;
+    // The mode comes from the transfer, before the local GI leaves the menu.
+    // Tutorial must retain the level/host placement even with a valid old KPP pose.
+    for(bool haveProfile:{false,true}) {
+        Reset();if(haveProfile)Offer();
+        J::BeginJoinApply(ue_wrap::game_mode::kTutorial);J::OnSaveObjectReady(&test::liveUnits);
+        CHECK(poses==0&&J::g_joinPlacement==J::JoinPlacement::NativeMap);
+        CHECK(J::g_profileApplied==haveProfile);
+        float x=0,y=0,z=0,yaw=0;
+        CHECK(J::TakeJoinPlacement(x,y,z,yaw)==J::JoinPlacement::NativeMap);
+        CHECK(J::TakeJoinPlacement(x,y,z,yaw)==J::JoinPlacement::NativeMap); // respawn too
+    }
+    for(int mode:{0,1,3,4,5,6,7,-1,8}) {
+        Reset();Offer();J::BeginJoinApply(mode);J::OnSaveObjectReady(&test::liveUnits);
+        CHECK(poses==1&&J::g_joinPlacement==J::JoinPlacement::ProfilePose);
+    }
+    Reset();Offer();onEffects=[]{J::BeginJoinApply(ue_wrap::game_mode::kTutorial);};
+    Apply();CHECK(!J::g_profileApplied&&poses==0);
+    J::OnSaveObjectReady(&test::liveUnits);CHECK(J::g_profileApplied&&poses==0&&J::g_joinPlacement==J::JoinPlacement::NativeMap);
+    puts("PASS Tutorial join: request-owned host mode preserves native placement with missing/old profiles, reentry and respawn; other modes retain their profile placement");
     Reset();Offer();Apply();CHECK(J::g_profileApplied&&effects==1&&inventories==1&&vitals==1&&poses==1&&appliedItems.hold[0].data.ints[0][0]==5&&appliedVitals.health==25&&appliedPose.x==100);
     J::OnSaveObjectReady(&test::liveUnits);CHECK(effects==1);
     Reset(coop::net::Role::Host);Apply();CHECK(effects==0&&!J::g_profileApplied);
@@ -72,16 +91,17 @@ int main(){using namespace join_test;
 
     Reset(coop::net::Role::Host);CHECK(J::SendInventoryToSlot(1)&&test::session.sent.size()>1);
     for(int change=0;change<7;++change){Reset(coop::net::Role::Host);onGet=[change]{if(change==0)J::OnDisconnect();if(change==1)++test::world;if(change==2)++test::sessionSerial;if(change==3)++test::session.generations[1];if(change==4)test::guids[1]="other";if(change==5)test::session.slots[1]=false;if(change==6)J::OnDisconnectForSlot(1);};CHECK(!J::SendInventoryToSlot(1)&&test::session.sent.empty());}
-    for(int change=0;change<6;++change){Reset(coop::net::Role::Host);test::session.onSend=[change]{if(change==0)J::OnDisconnect();if(change==1)++test::world;if(change==2)++test::session.generations[1];if(change==3)test::guids[1]="other";if(change==4)J::OnDisconnectForSlot(1);if(change==5)test::session.slots[1]=false;};CHECK(!J::SendInventoryToSlot(1)&&test::session.sent.size()==1);}
+    for(int change=0;change<6;++change){Reset(coop::net::Role::Host);test::session.onSend=[change]{if(change==0)J::OnDisconnect();if(change==1)++test::world;if(change==2)++test::session.generations[1];if(change==3)test::guids[1]="other";if(change==4)J::OnDisconnectForSlot(1);if(change==5)test::session.slots[1]=false;};CHECK(!J::SendInventoryToSlot(1)&&!test::session.sent.empty()&&test::session.sent.size()==test::session.sent.front().chunks);}
     Reset(coop::net::Role::Host);onGet=[]{CHECK(J::SendInventoryToSlot(1));};CHECK(!J::SendInventoryToSlot(1));CHECK(test::session.sent.size()>1);for(const auto& p:test::session.sent)CHECK(p.blobSeq==J::g_hostSendSeq[1]);
-    puts("PASS host join send: owned GUID and exact source/world/recipient/sequence guards stop stale preparation and every later chunk");
+    puts("PASS host join send: owned GUID and exact source/world/recipient/sequence guards stop stale preparation and retired completion after immutable batch admission");
     Reset(coop::net::Role::Host);HostTick();CHECK(J::g_applySentToSlot[1]);const int before=gets;HostTick();CHECK(gets==before);
     ++test::session.generations[1];HostTick();CHECK(gets==before+1&&J::g_applySentToSlot[1]);
     test::guids[1]="new_guid";HostTick();CHECK(gets==before+2&&J::g_applySentToSlot[1]);
     Reset(coop::net::Role::Host);test::session.sendOk=false;HostTick();CHECK(!J::g_applySentToSlot[1]);test::session.sendOk=true;HostTick();CHECK(J::g_applySentToSlot[1]);
     Reset(coop::net::Role::Host);test::session.onSend=[]{++test::session.generations[1];};HostTick();CHECK(!J::g_applySentToSlot[1]);HostTick();CHECK(J::g_applySentToSlot[1]);
     Reset(coop::net::Role::Host);test::session.onSend=[]{J::OnDisconnectForSlot(1);};HostTick();CHECK(!J::g_applySentToSlot[1]);HostTick();CHECK(J::g_applySentToSlot[1]);
-    Reset(coop::net::Role::Host);test::session.slots[2]=true;test::session.onSend=[]{++test::world;};HostTick();CHECK(test::session.sentSlots==std::vector<int>{1}&&!J::g_applySentToSlot[2]);
+    Reset(coop::net::Role::Host);test::session.slots[2]=true;test::session.onSend=[]{++test::world;};HostTick();
+    CHECK(!test::session.sent.empty() && test::session.sentSlots==std::vector<int>(test::session.sent.front().chunks,1) && !J::g_applySentToSlot[2]);
     puts("PASS occupancy-bound sent latch: silent same-GUID/new-GUID replacement, refused sends and disconnect during send keep the correct profile owed");
     return 0;
 }

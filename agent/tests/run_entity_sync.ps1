@@ -60,7 +60,7 @@ if($GrayboarOnly){exit 0}
 if($LASTEXITCODE -ne 0){throw 'Kavotia compile failed'}
 & "$output/kavotia_sync.exe"
 if($LASTEXITCODE -ne 0){throw 'Kavotia regression failed'}
-& cl /nologo /std:c++20 /EHsc /utf-8 "/I$PSScriptRoot/stubs" "/I$checkout/src/votv-coop/include" "/I$checkout/src/votv-coop/src" `
+& cl /nologo /std:c++20 /EHsc /utf-8 "/I$PSScriptRoot/upstream_refresh_stubs" "/I$PSScriptRoot/stubs" "/I$checkout/src/votv-coop/include" "/I$checkout/src/votv-coop/src" `
     "/Fo$output/prop_drive.obj" "/Fe$output/prop_drive.exe" "$PSScriptRoot/prop_drive_2123_test.cpp"
 if($LASTEXITCODE -ne 0){throw 'Prop drive regression compile failed'}
 & "$output/prop_drive.exe"

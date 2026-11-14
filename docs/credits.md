@@ -11,7 +11,7 @@ carry a one-line-per-person summary; the detail lives here so those stay readabl
 gets a row** — no gatekeeping on how polished it was. A log pack saying "it felt
 wrong around here" has repeatedly been worth more than a tidy description, and the
 largest single change in this project's history came from someone saying, in
-public, that a decision in it was wrong.
+public, that a decision in it was mistaken.
 
 **How to land in here:** open a pull request, or report anything on
 [Discord](https://discord.gg/bA6tGBvGMN) or in
@@ -31,7 +31,7 @@ from `git shortlog -sne` and fold each person's identity variants together.
 | **Claude** (Anthropic) | code | Implementation, across the whole mod | 1,367 commits |
 | **Tarangok** | code | KO respawn, live skin preview, held-prop visibility, container extraction | 5 commits |
 | **hediiiqq** | code · report | Dish mirror interpolation; a CI gate failing every build on the unfetched MTA submodule ([#10](https://github.com/VOTV-MP/Multivoid/issues/10)) | 1 commit · #10 |
-| **arigalit** | code · report | ATV seat contention ([#9](https://github.com/VOTV-MP/Multivoid/pull/9)); join-time prop-count divergence; the grappling-hook lane ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)) — four of its decisions are in the shipped lane; the drone leave timer, the desk ping's scan progress, the sleeping-bag transitions, the notebook's shared page and the revive's fire ([#50](https://github.com/VOTV-MP/Multivoid/pull/50)) | 9 commits · 2 co-authored |
+| **arigalit** | code · report | ATV seat contention ([#9](https://github.com/VOTV-MP/Multivoid/pull/9)); join-time prop-count divergence; the grappling-hook lane ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)) — four of its decisions are in the shipped lane; the drone leave timer, the desk ping's scan progress, the sleeping-bag transitions, the notebook's shared page, the revive's fire, the cord's plug and the coffee machines ([#50](https://github.com/VOTV-MP/Multivoid/pull/50)); the Geom Octa's place in the NPC lane ([#48](https://github.com/VOTV-MP/Multivoid/pull/48)) | 12 commits · 2 co-authored |
 | **huoyan1231** | code · report | CI and automated builds; the b125 host-log pack | 2 commits · b134 |
 | **Marlore** | code · report | A nine-symptom pass over the trash carry ([#29](https://github.com/VOTV-MP/Multivoid/pull/29)). Four were real defects and are fixed at the root, co-authored: a refused grab that was never answered, a pile that looked different on every peer (865 of 871 measured), a thrower refused every later grab, and a fallen player who kept carrying | 6 commits · unreleased |
 | [**Wigard**](https://github.com/wigarddev) | code | A guest of a sandbox host came up in story ([#32](https://github.com/VOTV-MP/Multivoid/pull/32)) — the transfer header had carried the host's game mode from the start and the host filled it with a constant. Then seven more, each measured red and green before it was sent: a build that did not link on VS 2022 ([#30](https://github.com/VOTV-MP/Multivoid/pull/30)), the shower's mirrored toggle running the wrong verb ([#31](https://github.com/VOTV-MP/Multivoid/pull/31)), a drive left frozen in the port on the far peer ([#33](https://github.com/VOTV-MP/Multivoid/pull/33)), a pile a client bags that the host never learns of ([#34](https://github.com/VOTV-MP/Multivoid/pull/34)), a client's upgrade purchase that charged nobody ([#35](https://github.com/VOTV-MP/Multivoid/pull/35)), a prop whose record changes in place telling no one ([#36](https://github.com/VOTV-MP/Multivoid/pull/36)), the bay window's sponge dabs reaching no other peer ([#37](https://github.com/VOTV-MP/Multivoid/pull/37)), and a client's press of the drone console reaching a drone that cannot fly ([#38](https://github.com/VOTV-MP/Multivoid/pull/38)). Then a disc the host ejects that reached the others blank, with the disc drill that proves it ([#39](https://github.com/VOTV-MP/Multivoid/pull/39)), and a desk repaint whose diagnosis matched a fix main already carried ([#40](https://github.com/VOTV-MP/Multivoid/pull/40)) | 13 commits · unreleased |
@@ -39,6 +39,7 @@ from `git shortlog -sne` and fold each person's identity variants together.
 | [**Slintchen**](https://github.com/Slintchen) | code | The request that the mod's UI speak the player's language ([#41](https://github.com/VOTV-MP/Multivoid/pull/41)): its Chinese pack, in as authored, and its translator's guide and system-face merge for CJK, carried into the translation layer with Slintchen as co-author | 1 commit, 2 co-authored · unreleased |
 | [**archhn0madd**](https://github.com/archhn0madd) | code | Rejoin without a relaunch — the boot poll answered from the dying world | 1 commit |
 | [**AwazonDotCom**](https://github.com/AwazonDotCom) | code | A floppy row lost its line breaks on the way to a client, so the server-data row a host's dish writes, hash code included, did not parse there; and a drive rack written by two lanes at once ([#53](https://github.com/VOTV-MP/Multivoid/pull/53)) | 2 commits · unreleased |
+| [**gust138**](https://github.com/gust138) | code | A drive box or reel case changed twice in quick succession lost its last change on the other peers, and a client's coin pickup credited and destroyed the coin before the host agreed ([#64](https://github.com/VOTV-MP/Multivoid/pull/64)) | 5 commits |
 | **Moddy** | review · design | The architecture and documentation review that became the UE4SS move; the public UE-Modding-Tools pointer that became the blueprint-CFG rung and the migration scanner (patternsleuth); and design published for [Relay](https://github.com/modestimpala/Relay), Moddy's Blueprint networking API for VOTV ([Thunderstore](https://thunderstore.io/c/voices-of-the-void/p/Moddy/Relay/)), in its README and the [README Blueprint](https://blueprintue.com/blueprint/g3s09x9c/) that README links: the watch surface on a Blueprint function, a watch that reads the parameters before the call and can cancel it, and one that only observes after it, which became the script-body gate; the readable join reason and stable diagnostic codes, which became the join screen's named steps and the end-reason codes; the list of cheap edge protections, of which two were missing here: a per-source limit on connections and a private access list on the identity key file; the rule columns that make an actor's own save record its spawn payload, the general form of what this project's prop save-data work was building case by case; the client-only `Quiesce` column, which made this project state its parking rule once and read every park against it; the one paragraph on container handling, which made it write down and measure its own container invariants; the note that a watch on a parent class misses a child's override, which sent us to audit every hook we install, which found three seams that had never installed and two verbs called on the wrong class; and the list of what a returning player's profile covers, which is the list this project's per-player profile now carries | b122 · b143 · 2026-09-02 · b153 · b157 · b160 · b161 · b167 |
 | **SentientYeet** | review | The substrate critique that re-opened the loader decision | b143 |
 | **Violet** | report | ~9 FPS for a friend joining on Linux — five separate defects behind it | b134 |
@@ -93,7 +94,7 @@ Community commits are adopted with their **original authorship preserved**
   the notebook piece); a measurement, the pinger's identity on the wire and the observer checks were added
   beside them.
 - **The sleeping bag and mattress** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its third piece): a
-  bag a player unrolls or folds no longer vanishes on the other peers (FI-11). The host runs the
+  bag a player unrolls or folds stays on the other peers (FI-11). The host runs the
   game's own transition for a client and the unrolled bag, which the game never keys, gets a key. Their
   commit is kept as written; the bunk-bed mattress, the press-side watch and the drill were added.
 - **The notebook** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its fourth piece): what one player
@@ -103,6 +104,20 @@ Community commits are adopted with their **original authorship preserved**
 - **The revive's fire** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its fifth piece): a player who
   died burning came back still burning. Their commit is kept as written; the fire is now put out with the
   game's own verb, and a drill sets the player alight, kills it and checks the revived body.
+- **The cord's plug** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its sixth piece): a cord one player
+  plugs into a socket is now plugged on every peer, a joiner included. Their commit is kept as written; the
+  link was then made the host's (a client claims its own plug and the host answers), and the drill and the
+  forged-message checks were added beside it.
+- **The coffee machines** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its seventh piece): a client's press of
+  the coffee vending machine or the coffee maker now takes its points and brews its cup, once, on every peer. Their
+  commit is kept as written; the press was then made a request the host performs, the maker's state its record
+  published by the host, and the drill and the forged-message checks were added beside it.
+- **The Geom Octa** ([#48](https://github.com/VOTV-MP/Multivoid/pull/48)): the creature that falls out of the
+  night sky and fires a laser is now the host's, and every peer sees the same one. Their commit is kept as
+  written: the Octa on the NPC allowlist, the gamemode's night roll as a spawn source and the dev menu's spawn
+  button. The rest of the pull request was rebuilt: the mirror's decisions are parked and the host's attack is
+  relayed into each client's own Blueprint, a client's own roll is refused, a joiner mid-attack is replayed the
+  attack, and the drill was added beside it.
 - **The grappling-hook lane** ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)): the first
   implementation of hook and rope visibility across peers. It could not be merged — a mirror is a
   live `hook_C`, `hook_C` is an `actor_save_C`, and the game's save walk collects by that interface,
@@ -229,6 +244,17 @@ Community commits are adopted with their **original authorship preserved**
   several-rows guard was taken out, and the host now sends a rack it first sees mid-session, with a drill
   that spawns a rack holding rows to prove it.
 
+### gust138
+- **A box's last change** ([#64](https://github.com/VOTV-MP/Multivoid/pull/64)): the record lane published a
+  drive box or reel case at most once per 300 ms and dropped the rest, so a second change soon after the first
+  never reached the other peers. Every change now publishes. The commits are kept as written; a two-peer drill
+  opens a box and takes its drive about 380 ms apart, and its red, with a publish window restored, ends the far
+  box with the drive still in.
+- **A coin picked up by a client** (the same request): a client's E press credited the coin and destroyed it on
+  that client before the host answered. The press now forwards and is cancelled, and the host credits it. The
+  drill counts no local credit on the client and the same balance on both peers; its red counts one.
+- **A balance nobody took** (the same request): the host now resends its balance until a peer accepts it.
+
 ---
 
 ## Reports
@@ -247,7 +273,7 @@ symptom pointed at. The triage of her log found:
    violations per second**, every one of them written to the log. The root: a
    dying world's actors are not marked dead until garbage collection runs, which
    was measured at **44+ seconds** later, so "is this object alive?" was
-   answering yes for a world that no longer existed. Every cached engine
+   answering yes for a world that was gone. Every cached engine
    reference now carries the world it came from and is dropped when that world
    goes.
 2. **~1,600 spurious destroy broadcasts on every client world load** — from
@@ -357,7 +383,7 @@ reported.
 ## Review
 
 Neither of these was a bug report. Both were people looking at how the mod is
-built and saying, in public and in good faith, that a decision in it was wrong.
+built and saying, in public and in good faith, that a decision in it was mistaken.
 Both were right, and the project's largest single change came out of them.
 
 ### Moddy — the architecture and documentation review that became the UE4SS move
@@ -379,7 +405,7 @@ for it. Two stale documentation claims were found and fixed the same day too:
 reversed the day after it was written and never annotated, and the overlay was
 still described as riding "UE4SS's built-in ImGui" months after the mod
 hand-rolled its own present hook. That pair became a standing project lesson: in a
-public repo, an un-annotated superseded decision is ammunition.
+public repo, an un-annotated replaced decision is ammunition.
 
 **Relay.** Moddy is also the author of [Relay](https://github.com/modestimpala/Relay), a Blueprint
 networking API for Voices of the Void
@@ -444,8 +470,8 @@ traffic-protection section.* Relay's README gives its container handling one par
 routed through the host, the client's rows a mirror and not the canonical copy -- and says the host
 validates replicated actions, without listing the checks. There was no list to copy, so the row was
 built the other way round: this project wrote down the invariants its own container lane must hold,
-measured each, and closed the gaps the measuring found (`coop/props/container_write_policy` and its
-siblings). The prompt is Moddy's; the invariants, the measurements and the fixes are this project's
+measured each, and closed the gaps the measuring found (the `coop/props/container_*`
+lane). The prompt is Moddy's; the invariants, the measurements and the fixes are this project's
 own.
 
 **The hook audit (b161).** *Source: the README Blueprint, the note "3 // WATCH VANILLA

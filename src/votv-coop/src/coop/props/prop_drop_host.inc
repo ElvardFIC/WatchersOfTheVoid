@@ -158,6 +158,16 @@ void* HostSpawnPlacedProp(const coop::net::PropDropIntentPayload& p, const std::
         if (!scaled) { E::DestroyActor(actor); return nullptr; }
     }
     if (!stillCurrent()) return nullptr;
+    if (p.throwSeq) { ++g_launches; g_lastLaunch = 0.f; }
+    namespace pf = coop::net::propspawn_flags;
+    const float speedSq = p.linVel[0]*p.linVel[0]+p.linVel[1]*p.linVel[1]+p.linVel[2]*p.linVel[2];
+    const float rest = coop::prop_drive_rules::kRestVelCmS;
+    if (speedSq > rest*rest && !(p.physFlags & (pf::kStatic|pf::kFrozen|pf::kSleep))) {
+        E::SetActorRootPhysicsVelocity(actor, {p.linVel[0],p.linVel[1],p.linVel[2]},
+                                             {p.angVel[0],p.angVel[1],p.angVel[2]});
+        if (!stillCurrent()) return nullptr;
+        if (p.throwSeq) g_lastLaunch = std::sqrt(speedSq);
+    }
     // Container contents live in a separate inventory slice, outside getData.
     // Reserve it before record restoration can reenter the contents publisher.
     coop::props::container_birth::ExpectBirthSlice(actor, authorSlot);

@@ -15,6 +15,7 @@
 #include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/actors/sleep_display.h"
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_hurt_flash.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -413,7 +414,7 @@ void RemotePlayer::Tick() {
     // keeps moving while the wire is quiet, so it sets dirty_ itself. Skipped while ragdolled: the
     // pelvis attachment owns the transform.
     if (!ragdoll_.Active() &&
-        bodyYaw_.Update(NowMs(), curSpeed_, curYaw_, curHeadYawDelta_)) {
+        (IsSitting()?bodyYaw_.Seated(NowMs(),curYaw_):bodyYaw_.Update(NowMs(), curSpeed_, curYaw_, curHeadYawDelta_))) {
         dirty_ = true;
     }
 
@@ -572,45 +573,6 @@ void RemotePlayer::ApplyToEngine() {
     // head can lead.
     E::SetActorRotation(actor_, ue_wrap::FRotator{0.f, bodyYaw_.Yaw(), 0.f});
 
-    // The flashlight cone: drive the puppet's lag_fl spring arm pitch so the cone points where the
-    // source looks. On a real player the actor's tick updates it from the camera; the puppet's
-    // actor tick is off, so it would freeze at the spawn orientation and the cone would point at
-    // the ground. Through K2_SetRelativeRotation by reflection, the canonical transform
-    // propagation; the function resolves once.
-    if (auto* mp = reinterpret_cast<uint8_t*>(actor_)) {
-        if (void* lag_fl = *reinterpret_cast<void**>(mp + P::off::AmainPlayer_lag_fl)) {
-            if (R::IsLive(lag_fl)) {
-                static void* sSetRelRotFn = nullptr;
-                if (!sSetRelRotFn) {
-                    if (void* sc = R::FindClass(P::name::SceneComponentClass)) {
-                        sSetRelRotFn = R::FindFunction(sc, P::name::SetRelativeRotationFn);
-                    }
-                }
-                // The relative yaw compensates the body-yaw hold: the cone must point at the camera
-                // (curYaw_ + curHeadYawDelta_) while the parent shows bodyYaw_, so the difference
-                // is shortest-arced.
-                const float flRelYaw = OffsetDegrees(
-                    bodyYaw_.Yaw(), curYaw_ + curHeadYawDelta_);
-                if (sSetRelRotFn) {
-                    ue_wrap::FRotator rot{curPitch_, flRelYaw, 0.f};
-                    ue_wrap::ParamFrame f(sSetRelRotFn);
-                    f.Set<ue_wrap::FRotator>(L"NewRotation", rot);
-                    f.Set<bool>(L"bSweep", false);
-                    f.Set<bool>(L"bTeleport", true);
-                    ue_wrap::Call(lag_fl, f);
-                } else {
-                    // Fallback: a direct write; if the function does not resolve the engine would
-                    // not propagate either way. FRotator is {Pitch, Yaw, Roll}.
-                    auto* rr = reinterpret_cast<float*>(
-                        reinterpret_cast<uint8_t*>(lag_fl) +
-                        P::off::USceneComponent_RelativeRotation);
-                    rr[0] = curPitch_;
-                    rr[1] = flRelYaw;
-                }
-            }
-        }
-    }
-
     // Drive the puppet's own CharacterMovement so the AnimBP's update reads the velocity and mode
     // it reads on the local player (spd and the leg-IK gates); its tick is parked, so these fields
     // are ours. The source streams its actor yaw and a speed magnitude, so the planar velocity is
@@ -625,8 +587,7 @@ void RemotePlayer::ApplyToEngine() {
             0.f,
         };
         const bool inAir = (curStateBits_ & coop::net::kStateBitInAir) != 0;
-        const bool sitting = (curStateBits_ & coop::net::kStateBitSitting) != 0 &&
-                             (curStateBits_ & coop::net::kStateBitRagdoll) == 0;
+        const bool sitting = IsSitting();
         Pup::DriveCharacterMovement(actor_, sitting ? ue_wrap::FVector{} : vel, sitting ? false : inAir);
         ue_wrap::sit_pose::DriveSitting(actor_, sitting);
         // Run-loudness parity: lib_C::step's volume reads MaxWalkSpeed, which the parked puppet
@@ -650,32 +611,48 @@ void RemotePlayer::ApplyToEngine() {
         }
     }
 
-    // The head look shows where the remote player is looking: a world look point rebuilt from the
-    // streamed view (the wire yaw plus the camera lead, and the pitch), anchored at the puppet's
-    // head, through the kerfur AnimBP's native lookAt path. The target is camera truth while the
-    // body shows bodyYaw_'s hold, so the body-relative clamps let the head lead until the body
-    // catches up. The lead is synthesised here: the source's first-person body follows the camera
-    // at once, so it never emerges from the wire.
-    {
-        constexpr float kDeg2Rad = 0.01745329252f;
-        const float yawRad   = (curYaw_ + curHeadYawDelta_) * kDeg2Rad;
-        const float pitchRad = curPitch_ * kDeg2Rad;
-        const float cp = std::cos(pitchRad);
-        ue_wrap::FVector head{};   // actor X/Y + head-Z
-        if (!TryGetHeadPosition(head)) return;   // no anchor this tick: the head keeps its last look
-        constexpr float kLookDist = 500.f;  // any positive distance; LookAt uses the direction
-        const ue_wrap::FVector worldLook{
-            head.X + cp * std::cos(yawRad) * kLookDist,
-            head.Y + cp * std::sin(yawRad) * kLookDist,
-            // Up is positive.
-            head.Z + std::sin(pitchRad) * kLookDist,
-        };
-        Pup::DriveHeadLookAtWorld(actor_, worldLook);
-        // The head probe (ini puppet_head_probe=1, ~1 Hz, otherwise a no-op): the desired head
-        // twist against the rendered head bone's and the native clamp.
-        coop::puppet_head_probe::Tick(actor_, bodyYaw_.Yaw(),
-                                      curYaw_ + curHeadYawDelta_, curPitch_);
+    RefreshView();
+}
+
+void RemotePlayer::RefreshSeatView() {
+    if(valid()&&IsSitting())RefreshView();
+}
+
+void RemotePlayer::RefreshView() {
+    if(!valid())return;
+    void* const actor=actor_;
+    ue_wrap::CachedObjRef body,cls;body.Set(actor);cls.Set(R::ClassOf(actor));
+    const auto generation=ue_wrap::world_identity::Generation();void* world=ue_wrap::world_identity::CurrentWorld();
+    const auto current=[&]{return body.Get()&&cls.Get()&&valid()&&actor_==actor&&world&&
+        generation==ue_wrap::world_identity::Generation()&&world==ue_wrap::world_identity::CurrentWorld()&&
+        R::ClassOf(actor)==cls.Get();};
+    const auto aim=GetSyncedAimRotation();
+    if(!current()||!std::isfinite(aim.Pitch)||!std::isfinite(aim.Yaw))return;
+    const int32_t offset=R::FindPropertyOffset(cls.Get(),L"lag_fl");
+    if(!current())return;
+    if(offset>=0){
+        void* component=*reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+offset);
+        if(component&&R::IsLive(component)){
+            ue_wrap::CachedObjRef arm,armClass;arm.Set(component);armClass.Set(R::ClassOf(component));
+            const auto attached=[&]{return current()&&arm.Get()&&armClass.Get()&&R::ClassOf(component)==armClass.Get()&&
+                R::FindPropertyOffset(cls.Get(),L"lag_fl")==offset&&
+                *reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+offset)==component;};
+            // World rotation remains correct after a tilted seat changes the actor root.
+            if(attached())E::SetComponentWorldRotation(component,aim);
+            if(!attached())return;
+        }
     }
+    ue_wrap::FVector head{};
+    if(!TryGetHeadPosition(head)||!current()||!std::isfinite(head.X)||!std::isfinite(head.Y)||!std::isfinite(head.Z))return;
+    constexpr float rad=.01745329252f;
+    const float yaw=aim.Yaw*rad,pitch=aim.Pitch*rad,cp=std::cos(pitch);
+    const ue_wrap::FVector look{head.X+500.f*cp*std::cos(yaw),head.Y+500.f*cp*std::sin(yaw),head.Z+500.f*std::sin(pitch)};
+    if(!current())return;
+    Pup::DriveHeadLookAtWorld(actor,look);
+    if(!current())return;
+    ue_wrap::FRotator facing{};
+    if(E::TryGetActorRotation(actor,facing)&&current())
+        coop::puppet_head_probe::Tick(actor,facing.Yaw,aim.Yaw,aim.Pitch);
 }
 
 bool RemotePlayer::SetLocation(const ue_wrap::FVector& location) {

@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace ue_wrap::appliance {
@@ -57,6 +58,7 @@ bool IsTap(void* obj);
 // The appliance's own action verb as a player's interaction dispatches it: actionOptionIndex with
 // `player` and `action`. False when the class has no such verb or the call did not run. Game thread.
 bool CallAction(void* a, void* player, uint8_t action);
+bool CallActionWhile(void* a, void* player, uint8_t action, const std::function<bool()>& current);
 
 // The kitchen oven's repair. Its `fixed` goes false to true once, in fix(): fix() sets it, repaints
 // the oven and closes the repair widget where one is open; the widget's last step calls it, and

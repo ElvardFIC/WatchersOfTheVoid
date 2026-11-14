@@ -163,6 +163,17 @@ bool Deserialize(const std::vector<uint8_t>&,ue_wrap::signal_dynamic::Row&) { st
 }
 int main() {
     using namespace test;
+    Reset();S::g_session=&session;
+    auto fullDisc=Make();fullDisc.strings={{std::wstring(24000,L'x')}};
+    const auto fullBody=S::BuildBody(L"item",fullDisc);
+    CHECK(fullBody.size()>32768 && fullBody.size()<coop::blob_chunks::MaxBlobBytes());
+    CHECK(S::SendBody(&session,-1,L"item",fullDisc));CHECK(sent.size()==1);
+    Record decodedDisc;std::wstring decodedKey;
+    CHECK(S::ParseBody(fullBody,decodedKey,decodedDisc) && decodedDisc.strings==fullDisc.strings);
+    Reset();S::g_session=&session;
+    fullDisc.strings={{std::wstring(coop::blob_chunks::MaxBlobBytes(),L'x')}};
+    CHECK(!S::SendBody(&session,-1,L"item",fullDisc) && sent.empty());
+    puts("PASS full disc save record: 48 KiB round-trip; over-transport record refused without send");
     for (int portions : {0, 2}) {
         Reset();captureOK=overrideCapture=true;capturedRecord=Make();
         capturedRecord.className=L"prop_cannedFood_C";capturedRecord.ints={{2,portions}};capturedRecord.bools={{},{1}};

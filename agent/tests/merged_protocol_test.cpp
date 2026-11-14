@@ -7,6 +7,10 @@
 #include <cstddef>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 using namespace coop::net;
+static_assert(kReliableKindCount > static_cast<size_t>(ReliableKind::ContainerActCommit),
+    "reliable-kind tables must cover every retained container-act ID");
+static_assert(kReliableKindCount == static_cast<size_t>(ReliableKind::EmoteState) + 1,
+    "reliable-kind tables must also cover the integrated EmoteWheel ID");
 static_assert(static_cast<uint8_t>(ReliableKind::PropScaleState)==202);
 static_assert(static_cast<uint8_t>(ReliableKind::SharedScreen)==203);
 static_assert(static_cast<uint8_t>(ReliableKind::LaptopUI)==204);
@@ -16,12 +20,27 @@ static_assert(static_cast<uint8_t>(ReliableKind::Watoy)==235);
 static_assert(sizeof(KavotiaStatePayload)==25);
 static_assert(AuthorshipOf(ReliableKind::KavotiaState)==ClientAuthorship::Host);
 static_assert(AuthorshipOf(ReliableKind::Watoy)==ClientAuthorship::Client);
-static_assert(sizeof(PropDropIntentPayload)==188 && offsetof(PropDropIntentPayload,requestId)==184);
+static_assert(sizeof(PropDropIntentPayload)==214 && offsetof(PropDropIntentPayload,requestId)==210);
 static_assert(sizeof(PropPlacementResultPayload)==101 && offsetof(PropPlacementResultPayload,code)==100);
 static_assert(AuthorshipOf(ReliableKind::PropPlacementResult)==ClientAuthorship::Host);
 static_assert(AuthorshipOf(ReliableKind::PropDropIntent)==ClientAuthorship::Client);
 static_assert(!IsClientRelayableReliableKind(ReliableKind::PropPlacementResult));
 int main(){
+    for (auto kind : {ReliableKind::CordIntent, ReliableKind::CoffeeActionIntent,
+                      ReliableKind::FuseTowerState, ReliableKind::PropSyncClaim}) {
+        CHECK(AuthorshipOf(kind)==ClientAuthorship::Client);
+        CHECK(!IsClientRelayableReliableKind(kind));
+        CHECK(!IsPreWorldSendableKind(kind));
+    }
+    for (auto kind : {ReliableKind::CordState, ReliableKind::PropSyncAnswer,
+                      ReliableKind::SwingerRestPose, ReliableKind::GeomOctaEvent}) {
+        CHECK(AuthorshipOf(kind)==ClientAuthorship::Host);
+        CHECK(!IsClientRelayableReliableKind(kind));
+    }
+    CHECK(kPeerCapacity==32);
+    CHECK(LaneForKind(ReliableKind::EntitySpawn)==Lane::Default);
+    CHECK(LaneForKind(ReliableKind::GeomOctaEvent)==LaneForKind(ReliableKind::EntitySpawn));
+    std::puts("PASS selected upstream lanes: host-only state, validated client intents, no blind relay, 32 peers");
     CHECK(LaneForKind(ReliableKind::PropPlacementResult)==LaneForKind(ReliableKind::PropSpawn));
     CHECK(LaneForKind(ReliableKind::PropDropIntent)==LaneForKind(ReliableKind::PropDestroy));
     CHECK(LaneForKind(ReliableKind::ReelEjectIntent)==LaneForKind(ReliableKind::PropDropIntent));

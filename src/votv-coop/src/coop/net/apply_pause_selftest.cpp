@@ -17,7 +17,7 @@ bool RunSelftest() {
         if (ok) { ++pass; return; }
         UE_LOGE("apply_pause selftest FAIL: %s", what);
     };
-    auto kind = [](unsigned k) { return static_cast<ReliableKind>(static_cast<std::uint8_t>(k)); };
+    auto kind = [](unsigned k) { return static_cast<ReliableKind>(static_cast<std::uint16_t>(k)); };
 
     // 1. One kind: a raise counts once however often it is repeated, and so does its lower.
     {
@@ -44,15 +44,22 @@ bool RunSelftest() {
     // 3. Kinds at each word's edge stay apart.
     {
         ApplyPauseSet s;
-        const unsigned edges[] = {0, 63, 64, 127, 128, 191, 192, 255};
+        const unsigned edges[] = {0, 63, 64, 127, 128, 191, 192, 255, 256, 263};
         for (unsigned k : edges) s.Set(kind(k), true);
         bool held = true;
         for (unsigned k : edges) held = held && s.Has(kind(k));
-        check(held && s.Raises() == 8, "every edge kind is held, each counted once");
+        check(held && s.Raises() == 10, "every edge kind is held, each counted once");
         check(!s.Has(kind(1)) && !s.Has(kind(62)) && !s.Has(kind(65)) && !s.Has(kind(254)),
               "their neighbours are not");
         for (unsigned k : edges) s.Set(kind(k), false);
         check(!s.Any(), "lowering them all empties the set");
+    }
+
+    {
+        ApplyPauseSet s;
+        check(!s.Set(kind(65535),true) && !s.Has(kind(65535)) && !s.Any(), "unknown high kinds cannot index the set");
+        s.Set(kind(257),true);
+        check(s.Has(kind(257)) && !s.Has(kind(1)), "high kinds do not alias their low byte");
     }
 
     // 4. Reset lowers every pause and keeps the count a witness reads.

@@ -1,16 +1,21 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <functional>
 
 namespace ue_wrap::radio_player {
 struct State { uint64_t track=0; int64_t ticks=0; uint8_t playing=0,mode=0; };
 // Current custom-radio interface, whose imported catalog is local on every peer.
 bool IsRadio(void* actor);
+// Class-pure form for the shared scan hub's per-class predicate cache.
+bool IsRadioClass(void* cls);
 bool HasLocalTrack(void* actor);
 void* UiRadio(void* widget);
 bool OwnsPlayer(void* player);
-bool Read(void* actor,State& out);
-bool Apply(void* actor,const State& state);
+// Synchronous caller-owned access. Authority is checked around every reflected
+// call; callbacks are never retained. False may follow an attempted native call.
+bool Read(void* actor,State& out,const std::function<bool()>& current={});
+bool Apply(void* actor,const State& state,const std::function<bool()>& current={});
 // Stable across different installation roots; all UTF-16 code units participate.
 inline uint64_t TrackId(std::wstring path) {
     for (auto& c:path) { if (c==L'\\') c=L'/'; if (c>=L'A' && c<=L'Z') c+=L'a'-L'A'; }

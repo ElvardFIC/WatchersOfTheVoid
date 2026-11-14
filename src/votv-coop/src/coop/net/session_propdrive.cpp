@@ -1,5 +1,5 @@
-// coop/net/session_propdrive.cpp -- the host-originated driven-prop pose batch, send and receive,
-// for Session.
+// coop/net/session_propdrive.cpp -- the driven-prop pose batch (the host's, and a syncing client's to the
+// host), send and receive, for Session.
 //
 // The session_trashcarry.cpp shape. The LOCAL side is a QUEUE, not a snapshot: the publisher sends
 // a prop's pose only when it moved since the last one it counted as sent, so the newest pose of
@@ -11,7 +11,8 @@
 
 #include "ue_wrap/core/log.h"
 
-#include "coop/net/protocol.h"  // PacketHeader / EntityPoseBatchHeader / PropPoseSnapshot / kMaxPropDriveBatchEntries
+#include "coop/net/protocol.h"  // PacketHeader / EntityPoseBatchHeader / PropDriveRow / kMaxPropDriveBatchEntries
+#include "coop/props/prop_drive_stream.h"  // dev::NoteMerged: the rows that reached the store, for the syncer drill
 
 #include <cmath>
 #include <cstdint>
@@ -25,19 +26,23 @@ PoseTurn Session::PropDrivePoseTurn(uint32_t eid) const {
     return propDrivePoses_.Turn(eid, kMaxPropDriveBatchEntries, /*ahead=*/false);
 }
 
-void Session::PublishPropDrivePose(const PropPoseSnapshot& pose) {
+void Session::PublishPropDrivePose(const PropDriveRow& pose) {
     propDrivePoses_.Publish(pose, /*ahead=*/false);
 }
 
-bool Session::TakeRemotePropDriveBatch(std::vector<PropPoseSnapshot>& out) {
+bool Session::TakeRemotePropDriveBatch(std::vector<PropDriveRow>& out) {
     return TakeHost(&HostStreams::propDrive, out);
 }
 
+uint32_t Session::TakeRemotePropDriveBatches(std::vector<PropDriveRow> (&out)[kMaxPeers]) {
+    return TakeOrigins(&OriginStreams::propDrive, out);
+}
+
 int Session::SerializeLocalPropDriveBatch(uint8_t* buf) {
-    // One datagram = PacketHeader(20) + EntityPoseBatchHeader(4) + N*PropPoseSnapshot(64), capped at
+    // One datagram = PacketHeader(20) + EntityPoseBatchHeader(4) + N*PropDriveRow(80), capped at
     // kMaxPropDriveBatchEntries; the rest go out on the next send. The leading PacketHeader bytes
-    // are left for the caller to stamp per-peer. Only the HOST ever publishes, so on a client this
-    // returns 0.
+    // are left for the caller to stamp per-peer. The host publishes its driven rows and a client the
+    // rows of a prop it syncs; the net thread sends a client's to the host connection alone.
     const int n = propDrivePoses_.Drain(buf + sizeof(PacketHeader) + sizeof(EntityPoseBatchHeader),
                                         kMaxPropDriveBatchEntries);
     if (n == 0) return 0;
@@ -45,38 +50,39 @@ int Session::SerializeLocalPropDriveBatch(uint8_t* buf) {
     bh.count = static_cast<uint8_t>(n);
     std::memcpy(buf + sizeof(PacketHeader), &bh, sizeof(bh));
     return static_cast<int>(sizeof(PacketHeader) + sizeof(bh) +
-                            static_cast<size_t>(n) * sizeof(PropPoseSnapshot));
+                            static_cast<size_t>(n) * sizeof(PropDriveRow));
 }
 
-void Session::StoreRemotePropDriveBatch(const void* data, int len, uint32_t seq) {
-    // HOST->client driven-prop batch. The host originates it and never relays or receives it, so
-    // this lands only on clients; the ROLE gate and the FINITE check are the trust boundary, for
-    // the reasons session_trashcarry.cpp states.
-    if (role() == Role::Host) {
-        RefuseClientBatch(HostBatch::PropDrive, "propdrive", "PropDrivePose");
-        return;
-    }
+void Session::StoreRemotePropDriveBatch(int originSlot, const void* data, int len, uint32_t seq) {
+    // A driven-prop batch: the host's to a client, or a syncing client's to the host. The host never
+    // relays one; a client's rows are merged per origin slot and judged on the game thread
+    // (prop_syncer_host), so no authority test runs here and the FINITE check is the trust boundary,
+    // for the reasons session_trashcarry.cpp states.
+    const bool onHost = role() == Role::Host;
+    if (onHost && (originSlot < 1 || originSlot >= kMaxPeers)) return;
     if (len < static_cast<int>(sizeof(PacketHeader) + sizeof(EntityPoseBatchHeader))) return;
     EntityPoseBatchHeader bh;
     std::memcpy(&bh, static_cast<const uint8_t*>(data) + sizeof(PacketHeader), sizeof(bh));
     const int count = bh.count;
     if (count > kMaxPropDriveBatchEntries) return;  // malformed
     const int need = static_cast<int>(sizeof(PacketHeader) + sizeof(EntityPoseBatchHeader)) +
-                     count * static_cast<int>(sizeof(PropPoseSnapshot));
+                     count * static_cast<int>(sizeof(PropDriveRow));
     if (len < need) return;  // truncated datagram
     // A fixed array, since the count is capped by the format: no allocation per datagram.
-    PropPoseSnapshot batch[kMaxPropDriveBatchEntries];
+    PropDriveRow batch[kMaxPropDriveBatchEntries];
     if (count > 0)
         std::memcpy(batch,
                     static_cast<const uint8_t*>(data) + sizeof(PacketHeader) + sizeof(EntityPoseBatchHeader),
-                    static_cast<size_t>(count) * sizeof(PropPoseSnapshot));
+                    static_cast<size_t>(count) * sizeof(PropDriveRow));
     // Strict on format: a batch carrying a non-finite pose, an over-long key or an eid of zero is
-    // refused whole rather than filtered.
+    // refused whole rather than filtered; on the host a client's rows also meet the bounds a client's
+    // held-prop pose meets (PropPoseInBounds), since a client's rows reach the host's copy of the prop.
     for (int i = 0; i < count; ++i) {
-        const PropPoseSnapshot& e = batch[i];
+        const PropDriveRow& e = batch[i];
         if (!std::isfinite(e.x) || !std::isfinite(e.y) || !std::isfinite(e.z) ||
             !std::isfinite(e.pitch) || !std::isfinite(e.yaw) || !std::isfinite(e.roll) ||
-            e.key.len > sizeof(e.key.data) || e.elementId == 0u) {
+            !std::isfinite(e.vel[0]) || !std::isfinite(e.vel[1]) || !std::isfinite(e.vel[2]) ||
+            e.key.len > sizeof(e.key.data) || e.elementId == 0u || (onHost && !PropPoseInBounds(e))) {
             static uint32_t sMalformed = 0;
             if (++sMalformed <= 3 || (sMalformed % 100) == 0)
                 UE_LOGW("propdrive: malformed entry in a %d-entry batch -- dropping the batch (#%u)",
@@ -84,8 +90,10 @@ void Session::StoreRemotePropDriveBatch(const void* data, int len, uint32_t seq)
             return;
         }
     }
+    for (int i = 0; i < count; ++i) coop::prop_drive_stream::dev::NoteMerged(batch[i].elementId);   // [dev] counted for the drill
     std::lock_guard<std::mutex> lk(remoteMutex_);
-    host_.propDrive.Merge(batch, count, seq);
+    if (onHost) origin_[originSlot].propDrive.Merge(batch, count, seq);
+    else        host_.propDrive.Merge(batch, count, seq);
 }
 
 }  // namespace coop::net

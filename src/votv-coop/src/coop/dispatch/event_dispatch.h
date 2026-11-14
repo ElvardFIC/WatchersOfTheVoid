@@ -1,6 +1,6 @@
 // coop/dispatch/event_dispatch.h -- INTERNAL per-domain reliable-message handlers for
 // coop::event_feed::Update's dispatch switch. event_feed.cpp handles the session and handshake
-// kinds inline and chains these six families from its default case; each family's own switch is
+// kinds inline and chains these eight families from its default case; each family's own switch is
 // where its kinds are declared.
 //
 // Sibling-internal header, the coop/net/session_lanes.h shape: not part of the public coop/ include
@@ -58,6 +58,12 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg);
 bool HandleIntentEvent(net::Session& session,
                        const net::Session::ReliableMessage& msg);
 
+// Container-act family: a client's take of a record out of a world container, or put into one. The request and
+// the commit check role()==Host AND a client sender slot, and hand the chunk to the host's lane; the reply is the
+// HOST->CLIENT answer, dropped on the host and from any sender but slot 0.
+bool HandleContainerActEvent(net::Session& session,
+                             const net::Session::ReliableMessage& msg);
+
 // Economy family: the delivery order with its queue, the coin gun's sale and collect, the laptop
 // upgrade purchase and the point sack. OrderRequest, CoinGunSell and CoinCollect check the slot here
 // and leave the role gate to the module they call; UpgradeIntent and PointSackRedeem check role()==Host
@@ -67,6 +73,15 @@ bool HandleIntentEvent(net::Session& session,
 bool HandleEconomyEvent(net::Session& session,
                         const net::Session::ReliableMessage& msg,
                         void* localPlayer);
+
+// Driven-prop family: the close of a driven prop's stream (PropDriveEnd), and the prop syncer's claim
+// and answer. PropDriveEnd on the host is a syncing client's End, handed to the claim judge; on a client
+// it is the host's End, applied by the stream's receiver. PropSyncClaim checks role()==Host AND a client
+// sender slot; PropSyncAnswer is the HOST->CLIENT verdict, refused from a client at the host's edge. DevLoadFiller
+// is the developer filler of the syncer drill's load arm, host to client; DevParityReport is the pile deferral
+// drill's report, client to host; DevContainerParity is the container join drill's.
+bool HandlePropDriveEvent(net::Session& session,
+                          const net::Session::ReliableMessage& msg);
 
 // Ambient and world-event family: fireflies, scheduled events with their cues and snapshots,
 // alarms, the server box, roaches, inventory pickups, chat, and the time, sky and weather stream.

@@ -4,11 +4,13 @@
 
 #include "ue_wrap/actors/inventory.h"      // ResolveSaveSlot
 #include "ue_wrap/actors/prop.h"           // WalksToBase
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/component_calls.h"  // CallParamless
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/reflection_props.h"
 
 #include <cstring>
 #include <array>
@@ -20,10 +22,11 @@ namespace R  = ue_wrap::reflection;
 namespace SR = ue_wrap::save_record;
 
 R::InstanceOffset g_offInvIndex{L"Index"},g_offInvOwner{L"Owner"},g_offGObjStack{L"GObjStack"},
-    g_offPropInv{L"propInventory"},g_offCurrVol{L"currVol"};
+    g_offPropInv{L"propInventory"},g_offCurrVol{L"currVol"},g_offMaxVol{L"maxVol"};
 CachedObjRef g_playerClass;
 int32_t g_playerOffset=-1;
 uint8_t g_playerMask=0;
+R::InstanceOffset g_offInvObj{L"obj"}, g_offAllContainers{L"allContainers"};
 
 template <class T> T ReadAt(const void* base, int32_t off) {
     T v{};
@@ -78,17 +81,106 @@ bool ReadPersonalFlag(void* inventory,bool& personal) {
     return true;
 }
 
-uint8_t* ContentsSlot(void* inventory) {
-    if (!inventory) return nullptr;
+namespace {
+
+// GObjStack[idx], the struct_mObject element: null when the save slot, the field or the index does not resolve.
+uint8_t* StackSlotAt(int32_t idx) {
+    if (idx < 0) return nullptr;
     void* save = ue_wrap::inventory::ResolveSaveSlot();
     if (!save) return nullptr;
-    const auto stackOffset=g_offGObjStack.Of(save),indexOffset=g_offInvIndex.Of(inventory);
-    if(stackOffset<0 || indexOffset<0)return nullptr;
-    const int32_t idx = ReadAt<int32_t>(inventory, indexOffset);
-    if (idx < 0) return nullptr;
+    const auto stackOffset=g_offGObjStack.Of(save);
+    if(stackOffset<0)return nullptr;
     SR::Arr stack{};if(!SR::TryReadArr(save,stackOffset,stack))return nullptr;
     if (idx >= stack.num) return nullptr;
     return const_cast<uint8_t*>(stack.data) + static_cast<size_t>(idx) * SR::kMxStride;
+}
+
+}  // namespace
+
+uint8_t* ContentsSlot(void* inventory) {
+    if (!inventory) return nullptr;
+    const auto offset = g_offInvIndex.Of(inventory);
+    if (offset < 0) return nullptr;
+    return StackSlotAt(ReadAt<int32_t>(inventory, offset));
+}
+
+bool ReadStackCount(int32_t stackIndex, int32_t& count) {
+    count = 0;
+    uint8_t* const slot = StackSlotAt(stackIndex);
+    if (!slot) return false;
+    SR::Arr records{};
+    if (!SR::TryReadArr(slot, 0, records)) return false;
+    count = records.num;
+    return true;
+}
+
+bool ContainerStackIndex(const SR::SaveRecord& r, int32_t& index) {
+    if (!IsContainerRecord(r)) return false;
+    index = !r.ints.empty() && !r.ints[0].empty() ? r.ints[0][0] : 0;
+    return true;
+}
+
+namespace {
+
+// A bitfield bool of an object's class, read by byte and mask. Containers are several classes (a barrel, a crate, a
+// bin), so a few classes are kept; a class not kept is asked of reflection once and takes the oldest place.
+struct BoolField {
+    ue_wrap::CachedObjRef cls;
+    int32_t off = -1;
+    uint8_t mask = 0;
+};
+struct BoolFields {
+    static constexpr size_t kKept = 8;
+    BoolField kept[kKept];
+    size_t next = 0;
+};
+
+bool ReadBool(BoolFields& fields, void* obj, const wchar_t* name, bool& out) {
+    void* const cls = R::ClassOf(obj);
+    BoolField* f = nullptr;
+    for (BoolField& k : fields.kept)
+        if (k.cls.Is(cls) && k.off >= 0 && k.mask) { f = &k; break; }
+    if (!f) {
+        f = &fields.kept[fields.next++ % BoolFields::kKept];
+        *f = {};
+        f->cls.Set(cls);
+        if (!R::FindBoolProperty(cls, name, f->off, f->mask)) f->off = -1;
+    }
+    if (f->off < 0 || f->mask == 0) return false;
+    out = (*(static_cast<const uint8_t*>(obj) + f->off) & f->mask) != 0;
+    return true;
+}
+
+}  // namespace
+
+bool ReadPutTerms(void* container, PutTerms& out) {
+    static BoolFields sInfinite, sLocked;
+    static ue_wrap::CachedObjRef sMailbox;   // the mailbox class, asked of the object index until it is found
+    out = PutTerms{};
+    void* const inv = InventoryOf(container);
+    const auto maxOffset = inv ? g_offMaxVol.Of(inv) : -1;
+    if (maxOffset < 0) return false;
+    PutTerms t{};
+    t.maxVol = ReadAt<float>(inv, maxOffset);
+    if (!CurrentVolume(inv, t.currVol) || !ReadBool(sInfinite, inv, L"infinite", t.infinite) ||
+        !ReadBool(sLocked, container, L"locked", t.locked))
+        return false;
+    if (!sMailbox.Alive()) sMailbox.Set(ue_wrap::object_index::ClassByName(L"prop_mailbox_C"));
+    t.ownerIsMailbox = sMailbox.Alive() && ue_wrap::prop::WalksToBase(R::ClassOf(container), sMailbox.Raw());
+    out = t;
+    return true;
+}
+
+bool FilterHolds(void* inventory, void* cls, bool& holds) {
+    static R::InstanceOffset sFilter{L"filter"};
+    holds = false;
+    const auto filterOffset = inventory ? sFilter.Of(inventory) : -1;
+    if (filterOffset < 0 || !cls) return false;
+    SR::Arr filter{};
+    if (!SR::TryReadArr(inventory, filterOffset, filter)) return false;
+    for (int32_t i = 0; i < filter.num; ++i)
+        if (ReadAt<void*>(filter.data, i * static_cast<int32_t>(sizeof(void*))) == cls) { holds = true; break; }
+    return true;
 }
 
 bool ReadContents(void* inventory, std::vector<SR::SaveRecord>& out, size_t maxRecords,
@@ -237,6 +329,50 @@ bool CurrentVolume(void* inventory, float& out) {
     const auto off=g_offCurrVol.Of(inventory);if(off<0)return false;
     out = ReadAt<float>(inventory, off);
     return true;
+}
+
+bool MaxVolume(void* inventory, float& out) {
+    out = 0.f;
+    const auto offset = inventory ? g_offMaxVol.Of(inventory) : -1;
+    if (offset < 0) return false;
+    out = ReadAt<float>(inventory, offset);
+    return true;
+}
+
+bool SetMaxVolume(void* inventory, float value) {
+    const auto offset = inventory ? g_offMaxVol.Of(inventory) : -1;
+    if (offset < 0) return false;
+    std::memcpy(reinterpret_cast<uint8_t*>(inventory) + offset, &value, sizeof(value));
+    return true;
+}
+
+// The host's world-settle edge: propInventory.init sets `obj` on its first line and nothing clears it,
+// so a live `obj` is the mark that a container's inventory has run its init.
+bool InventoryInitialized(void* container) {
+    void* const inv = InventoryOf(container);
+    const int offset=inv?g_offInvObj.Of(inv):-1;
+    if(offset<0)return false;
+    void* const obj=ReadAt<void*>(inv,offset);
+    return obj && R::IsLive(obj);
+}
+
+bool AllContainersResolved(void* gamemode) {
+    return gamemode && g_offAllContainers.Of(gamemode) >= 0;
+}
+
+// The gamemode's allContainers (each container adds itself at BeginPlay and leaves at its end): the
+// registry the host's world-settle edge counts against. Null and non-live entries are skipped.
+size_t AllContainers(void* gamemode, void** out, size_t cap) {
+    if (!gamemode || !out || cap == 0) return 0;
+    if (g_offAllContainers.Of(gamemode) < 0) return 0;
+    SR::Arr arr{};
+    if(!SR::TryReadArr(gamemode,g_offAllContainers.Of(gamemode),arr))return 0;
+    size_t n = 0;
+    for (int32_t i = 0; i < arr.num && n < cap; ++i) {
+        void* const c = ReadAt<void*>(arr.data, i * static_cast<int32_t>(sizeof(void*)));
+        if (c && R::IsLive(c)) out[n++] = c;
+    }
+    return n;
 }
 
 }  // namespace ue_wrap::container_inventory

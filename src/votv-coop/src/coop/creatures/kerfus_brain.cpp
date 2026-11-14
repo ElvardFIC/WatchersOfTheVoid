@@ -59,10 +59,15 @@ bool g_said[kBrainCount] = {};
 // whether this lane holds that movement (rider_hold.h), false when its owner had stopped it already.
 struct Stilled {
     ue_wrap::CachedObjRef kerfus;
+    ue_wrap::CachedObjRef pawn;
     ue_wrap::CachedObjRef movement;
-    bool held = false;
+    coop::rider_hold::Token held = 0;
+    uint64_t attempt = 0, epoch = 0;
+    uint32_t world = 0;
+    bool preparing = true;
 };
 std::unordered_map<void*, Stilled> g_stilled;
+uint64_t g_stillEpoch = 1, g_nextAttempt = 0;
 
 bool OnClient() {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -79,22 +84,59 @@ bool OnClient() {
 // holds the Kerfus's one write to its movement, and a receiver's park takes a hold of its own beside this one --
 // and the session's end gives it back.
 void StillPawn(void* k) {
+    if (!OnClient() || !k || !ue_wrap::reflection::IsLive(k)) return;
+    Stilled st;
+    st.kerfus.Set(k);
+    st.epoch = g_stillEpoch;
+    st.world = ue_wrap::world_identity::Generation();
+    const auto fresh = [&] {
+        return OnClient() && st.epoch == g_stillEpoch &&
+               st.world == ue_wrap::world_identity::Generation() && st.kerfus.Get() == k;
+    };
+    void* pawn = UK::NavPawn(k);
+    if (!fresh() || !pawn || !ue_wrap::reflection::IsLive(pawn)) return;
+    st.pawn.Set(pawn);
+    void* movement = E::GetCharacterMovementComponent(pawn);
+    if (!fresh() || st.pawn.Get() != pawn || !movement || !ue_wrap::reflection::IsLive(movement)) return;
+    st.movement.Set(movement);
     auto it = g_stilled.find(k);
     if (it != g_stilled.end()) {
-        if (it->second.kerfus.Get() == k && it->second.movement.Alive()) return;
-        if (it->second.held) coop::rider_hold::Give(it->second.movement.Raw());  // a Kerfus or pawn that died
+        const auto old = it->second;
+        if (old.kerfus.Get() == k && old.pawn.Get() == pawn && old.movement.Get() == movement &&
+            old.epoch == st.epoch && old.world == st.world) {
+            if (old.preparing || old.held) return;
+            const bool ticking = E::IsComponentTickEnabled(movement);
+            if (!fresh() || !ticking) return;
+            it = g_stilled.find(k);
+            if (it == g_stilled.end() || it->second.attempt != old.attempt) return;
+        }
         g_stilled.erase(it);
+        if (old.held) coop::rider_hold::Give(old.movement.Raw(), old.held);
+        if (!fresh() || st.pawn.Get() != pawn || st.movement.Get() != movement || g_stilled.contains(k)) return;
     }
-    void* pawn = UK::NavPawn(k);
-    void* movement = pawn ? E::GetCharacterMovementComponent(pawn) : nullptr;
+    st.attempt = ++g_nextAttempt;
+    g_stilled.emplace(k, st); // reserve before position queries/setters can enter the brain again
+    const auto current = [&] {
+        const auto found = g_stilled.find(k);
+        return fresh() && st.pawn.Get() == pawn && st.movement.Get() == movement &&
+               found != g_stilled.end() && found->second.attempt == st.attempt;
+    };
+    const auto forget = [&] {
+        const auto found = g_stilled.find(k);
+        if (found != g_stilled.end() && found->second.attempt == st.attempt) g_stilled.erase(found);
+    };
     ue_wrap::FVector at{};
-    if (!movement || !E::TryGetActorLocation(k, at)) return;  // not spawned yet: the next tick asks again
-    E::SetActorLocation(pawn, at);
-    E::SetActorRotation(pawn, ue_wrap::FRotator{0.f, 0.f, 0.f});
-    Stilled& st = g_stilled[k];
-    st.kerfus.Set(k);
-    st.movement.Set(movement);
+    if (!E::TryGetActorLocation(k, at) || !current()) { forget(); return; }
+    if (!E::SetActorLocation(pawn, at) || !current()) { forget(); return; }
+    if (!E::SetActorRotation(pawn, ue_wrap::FRotator{0.f, 0.f, 0.f}) || !current()) { forget(); return; }
     st.held = coop::rider_hold::Take(movement);
+    if (!current()) {
+        if (st.held) coop::rider_hold::Give(movement, st.held);
+        forget();
+        return;
+    }
+    st.preparing = false;
+    g_stilled.find(k)->second = st;
     UE_LOGI("kerfus_brain: stilled the Kerfus %p's navigation pawn on this client -- seated on the body, its "
             "movement %s", k, st.held ? "held" : "stopped already by its owner");
 }
@@ -123,7 +165,7 @@ void Register() {
 }  // namespace
 
 void Install(coop::net::Session* session) {
-    g_session.store(session, std::memory_order_release);
+    if (g_session.exchange(session, std::memory_order_acq_rel) != session) ++g_stillEpoch;
     Register();
 }
 
@@ -139,6 +181,8 @@ void Tick() {
 }
 
 void OnDisconnect() {
+    g_session.store(nullptr, std::memory_order_release);
+    ++g_stillEpoch;
     unsigned long long total = 0;
     for (size_t i = 0; i < kBrainCount; ++i) total += g_refused[i];
     if (total)
@@ -146,9 +190,10 @@ void OnDisconnect() {
                 g_refused[0]);
     for (size_t i = 0; i < kBrainCount; ++i) { g_refused[i] = 0; g_said[i] = false; }
     // The holds go back: the brain runs here once the session is over.
-    for (const auto& entry : g_stilled)
-        if (entry.second.held) coop::rider_hold::Give(entry.second.movement.Raw());
-    g_stilled.clear();
+    decltype(g_stilled) retired;
+    retired.swap(g_stilled);
+    for (const auto& entry : retired)
+        if (entry.second.held) coop::rider_hold::Give(entry.second.movement.Raw(), entry.second.held);
 }
 
 }  // namespace coop::kerfus_brain

@@ -119,6 +119,20 @@ public:
     struct ActorIdPair { void* actor; ElementId id; int32_t internalIdx; bool mirror; };
     size_t SnapshotActorsByType(ElementType t, std::vector<ActorIdPair>& out) const;
 
+    // Owned metadata copied while the Element is protected by the registry lock.
+    // Actor pointers still require object-slot validation outside the lock.
+    struct IdentitySnapshot {
+        ElementId id = kInvalidId;
+        uint64_t incarnation = 0;
+        ElementType type = ElementType::Unknown;
+        std::string typeName;
+        void* actor = nullptr;
+        int32_t internalIdx = -1;
+        bool mirror = false, deleting = false;
+    };
+    bool ReadIdentity(ElementId id, IdentitySnapshot& out) const;
+    size_t SnapshotIdentitiesByType(ElementType type, std::vector<IdentitySnapshot>& out) const;
+
     // Deliberately no bulk Reset: each subsystem owns the lifetime of the Elements it allocates and
     // releases them on its own disconnect hook by draining its container, so the destructors free
     // the ids. A global reset would destroy other subsystems' elements and double-free ids when

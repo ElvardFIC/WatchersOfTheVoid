@@ -3,6 +3,8 @@
 #include "ue_wrap/engine/save_browser.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/fname_utils.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"        // GetSavePrefix / DeriveModeFromSlot
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/engine/gvas_meta.h"     // worker-thread .sav metadata reads (no LoadGameFromSlot)
@@ -358,8 +360,23 @@ bool SlotExists(const std::wstring& slot) {
     return f.Get<bool>(L"ReturnValue");
 }
 
+bool InitializeNewGameMap(void* save,uint8_t mode) {
+    if (!game_mode::IsValid(mode) || !save || !R::IsLive(save)) return false;
+    CachedObjRef owner,cls;
+    owner.Set(save); cls.Set(R::ClassOf(save));
+    if (!owner.Get() || !cls.Get()) return false;
+    const int32_t offset=R::FindPropertyOffset(cls.Get(),L"mainMap");
+    if (offset<0) return false;
+    const auto level=fname_utils::StringToFName(game_mode::DefaultLevel(mode));
+    if ((!level.ComparisonIndex && !level.Number) || !owner.Get() || !cls.Get() ||
+        R::ClassOf(save)!=cls.Get()) return false;
+    std::memcpy(static_cast<uint8_t*>(save)+offset,&level,sizeof(level));
+    return true;
+}
+
 bool CreateNamedSave(const std::wstring& name, uint8_t mode, std::wstring& outSlot) {
     outSlot.clear();
+    if (!game_mode::IsValid(mode)) return false;
     if (name.empty()) { UE_LOGW("save_browser: CreateNamedSave -- empty name"); return false; }
     if (!ResolveGs()) { UE_LOGW("save_browser: CreateNamedSave -- GameplayStatics not resolved"); return false; }
 
@@ -386,6 +403,10 @@ bool CreateNamedSave(const std::wstring& name, uint8_t mode, std::wstring& outSl
         save = f.Get<void*>(L"ReturnValue");
     }
     if (!save) { UE_LOGW("save_browser: CreateSaveGameObject returned null"); return false; }
+    if (!InitializeNewGameMap(save,mode)) {
+        UE_LOGW("save_browser: new save mainMap unavailable (mode=%u)",unsigned(mode));
+        return false;
+    }
 
     // Stamp Version as the native create does (lib_C::gameVersion), because a blank CDO-default
     // object serializes an empty one and every save row then paints the red "unk!" badge. The

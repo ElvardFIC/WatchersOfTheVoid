@@ -6,6 +6,7 @@
 // npc_pose_host.cpp, the install in npc_sync_install.cpp, the world walk in npc_world_enum.cpp.
 
 #include "coop/creatures/npc_sync.h"
+#include "coop/creatures/npc_join_delivery.h"
 #include "coop/creatures/npc_class_policy.h"
 #include "npc_sync_internal.h"  // install/state seam (impl-private, src-local): shared globals + callback decls
 
@@ -16,6 +17,7 @@
 #include "coop/element/identity_destroy.h"   // RetireMirror, the single destroy funnel
 #include "coop/element/npc.h"
 #include "coop/element/registry.h"
+#include "coop/creatures/geom_octa_sync.h"  // OnNpcSpawnSent: the Octa's events follow its spawn's send
 #include "coop/creatures/kerfur_entity.h"   // AllocKerfurId and ReleaseKerfurForEid, the id's two ends
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
@@ -302,10 +304,16 @@ bool NpcSuppress_Interceptor(void* self, void* params) {
         // An alone host's spawns, and those made while every client is still loading, are
         // delivered by the join snapshot (the connect broadcast) instead: MTA's broadcast skips a
         // player not yet joined (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:167).
-        if (s->connected() && s->AnyWorldReadyPeer() && !s->SendEntitySpawn(p)) {
-            UE_LOGW("npc-sync[host]: SendEntitySpawn failed (reliable channel busy?) -- NPC elementId=%u not broadcast",
-                    p.elementId);
+        bool spawnSent = false;
+        if (s->connected() && s->AnyWorldReadyPeer()) {
+            spawnSent = s->SendEntitySpawn(p);
+            if (!spawnSent)
+                UE_LOGW("npc-sync[host]: SendEntitySpawn failed (reliable channel busy?) -- NPC elementId=%u not broadcast",
+                        p.elementId);
         }
+        // The Geom Octa's lane sends none of its events before the spawn's send; this is before the actor exists. When no
+        // peer was world-ready nothing was sent, and the join's snapshot carries the spawn instead.
+        coop::geom_octa_sync::OnNpcSpawnSent(p.elementId, nullptr, p.className.data, p.className.len, spawnSent, -1);
         // The original spawn always proceeds on the host (false = pass-through).
         return false;
     }
@@ -367,6 +375,7 @@ void MarkIncomingNpcSpawn(void* npcClass) {
 }
 
 void OnDisconnect() {
+    coop::npc_join_delivery::OnDisconnect();
     // One drain for both roles: npc_mirror::DrainClientMirrors empties the manager, destroying only
     // the IsMirror() elements (client mirrors) and releasing the host's real Elements (their actors
     // stay in the world). Drain first, then clear the reverse map: a POST racing on a worker can

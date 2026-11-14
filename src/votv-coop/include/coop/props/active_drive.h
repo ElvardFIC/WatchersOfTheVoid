@@ -6,7 +6,7 @@
 // CClientVehicle::UpdateTargetPosition, whose fAlpha is Unlerp(start, now, finish).
 //
 // TWO consumers, same primitive:
-//   * remote_prop.cpp -- a std::array<ActiveDrive, kMaxPeers> g_drives, ONE per peer slot,
+//   * remote_prop_drive.cpp -- a std::array<ActiveDrive, kMaxPeers> g_drives, ONE per peer slot,
 //                        each client kinematically driving its own held prop.
 //   * trash_clump_pose_stream.cpp -- a std::unordered_map<eid, ActiveDrive>, ONE per
 //                        host-driven trash clump.
@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace coop::active_drive {
@@ -83,7 +84,7 @@ constexpr uint64_t kLerpMinMs   = 16;     // ~one 60 fps frame
 constexpr uint64_t kLerpMaxMs   = 200;    // ~5 Hz floor (a gappy stream still converges)
 constexpr float    kSnapDist    = 500.f;  // 5 m: beyond this, snap instead of interpolate
 constexpr float    kSnapDistSq  = kSnapDist * kSnapDist;
-// Per-tick dirty-gate epsilons: at 125 Hz the interp step is often sub-visible -- a held-but-still
+// Per-tick dirty-gate epsilons: at ~60 Hz the interp step is often sub-visible -- a held-but-still
 // clump, or a sub-cm creep. Skip the engine write below these (the skipped delta accumulates until
 // it crosses). Conservative so a slow drift still steps invisibly (sub-pixel at gameplay scale).
 constexpr float    kLerpEpsLocSq = 0.25f * 0.25f;  // 0.25 cm
@@ -120,7 +121,8 @@ inline void ResetDriveState(ActiveDrive& d) {
 // pose interval. Game thread. (Decoupled from any wire struct so BOTH the PropPose receiver and
 // the TrashCarryPose receiver feed it.)
 inline void BeginLerpToPose(ActiveDrive& d, const ue_wrap::FVector& nloc,
-                            const ue_wrap::FRotator& nrot, uint64_t nowMs) {
+                            const ue_wrap::FRotator& nrot, uint64_t nowMs,
+                            const std::function<bool()>& current = {}) {
     // Distance from the LAST RECEIVED pose (not the rendered position): detects a teleport / post-gap
     // catch-up that should snap rather than crawl across the map. (Comparing to renderedLoc would mistake
     // a normal render-delay lag for a teleport.)
@@ -135,8 +137,10 @@ inline void BeginLerpToPose(ActiveDrive& d, const ue_wrap::FVector& nloc,
         d.haveTwoSnaps = false;     // only one distinct sample -> sit at it until the next pose
         d.lerpSeeded   = true;
         if (void* a = d.LiveActor()) {
-            E::SetActorLocation(a, nloc);
-            E::SetActorRotation(a, nrot);
+            // No access to d after dispatch: its owner can be erased by a setter.
+            // Dynamic owners additionally supply their revision/lifetime guard.
+            if ((!current || current()) && E::SetActorLocation(a, nloc) && (!current || current()))
+                E::SetActorRotation(a, nrot);
         }
         return;
     }
@@ -171,7 +175,7 @@ inline ue_wrap::FVector PresentationVelocity(const ActiveDrive& d, uint64_t nowM
 }
 
 // Advance every tick, including packet gaps; freeze on arrival, never extrapolate.
-inline void AdvanceLerp(ActiveDrive& d, uint64_t nowMs) {
+inline void AdvanceLerp(ActiveDrive& d, uint64_t nowMs, const std::function<bool()>& current = {}) {
     if (!d.actor) return;
     if (!d.LiveActor()) { d.haveTwoSnaps = false; return; }
     if (!d.isTrashMirror || !d.haveTwoSnaps) return;   // others snapped in BeginLerp; <2 samples -> sit at the pose
@@ -202,10 +206,12 @@ inline void AdvanceLerp(ActiveDrive& d, uint64_t nowMs) {
                    + std::fabs(ue_wrap::NormalizeAxis(rot.Yaw   - d.renderedRot.Yaw))
                    + std::fabs(ue_wrap::NormalizeAxis(rot.Roll  - d.renderedRot.Roll));
     if (dl < kLerpEpsLocSq && dr < kLerpEpsRotDeg) return;   // within epsilon -> no redundant write
-    E::SetActorLocation(d.actor, loc);
-    E::SetActorRotation(d.actor, rot);
+    void* actor = d.actor;
+    // Commit before dispatch, so a callback may retire/replace the owner safely.
     d.renderedLoc = loc;
     d.renderedRot = rot;
+    if ((!current || current()) && E::SetActorLocation(actor, loc) && (!current || current()))
+        E::SetActorRotation(actor, rot);
 }
 
 }  // namespace coop::active_drive

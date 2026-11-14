@@ -440,6 +440,20 @@ void PrimeClassWalk(const wchar_t* className, uint64_t hash, void* cls) {
     e.cls.Set(cls);  // fresh from the caller's walk
 }
 
+// The class-default-object cache for FindClassDefaultObject. That lookup resolves a name that
+// FindObject can only answer by walking the whole object array, and FindObject deliberately
+// caches nothing (an object is not a class: it dies and its slot is recycled), so EVERY call
+// paid a full walk. The lanes that ask for a library CDO at each use rather than once -- the
+// sat_console layout guard is the one that hurt -- therefore walked the array several times a
+// pump tick: 300 walks/s on a client, ~2 ms each, which was 95% of its frame. Primed on the
+// walk's own hit and revalidated by slot before the name deref, exactly like the class cache.
+struct CachedCdo {
+    std::wstring name;  // the class name as it was asked, for the collision check
+    ue_wrap::CachedObjRef object;
+};
+std::mutex g_cdoCacheMu;
+std::unordered_map<uint64_t, CachedCdo> g_cdoCache;
+
 // The per-object match for the walkers. Fast path: a pointer compare against the walk-cached
 // class. Slow path: render-compare, and prime the cache on the first hit so the rest of this
 // walk and every later walk take the fast path.
@@ -544,7 +558,37 @@ void* FindClassDefaultObject(const wchar_t* className) {
     if (!className) return nullptr;
     std::wstring defName = L"Default__";
     defName += className;
-    return FindObject(defName.c_str());
+    const uint64_t hash = Fnv1a(className);
+    // A cached CDO is trusted only while its slot still holds it AND both names still hold: the
+    // object is Default__<Class> and its class answers to <Class>. A recycled slot fails the
+    // first, a class reloaded under another name the second.
+    ue_wrap::CachedObjRef cached;
+    bool have = false;
+    {
+        std::lock_guard<std::mutex> lk(g_cdoCacheMu);
+        auto it = g_cdoCache.find(hash);
+        if (it != g_cdoCache.end() && ::wcscmp(it->second.name.c_str(), className) == 0) {
+            cached = it->second.object;
+            have = true;
+        }
+    }
+    if (have) {
+        void* live = cached.Get();
+        if (live && NameEquals(NameOf(live), defName.c_str()) &&
+            NameEquals(NameOf(ClassOf(live)), className))
+            return live;
+        std::lock_guard<std::mutex> lk(g_cdoCacheMu);
+        auto it = g_cdoCache.find(hash);
+        if (it != g_cdoCache.end() && it->second.object.Raw() == cached.Raw()) g_cdoCache.erase(it);
+    }
+    void* found = FindObject(defName.c_str());
+    if (found) {
+        std::lock_guard<std::mutex> lk(g_cdoCacheMu);
+        auto& e = g_cdoCache[hash];
+        if (e.name.empty()) e.name = className;
+        if (::wcscmp(e.name.c_str(), className) == 0) e.object.Set(found);
+    }
+    return found;
 }
 
 std::vector<ObjectRef> ChildObjectsOf(void* outer) {

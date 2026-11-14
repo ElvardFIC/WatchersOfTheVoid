@@ -5,7 +5,8 @@
 // coop/props/remote_prop_spawn.h -- the wire-driven PropSpawn receiver: the OnSpawn pipeline that
 // materializes a wire-received Prop on the receiving side. It validates the payload, then tries an
 // EXACT-KEY dedup, then a FUZZY-POSITION one (a same-class actor within 30 cm, rekeyed through
-// Aprop_C.setKey), and only then a fresh spawn; it ends by registering the actor as a Prop mirror
+// Aprop_C.setKey; inside the snapshot bracket it waits for the bracket's end, props/bracket_position_wait), and only
+// then a fresh spawn; it ends by registering the actor as a Prop mirror
 // at the sender's eid, unless `skipBind` below hands that job to the caller. A dedup hit converges the transform and restores collision for
 // the classes that want it, but skips the convergence write while the actor is under active
 // PropPose drive, because the stream owns position while a prop is held.
@@ -46,6 +47,16 @@ std::wstring ClassNameToWString(const coop::net::WireClassName& cn);
 void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
              void* localPlayer, bool fromConvert = false, bool deferKerfur = true,
              void** outSpawned = nullptr, bool skipBind = false);
+
+// The radius of the position match: a same-class actor this near the wire prop is its twin.
+inline constexpr float kFuzzyRadiusCm = 30.f;
+
+// Adopts `actor`, a position match the caller chose, as the mirror of the wire prop: the
+// host-authority handback, the claim, the held and drive guards, the converge, the rekey to the
+// wire key and the mirror binding. Every path ends the spawn; the caller makes no further move.
+// `localPlayer` is the live AmainPlayer_C (possibly null), as for OnSpawn. Game thread.
+void AdoptByPosition(const coop::net::PropSpawnPayload& payload, int senderSlot,
+                     void* actor, void* localPlayer);
 
 
 }  // namespace coop::remote_prop_spawn

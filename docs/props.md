@@ -52,6 +52,12 @@ the destroy-and-recreate that made the record need to travel in the first place.
 for the same key replaces the waiting one whether it applies at once or waits too, so an older
 record never lands on top of a newer one.
 
+Drive boxes and reel cases also publish after each native `upd` mutation, including consecutive
+changes in one frame. A timed notification window would discard a distinct insertion or lid change
+without publishing its final record. Mirrored applications and a joining client's load churn stay
+excluded so records do not echo. `[V]` `.github/ci/prop_record_refresh_drill.py` executes the
+production callback with isolated engine boundaries; two-peer gameplay remains a separate check.
+
 On the host, a prop born during play -- a device's eject, a drop, a place -- gets its record from
 the finish-spawning drain a tick after the birth, because the Blueprint that spawned it fills its
 state in after the finish call returns: a disc's eject loads it from the slot's JSON there. The
@@ -152,12 +158,46 @@ player flicked the camera. The receiver's copy takes the flags and lets go from 
 transform, so lost last poses still end where the holder's did, and gets the velocity back unless it
 ended frozen in a slot or a mount, where it stays; a stuck wall-attachable keeps the place its stick
 gave it. A release for a prop something else moves now -- this peer's own grab, another hold, the
-host's driven-prop channel -- changes nothing but its own hold. Above a launch speed the receiver
-also calls the prop's own thrown event, so the sound and the trail come from the engine. A stream
-that stops for half a second, or a holder that switches to another prop, is an implicit release.
+host's driven-prop channel -- changes nothing but its own hold. A release the holder numbered also
+makes the receiver call the prop's own thrown event, so the sound and the trail come from the engine.
+A stream that stops for half a second, or a holder that switches to another prop, is an implicit release.
 Grab and throw sounds the game plays only for the local player are synthesised on the receiver at
 the prop's position (`coop/props/prop_sound`), and the pocket blip is relayed
 (`coop/items/inventory_pickup_sync`).
+
+A throw is the game's own `throwShit` on the local pawn: it sets the launch velocity, and every throw
+path calls it (`mainPlayer_C`'s hand throw, the grabbed prop's fire press, the host's own). A
+script-gate watch on it, filtered to the local pawn by identity, numbers the throw with a sequence that
+is never 0 and records it (`coop/props/prop_throw`). The sequence rides the release and the drop intent;
+0 means the prop was not thrown, and a fast release with none plays no thrown event. The host then
+elects the thrower the prop's syncer, the way MTA's server elects an unoccupied vehicle's: a client's
+release from the prop's last holder, or the drop intent of a hand throw once the host's spawn has its
+element id, opens a driven row naming the thrower under a new generation and sends the grant unasked
+(`PropSyncAnswer`, whose `seq` is the sequence). The thrower's copy has flown since the throw and is
+never parked; it streams its pose, velocity and clock on the drive channel, the host's copy follows
+the first admitted row, and every other client receives the host's republish. A row's velocity, a release's,
+a drop intent's and an End's are clamped to the throw's bounds (`coop/net/throw_bounds.h`; a throw's spin
+meets throwShit's ceiling, every other spin a looser body ceiling), and the host relays a client's release
+to the other clients itself, after the clamp. The election also needs the release within reach of the
+thrower's puppet on the host (the claim's reach); out of reach, the release applies as a plain release.
+
+A thrown prop's rows cost trust, never display. A row whose step does not agree with the speed a prop can
+fly is shown like any other (the host's copy and every other client follow it) and counted on the row; a
+passing row resets the run. After `kMaxRefusedRows` failures in a row, or twice that many over the flight,
+the thrower's right is revoked: the host takes the prop back from the last passing row's pose and velocity
+under a new generation (when no row passed, from the release pose at rest), and one line names the slot and
+the counts. This diverges from MTA, which bounds nothing on an unoccupied-vehicle
+syncer's packet; ours follows the rule that a client's discontinuity costs trust. The host's own grab
+throw opens a coast row that streams it to rest. The host's grab, a flight past its bound, a grant that
+no row follows, a thrower who leaves, a thrower who falls silent (no admitted row for `kThrowSilenceMs`,
+judged per host tick; a claim's row keeps the once-a-second pass and its 5 s) and any end of a thrown prop
+nothing was admitted for hand the prop to the host; its copy then continues from the last passing row's pose and velocity (from the release
+pose at rest when rows came and none passed; its own state when none came) and every copy follows the host. `[?]` until the throw arms read them.
+
+Joining mid-flight: a peer that becomes world-ready while a thrown prop flies gets the host's copy from
+the prop's spawn, the drive's resend of the admitted pose (`OnPeerWorldReady`), and then the relayed
+rows of the elected syncer, each carrying the row's generation. A joiner is never the thrower, so it is
+never elected. `[?]` until the join arm of the throw drill reads it.
 
 ### Dragged by a hook
 
@@ -212,11 +252,31 @@ per-peer array in the save object, addressed by an index the container holds, an
 verb runs inside the Blueprint, below the two dispatch seams a hook can intercept. The
 script-body gate does see it -- that is how this lane learns a container changed -- but it runs on
 the presser's own machine, and no local body can wait for an answer from across the network. So
-the peer whose verb fired authors the contents and the host arbitrates them (`coop/props/container_contents_sync`): one slice of its
-array per live container is sent at a joiner's ready edge and on change, a client's slice is
-accepted only if its author could have reached that container, has not sent more in the last
-second than an honest client produces, and edited the truth the host last published, and an
-extraction on a client is a container-extract birth through the intent door above. The open and closed state is a keyed-device channel like a
+the host publishes the contents (`coop/props/container_contents_sync`): one slice of its
+array per live container is sent at a joiner's ready edge and on change, and a client's mirror is
+display only. A client's only slice is a thrown container's birth, bounded by its arrival rate;
+the host refuses every other client slice and answers the author with its own truth
+(`coop/props/container_truth`). A change a client makes to a shared container is an act the host
+judges, and an extraction on a client is a container-extract birth through the intent door above. The game arms a
+container's overlap box (the trigger a thrown prop enters to be filed) when a record leaves the container by a player's
+take, through the container's own `dingus`; the host's raw record edit never runs it, so the host calls `dingus` once a
+client's take is final (`container_act_host`) `[?]`. Whether that box is armed is the host's own physical state: every
+slice the host publishes carries it in a flags byte (`coop/props/container_arming`, `container_slice_wire`), a native hook
+on `SetCollisionEnabled` marks the container for publication when the box changes (a host take, a broken container, a
+roomba's own writes included), and a client's mirror takes its box from the byte and cancels its own `dingus` on a shared
+container, so a mirror's trigger is never armed by a client alone `[?]`. A prop a client drives into an armed box is
+judged by the host at the host's own overlap, with no client message: the host's copy is kinematic there, so the box's
+own body would refuse it, and a PRE on `putObjectIn_overlap` judges it instead (the box is armed, a held or claimed
+driver is within reach, no client holds the container, the body's silent gates pass, the prop fits), ends the driver's
+row or drive so the copy simulates, and lets the game's body file it. Every such put is filed, refused with its reason, or
+dropped and counted. A put that cannot be judged yet waits for the edge it needs: a client's hold ending, the prop's id
+binding, or the container changing (the last two for at most 2 s, then it is refused as unread); the host's own put on a
+held container waits too. A prop still in the box by then with no driver is pre-checked the same way and the game's body
+runs on it, since it fires no second overlap, and the game's own body may still refuse it. A refusal stands while the
+same drive does, until the container changes. A client's own copy of the call on a shared mirror is cancelled when it
+comes from the container's own overlap graph. A joiner needs no replay: the put is one host step, so a joiner seeded
+before it receives the prop's destroy and the container's publication, and one seeded after receives the container with
+the record `[?]`. The open and closed state is a keyed-device channel like a
 door's ([devices.md](devices.md)). The full break-and-spill behaviour, and the single-slot verbs, are reverse-engineered
 and designed and not built.
 
@@ -253,8 +313,8 @@ text is the prop's save record and crosses on the record lane above with no mess
   host did not index the notebook yet) is judged by it too, and is republished to the other
   peers only when it lands, never at arrival. It is registered with
   `coop/props/prop_record_gates`; the record lane names no class.
-- **The close reaches the host while its sender holds.** The record rides the Bulk lane and the
-  release the Normal one, so a client keeps the claim after it closes the editor until the host's
+- **The close reaches the host while its sender holds.** A client keeps the claim after it closes
+  the editor until the host's
   republish of its last publish comes back (the lane's acknowledgement: the canonical record for
   that notebook's Key arriving after its publish), and lets go anyway after 10 s, logged. Opening
   an editor while that wait is pending ends it: the old claim goes, then the new open is handled.
@@ -367,10 +427,11 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 |---|---|---|
 | `PropPose` (stream) | the holder to all | the held prop's world transform, per frame, and its hold's generation |
 | `PropSpawn`, `PropDestroy` | the host to all; a destroy from either role | class, key, id, transform, physics flags, the birth scalar; the key and id |
-| `PropRelease` | the holder to all | the prop's transform, its inherited linear and angular velocity and its frozen and sleep at the edge, and the hold it closes |
-| `PropDrivePose` (stream) | the host to all | the poses of the props under a hook's drive or a broom's push that moved since their last one, with the claim generation |
-| `PropDriveEnd` | the host to all | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation |
-| `PropDropIntent`, `ReelEjectIntent` | a client to the host | a place, or an unavoidable birth, for the host to author |
+| `PropRelease` | the holder to all | the prop's transform, its inherited linear and angular velocity and its frozen and sleep at the edge, the hold it closes and the throw sequence (0 = not a throw); a client's goes through the host, which clamps it and sends it on |
+| `PropDrivePose` (stream) | the host to all; a syncing client to the host | the poses of the props under a hook's drive or a broom's push that moved since their last one, with the claim generation; a client's rows of the prop its own interaction moves, which the host judges before it relays one `[?]` |
+| `PropDriveEnd` | the host to all; a syncing client to the host | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation; a client's End is admitted when it is the row's syncer `[?]` |
+| `PropSyncClaim`, `PropSyncAnswer` | a client to the host; the host to that client | a client's request to sync a prop its interaction moves, and the host's grant, refusal (with the reason) or revoke (with the generation); the host also grants a thrown prop to its thrower unasked, `seq` being the throw sequence `[?]` |
+| `PropDropIntent`, `ReelEjectIntent` | a client to the host | a place, a throw or an unavoidable birth, for the host to author, with the placed root's velocity and the throw sequence |
 | `PropStickState` | the peer that sticks or frees it, to all | frozen or static, the commit pose and the hold the stick ended; or an unstick, with the pose and velocity |
 | `PropScaleState` (202) | holder to host; validated host state to all | key, id, hold generation and root scale; never blindly relayed |
 | `PropSnapPos` | the host to one joiner | a position correction for a save-authoritative prop moved in the join window, with a keyed prop's frozen and sleep |
@@ -602,7 +663,7 @@ These paths have offline native-contract and regression coverage; two-peer gamep
 | sleeping bag and mattress replacement | `coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle` |
 | the birth and death seams | `coop/props/prop_lifecycle`, `coop/props/host_spawn_watcher`, `coop/props/prop_element_tracker`, `coop/props/prop_synth_key`, `coop/props/registry_reaper`, `coop/props/prop_echo_suppress` |
 | the receivers | `coop/props/remote_prop` (held), `coop/props/remote_prop_spawn` (birth: adopt, converge, create), `coop/props/prop_fresh_spawn` (the materialiser), `coop/props/prop_wire_parity`, `coop/props/active_drive`, `coop/props/prop_sound` |
-| a client's intents | `coop/props/prop_drop_intent` |
+| a client's intents | `coop/props/prop_drop_intent`; a thrown prop: `coop/props/prop_throw`, `coop/net/throw_bounds` |
 | the stick | `coop/props/prop_stick_sync` |
 | a prop under a hook's drive or a broom's push | `coop/props/prop_drive_host` (the host's set and stream), `coop/props/prop_drive_stream` (the receiver), `coop/items/hook_prop_claim` (the hook lane feeding it), `coop/items/hook_constraint` (the tie itself, host-only), `coop/items/broom_push` (the broom's push feeding it) |
 | containers | `coop/props/container_contents_sync`, `coop/items/save_record_wire`, `coop/interactables/interactable_sync` |

@@ -1,5 +1,10 @@
 # AquaFishhh source handoff
 
+Historical source handoff; current priorities are in [TODO.md](TODO.md) and
+[WORK.md](WORK.md). Current development: 2161 / b2217.
+Upstream through `ad5315611` is now merged; the unmerged status below describes
+the original handoff snapshot only.
+
 Integrated locally into main as protocol 2176 on 21 October 2026. This file
 records the original branch, not the integrated build validation; see WORK.md
 and TESTLOG.md for adaptations, retained main behavior and current results.

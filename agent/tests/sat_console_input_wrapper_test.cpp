@@ -26,22 +26,30 @@ struct Obj {
     ue_wrap::field_io::FStringView command{};
     void* box=nullptr;
     int cleared=0;
+    uint8_t processing=0;void* panel=nullptr;void* used=nullptr;void* dish=nullptr;void* atlasTerm=nullptr;
+    ue_wrap::field_io::FStringView label{},log{},logText{};
+    ue_wrap::field_io::TArrayView panels{};
 };
-std::array<Obj,16> objects;
+std::array<Obj,24> objects;
 Obj& term=objects[1]; Obj& box=objects[2]; Obj& replacement=objects[3];
 Obj& termClass=objects[4]; Obj& boxClass=objects[5]; Obj& setText=objects[6];
 Obj& textLibrary=objects[7]; Obj& mintText=objects[8]; Obj& otherClass=objects[9];
 Obj& otherFunction=objects[10]; Obj& otherTerm=objects[11];
 uint32_t world=0;
 bool current=true, mintOk=true, callOk=true, paramsOk=true;
+bool metadataReady=false,missingEnter=false,missingWrite=false,missingInit=false;
 int frameBytes=ue_wrap::ftext_utils::kFTextSize;
 int mints=0, calls=0, frees=0;
 void* shown=nullptr;
 std::function<void()> onMint, onFrame, onParams, onSetText, onFree;
+bool nativeMode=false,missingLogText=false;int nativeCalls=0,nativeFrameSize=-1;
+void* terminalBinding=nullptr;void* atlasObject=nullptr;void* deskObject=nullptr;
+void* writeBinding=nullptr;void* libraryBinding=nullptr;
+std::function<void()> onProperty,onNative,onName;
 
 void Fire(std::function<void()>& hook) { auto copy=std::move(hook); hook={}; if(copy)copy(); }
 void Reset() {
-    for(auto& obj:objects)if(obj.command.data)std::free(obj.command.data);
+    for(auto& obj:objects)for(auto* field:{&obj.command,&obj.label,&obj.log,&obj.logText})if(field->data)std::free(field->data);
     ++world;
     for(int i=0;i<int(objects.size());++i){objects[i]={};objects[i].id=i;objects[i].serial=int(world)*100;}
     term.cls=&termClass; otherTerm.cls=&termClass;
@@ -52,9 +60,18 @@ void Reset() {
     current=mintOk=callOk=paramsOk=true;frameBytes=ue_wrap::ftext_utils::kFTextSize;
     mints=calls=frees=0;shown=&term;onMint=onFrame=onParams=onSetText=onFree={};
     SC::g_termCls.Set(&termClass);SC::g_resolved=true;
+    for(auto& ref:SC::g_layoutRefs)ref.Set(&termClass);
+    for(int i=4;i<8;++i)SC::g_layoutRefs[i].Set(&setText);
+    SC::g_layoutRefs[8].Set(&textLibrary);SC::g_layoutRefs[9].Set(&otherClass);SC::g_layoutRefs[10].Set(&setText);
+    SC::g_wblCdo=&textLibrary;SC::g_fnCreate=&setText;
+    SC::g_nextTryMs=0;SC::g_attempts=0;SC::g_resolving=false;
+    metadataReady=missingEnter=missingWrite=missingInit=false;
+    nativeMode=missingLogText=false;nativeCalls=0;nativeFrameSize=-1;
+    terminalBinding=atlasObject=deskObject=writeBinding=libraryBinding=nullptr;onProperty=onNative=onName={};
     SC::g_offCommand=int(offsetof(Obj,command));SC::g_offTextBox=int(offsetof(Obj,box));SC::g_fnSetText=&setText;
     ue_wrap::ftext_utils::g_cached=false;ue_wrap::ftext_utils::g_ktlCdo=nullptr;
     ue_wrap::ftext_utils::g_convStrToTextFn=nullptr;ue_wrap::ftext_utils::g_inputParam=nullptr;
+    ue_wrap::fstring_utils::g_kslCdo=nullptr;ue_wrap::fstring_utils::g_concatFn=nullptr;
 }
 bool Consume() {
     const auto sourceWorld=world;
@@ -71,29 +88,73 @@ int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 bool IsLiveByIndex(void* p,int32_t i){return p && ObjectAt(i)==p && test::objects[i].live;}
 bool IsLive(void* p){return p && IsLiveByIndex(p,InternalIndexOf(p));}
 void* ClassOf(void* p){return p?static_cast<test::Obj*>(p)->cls:nullptr;}
-void* FindClass(const wchar_t*){return &test::termClass;}
-void* FindClassDefaultObject(const wchar_t*){return &test::textLibrary;}
-void* FindFunction(void*,const wchar_t* name){return !std::wcscmp(name,L"Conv_StringToText")?&test::mintText:&test::setText;}
-void* FindDispatchFunctionCached(void*,const wchar_t*){return &test::setText;}
-int32_t FindPropertyOffset(void*,const wchar_t*){return -1;}
-bool FindBoolProperty(void*,const wchar_t*,int32_t&,uint8_t&){return false;}
-int32_t FindParamOffset(void*,const wchar_t*){return 0;}
+void* FindClass(const wchar_t* name){if(test::nativeMode){
+    if(!std::wcscmp(name,L"ui_consolesAtlas_C"))return &test::objects[22];
+    if(!std::wcscmp(name,L"analogDScreenTest_C"))return &test::objects[23];
+    if(!std::wcscmp(name,L"EditableTextBox"))return &test::boxClass;
+    if(test::terminalBinding)return test::terminalBinding;
+}return &test::termClass;}
+void* FindClassDefaultObject(const wchar_t*){return test::libraryBinding?test::libraryBinding:&test::textLibrary;}
+void* FindFunction(void*,const wchar_t* name){
+    if((test::missingEnter&&!std::wcscmp(name,L"enterCommand")) ||
+       (test::missingWrite&&!std::wcscmp(name,L"writeToLog")) ||
+       (test::missingInit&&!std::wcscmp(name,L"init")))return nullptr;
+    if(test::nativeMode){if(!std::wcscmp(name,L"init"))return &test::objects[12];
+        if(!std::wcscmp(name,L"Concat_StrStr"))return &test::objects[21];
+        if(!std::wcscmp(name,L"enterCommand"))return &test::objects[13];
+        if(!std::wcscmp(name,L"writeToLog"))return test::writeBinding?test::writeBinding:&test::objects[14];
+        if(!std::wcscmp(name,L"Create"))return &test::objects[15];}
+    return !std::wcscmp(name,L"Conv_StringToText")?&test::mintText:&test::setText;
+}
+void* FindDispatchFunctionCached(void* cls,const wchar_t* name){return FindFunction(cls,name);}
+int32_t FindPropertyOffset(void*,const wchar_t* name){
+    if(test::nativeMode){test::Fire(test::onProperty);using O=test::Obj;
+        if(!std::wcscmp(name,L"logText"))return test::missingLogText?-1:int(offsetof(O,logText));
+        if(!std::wcscmp(name,L"panel"))return offsetof(O,panel);if(!std::wcscmp(name,L"used"))return offsetof(O,used);
+        if(!std::wcscmp(name,L"activeDish"))return offsetof(O,dish);if(!std::wcscmp(name,L"name"))return offsetof(O,label);
+        if(!std::wcscmp(name,L"command"))return offsetof(O,command);if(!std::wcscmp(name,L"EditableTextBox"))return offsetof(O,box);
+        if(!std::wcscmp(name,L"consoleLine"))return offsetof(O,log);if(!std::wcscmp(name,L"umg_console"))return offsetof(O,atlasTerm);
+        if(!std::wcscmp(name,L"consoles"))return offsetof(O,panels);return -1;
+    }return test::metadataReady?0:-1;}
+bool FindBoolProperty(void*,const wchar_t*,int32_t& offset,uint8_t& mask){if(!test::metadataReady)return false;offset=test::nativeMode?offsetof(test::Obj,processing):0;mask=1;return true;}
+int32_t FindParamOffset(void*,const wchar_t* name){if(test::nativeMode){if(!std::wcscmp(name,L"bracketsType"))return 16;if(!std::wcscmp(name,L"dish"))return 24;}return 0;}
 bool MarkPendingKill(void* p){static_cast<test::Obj*>(p)->live=false;return true;}
-const FName& NameOf(void*){static FName name{};return name;}
+const FName& NameOf(void*){test::Fire(test::onName);static FName name{};return name;}
 std::wstring ToString(const FName&){return L"test";}
 void* EngineAlloc(size_t bytes,uint32_t){return std::malloc(bytes);}
 void EngineFree(void* p){if(p){++test::frees;std::free(p);test::Fire(test::onFree);}}
 int32_t FunctionFrameSize(void* p){
     if(p==&test::mintText)return 16+ftext_utils::kFTextSize;
-    test::Fire(test::onFrame);return test::frameBytes;
+    test::Fire(test::onFrame);
+    if(test::nativeMode && p==&test::objects[21])return 48;
+    if(test::nativeMode && p!=&test::setText)return test::nativeFrameSize>=0?test::nativeFrameSize:40;
+    return test::frameBytes;
 }
 std::vector<ParamInfo> FunctionParams(void* p){
     if(p==&test::mintText)return {{L"InString",0,16,0},{L"ReturnValue",16,ftext_utils::kFTextSize,0}};
     test::Fire(test::onParams);
+    if(test::nativeMode){
+        if(p==&test::objects[21])return {{L"A",0,16,0},{L"B",16,16,0},{L"ReturnValue",32,16,0}};
+        if(p==&test::objects[12])return {{L"name",0,16,0},{L"hide",16,1,0},{L"dish",24,8,0}};
+        if(p==&test::objects[13])return {{L"c",0,16,0}};
+        if(p==&test::objects[14])return {{L"B",0,16,0},{L"bracketsType",16,1,0}};
+        if(p==&test::objects[15])return {{L"WorldContextObject",0,8,0},{L"WidgetType",8,8,0},{L"OwningPlayer",16,8,0},{L"ReturnValue",24,8,0}};
+    }
     return {{test::paramsOk?L"InText":L"Unknown",0,ftext_utils::kFTextSize,0}};
 }
 bool CallFunction(void* target,void* function,void* data){
     using namespace test;
+    if(nativeMode && function==&objects[21]){
+        auto input=*reinterpret_cast<ue_wrap::field_io::FStringView*>(static_cast<uint8_t*>(data)+16);
+        auto* copy=static_cast<wchar_t*>(std::malloc(size_t(input.num)*sizeof(wchar_t)));CHECK(copy);
+        std::memcpy(copy,input.data,size_t(input.num)*sizeof(wchar_t));
+        ue_wrap::field_io::FStringView result{copy,input.num,input.num};std::memcpy(static_cast<uint8_t*>(data)+32,&result,sizeof(result));return true;
+    }
+    if(nativeMode && function>=static_cast<void*>(&objects[12]) && function<=static_cast<void*>(&objects[15])){
+        ++nativeCalls;CHECK(target==&term || target==&textLibrary);
+        if(function==&objects[15]){void* made=&otherTerm;std::memcpy(static_cast<uint8_t*>(data)+24,&made,sizeof(made));}
+        Fire(onNative);return callOk;
+    }
     if(function==&mintText){
         CHECK(target==&textLibrary);auto* input=static_cast<FString*>(data);
         CHECK(input->Num==1 && input->Data && !input->Data[0]);++mints;Fire(onMint);
@@ -111,9 +172,10 @@ uint32_t Generation(){return test::world;}
 void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
 void* WorldOf(void*){return nullptr;} // these widgets belong to the game instance
 }
-namespace ue_wrap::console_desk {void* Instance(){return nullptr;}void* AtlasWidget(){return nullptr;}}
+namespace ue_wrap::console_desk {void* Instance(){return test::deskObject;}void* AtlasWidget(){return test::atlasObject;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 
+#ifndef SAT_CONSOLE_INPUT_FIXTURE_ONLY
 int main(){using namespace test;
     Reset();CHECK(Consume());CHECK(mints==1 && calls==1 && box.cleared==1 && frees==1);CHECK(!term.command.data && !term.command.num);
     Reset();CHECK(SC::ConsumeInput(&term));CHECK(calls==1 && box.cleared==1);
@@ -150,5 +212,37 @@ int main(){using namespace test;
     Reset();SC::g_resolved=false;CHECK(!Consume());Untouched();CHECK(!mints);
     Reset();SC::g_offCommand=-1;CHECK(!Consume());Untouched();CHECK(!mints);
     Reset();SC::g_offTextBox=-1;CHECK(!Consume());Untouched();CHECK(!mints);
-    Reset();puts("PASS production console input wrapper: real ParamFrame/FText/FString, no-box success, preparation/errors and callback/serial/field-owner guards");
+    Reset();SC::g_resolved=false;
+    for(int i=0;i<8;++i){SC::g_nextTryMs=0;CHECK(!SC::EnsureResolved());}
+    metadataReady=true;SC::g_nextTryMs=0;CHECK(SC::EnsureResolved());
+    puts("PASS console delayed metadata recovers after eight incomplete attempts");
+    // A new attempt cannot borrow a parameter offset from an incomplete predecessor.
+    for(bool write:{false,true}){
+        Reset();SC::g_resolved=false;metadataReady=true;missingInit=true;CHECK(!SC::EnsureResolved());
+        missingInit=false;if(write)missingWrite=true;else missingEnter=true;
+        SC::g_nextTryMs=0;CHECK(!SC::EnsureResolved());CHECK(write?SC::g_offWriteB<0:SC::g_offEnterC<0);
+        missingWrite=missingEnter=false;SC::g_nextTryMs=0;CHECK(SC::EnsureResolved());
+    }
+    puts("PASS console incomplete resolutions never reuse previous parameter offsets");
+    Reset();SC::g_resolved=false;metadataReady=true;CHECK(SC::EnsureResolved());
+    ++setText.serial;CHECK(!SC::LayoutCurrent());CHECK(SC::EnsureResolved());CHECK(SC::LayoutCurrent());
+    ++termClass.serial;CHECK(!SC::LayoutCurrent());CHECK(SC::EnsureResolved());CHECK(SC::LayoutCurrent());
+    puts("PASS console replaced class/function metadata re-resolves before use");
+    Reset();SC::g_offEnterC=0;SC::g_offWriteB=0;SC::g_offWriteType=sizeof(ue_wrap::field_io::FStringView);
+    struct Args {ue_wrap::field_io::FStringView value;uint8_t type=2;};
+    wchar_t good[]=L"help";Args args{{good,5,5}};std::wstring text;uint8_t type=0;
+    const auto* raw=reinterpret_cast<const uint8_t*>(&args);
+    CHECK(SC::ReadEnterCommandLine(raw,text)&&text==L"help");
+    CHECK(SC::ReadWriteToLogArgs(raw,text,type)&&text==L"help"&&type==2);
+    for(int mode=0;mode<5;++mode){args.value={good,5,5};
+        if(mode==0)args.value.num=-1;if(mode==1)args.value.max=2;
+        if(mode==2)args.value.data=nullptr;if(mode==3)args.value.num=70000;
+        if(mode==4){args.value.num=4;args.value.max=4;}
+        CHECK(!SC::ReadEnterCommandLine(raw,text));CHECK(!SC::ReadWriteToLogArgs(raw,text,type));
+    }
+    args.value={nullptr,0,0};CHECK(SC::ReadEnterCommandLine(raw,text)&&text.empty());
+    args.value={good,9000,9000};CHECK(!SC::ReadWriteToLogArgs(raw,text,type));
+    Reset();puts("PASS bounded console FString headers reject malformed storage and oversized output");
+    puts("PASS production console input wrapper: real ParamFrame/FText/FString, no-box success, preparation/errors and callback/serial/field-owner guards");
 }
+#endif

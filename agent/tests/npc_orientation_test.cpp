@@ -6,7 +6,7 @@
 #include "../../src/votv-coop/src/coop/creatures/npc_pose_drive.cpp"
 #include <cassert>
 #include <cstdio>
-namespace test {int actor=1,writes=0,landings=0;bool canWrite=true,canLand=false;float bodyYaw=0;ue_wrap::FRotator rotation{};ue_wrap::FVector position{};}
+namespace test {int actor=1,writes=0,landings=0,rufusWrites=0;bool canWrite=true,canLand=false,rufus=false,rufusReady=true;float bodyYaw=0;ue_wrap::FRotator rotation{};ue_wrap::FVector position{};}
 namespace ue_wrap::reflection {bool IsLiveByIndex(void* p,int32_t){return p==&test::actor;}}
 namespace ue_wrap::engine {
 bool SetActorLocation(void*,const FVector& p){++test::writes;if(!test::canWrite)return false;test::position=p;return true;}
@@ -22,6 +22,7 @@ void DriveKerfurState(void*,uint8_t,bool){}
 bool DriveKerfurFloppy(void*,bool,uint8_t){return true;}
 }
 namespace ue_wrap::fossilhound {void DriveBodyYaw(void*,float yaw){test::bodyYaw=yaw;}}
+namespace ue_wrap::rufus {bool IsFamily(void*){return test::rufus;}bool DriveBodyYaw(void*,float){++test::rufusWrites;return test::rufusReady;}}
 namespace ue_wrap::wisp {bool DriveWispLanding(void*){++test::landings;return test::canLand;}}
 namespace ue_wrap::sit_pose {void DriveSitting(void*,bool){}}
 int main(){
@@ -52,6 +53,10 @@ int main(){
  before=test::writes;npc.Tick();assert(test::writes==before);
  p.stateBits|=coop::net::kEntityPoseBitHasBodyYaw;p.bodyYaw=73;npc.SetTargetNpcPose(p);
  npc.window_.Open(NowMs()-75,75);npc.Tick();assert(test::bodyYaw==73);
+ // Missing Rufus animation/attachment must retry even after the pose stops moving.
+ test::rufus=true;test::rufusReady=false;p.bodyYaw=90;npc.SetTargetNpcPose(p);npc.window_.Open(NowMs()-75,75);npc.Tick();
+ assert(npc.dirty_&&test::rufusWrites==1);test::rufusReady=true;npc.Tick();assert(!npc.dirty_&&test::rufusWrites==2);
+ npc.Tick();assert(test::rufusWrites==2);test::rufus=false;
  // A grounded wisp retries its presentation independently of pose dirtiness and stops on success.
  npc.MarkWispMirror();npc.Tick();assert(test::landings==1);
  test::canLand=true;npc.Tick();npc.Tick();assert(test::landings==2);

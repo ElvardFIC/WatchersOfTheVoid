@@ -33,8 +33,14 @@ SG::Verdict OnDestroy(const SG::Call& call) {
 void Install(net::Session* session) {
     g_session.store(session, std::memory_order_release);
 
-    // Block native destruction on clients for both mannequin types.
-    SG::WatchClassName(L"prop_mannequin_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
-    SG::WatchClassName(L"prop_wMannequin_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
+    // Block native destruction on clients for both mannequin types. Their classes declare no script
+    // body for this verb, so the gate settles these watches dead; a per-tick re-register would take a
+    // fresh dead slot each time and fill the name table. Register once: settled is final.
+    static bool s_watchDone = false;
+    if (s_watchDone) return;
+    const bool plain = SG::WatchClassName(L"prop_mannequin_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
+    const bool worn  = SG::WatchClassName(L"prop_wMannequin_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
+    s_watchDone = (plain || SG::ClassNameWatchSettled(L"prop_mannequin_C", L"K2_DestroyActor", 0)) &&
+                  (worn || SG::ClassNameWatchSettled(L"prop_wMannequin_C", L"K2_DestroyActor", 0));
 }
 }

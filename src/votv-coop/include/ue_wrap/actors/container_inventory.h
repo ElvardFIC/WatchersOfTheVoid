@@ -56,6 +56,29 @@ bool ReadContents(void* inventory, std::vector<save_record::SaveRecord>& out, si
 // True means committed/already present, including reentry during old-buffer cleanup.
 bool RefundRecordWhile(void* inventory, const save_record::SaveRecord& record,
                        const std::function<bool()>& current);
+// The record count of GObjStack[stackIndex], the contents of the container whose Index that is. False when the save
+// slot, the field or the index (negative, or past the array) does not resolve; `count` is then 0.
+bool ReadStackCount(int32_t stackIndex, int32_t& count);
+
+// The GObjStack index a container record carries (ints[0][0]; an empty array reads as 0, as the game reads it).
+// False when the record is not a container's.
+bool ContainerStackIndex(const save_record::SaveRecord& r, int32_t& index);
+
+// What a put into `container` is judged on, as propInventory.addObject reads it: the volume room, whether the
+// inventory is infinite, whether the container is a mailbox, whether it is locked (playerUsedOn returns early on it).
+struct PutTerms {
+    float maxVol;
+    float currVol;
+    bool infinite;
+    bool ownerIsMailbox;
+    bool locked;
+};
+// False when `container` has no live inventory or a field does not resolve; `out` is then zeroed.
+bool ReadPutTerms(void* container, PutTerms& out);
+
+// Whether the inventory's filter holds the class `cls` (an exact class, as addObject asks it). False when the filter
+// does not read; `holds` is then false.
+bool FilterHolds(void* inventory, void* cls, bool& holds);
 
 // Whether a record's class is a container. A container record's ints[0][0] is its own GObjStack index,
 // which prop_container::loadData reads unguarded and propInventory::init binds when it is >= 0; -1 is
@@ -75,5 +98,24 @@ void RederiveShownStateWhile(void* container, void* inventory, const std::functi
 
 // The inventory's currVol. False when the field does not resolve.
 bool CurrentVolume(void* inventory, float& out);
+
+// The inventory's maxVol, the capacity addObject's volume check reads (a take fits while the item's volume plus
+// currVol is at most maxVol). False when the field does not resolve.
+bool MaxVolume(void* inventory, float& out);
+// Dev: a raw write of maxVol, for the intent drill's full-pocket arm; the caller writes the old value back. False
+// when the field does not resolve.
+bool SetMaxVolume(void* inventory, float value);
+
+// Whether the container's inventory component has run its init: its `obj` field, set on init's first
+// line and never cleared, is live. False when the component or the field does not resolve.
+bool InventoryInitialized(void* container);
+
+// Whether the gamemode's allContainers field resolves, which AllContainers cannot say: it reads an
+// empty registry and an unresolved field both as zero entries.
+bool AllContainersResolved(void* gamemode);
+
+// The gamemode's allContainers registry, null and non-live entries skipped: copies up to `cap` actor
+// pointers into `out` and returns the count copied. Zero when the gamemode or the field does not resolve.
+size_t AllContainers(void* gamemode, void** out, size_t cap);
 
 }  // namespace ue_wrap::container_inventory

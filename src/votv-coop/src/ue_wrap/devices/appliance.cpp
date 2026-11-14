@@ -255,14 +255,32 @@ bool WriteOvenFixed(void* oven, bool fixed) {
 }
 
 bool CallAction(void* a, void* player, uint8_t action) {
+    return CallActionWhile(a, player, action, {});
+}
+
+bool CallActionWhile(void* a, void* player, uint8_t action, const std::function<bool()>& current) {
+    if (!a) return false;
+    CachedObjRef actorRef, playerRef, classRef, functionRef;
+    actorRef.Set(a); playerRef.Set(player);
+    const auto actorsLive = [&] { return actorRef.Get() && (!player || playerRef.Get()); };
+    if (!actorsLive() || (current && !current()) || !actorsLive()) return false;
     void* cls = a ? R::ClassOf(a) : nullptr;
+    classRef.Set(cls);
     void* fn = cls ? R::FindDispatchFunctionCached(cls, L"actionOptionIndex") : nullptr;
-    if (!fn) return false;
+    if (!actorsLive() || !classRef.Get() || !fn) return false;
+    functionRef.Set(fn);
+    const auto live = [&] {
+        if (!actorsLive() || !classRef.Get() || !functionRef.Get()) return false;
+        if (current && !current()) return false;
+        return actorsLive() && classRef.Get() && functionRef.Get() && R::ClassOf(a) == cls;
+    };
+    if (!live()) return false;
     ParamFrame f(fn);
-    if (!f.valid()) return false;
-    f.Set<void*>(L"player", player);
-    f.Set<uint8_t>(L"action", action);
-    return Call(a, f);
+    if (!f.valid() || !live()) return false;
+    if (!f.Set<void*>(L"player", player) || !live()) return false;
+    if (!f.Set<uint8_t>(L"action", action) || !live()) return false;
+    const bool ran = Call(a, f);
+    return live() && ran;
 }
 
 }  // namespace ue_wrap::appliance

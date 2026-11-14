@@ -95,6 +95,9 @@ void Invalidate(int reason){
 }
 int main(){using namespace test;
  Reset();CHECK(S::ApplyRecord(&actor,Incoming(),nullptr)&&bases==1&&writes==1&&loads==1);
+ Reset();encodingOK=false;const auto pending=Incoming();
+ CHECK(!S::ApplyRecord(&actor,pending,nullptr) && writes==1 && !loads);
+ encodingOK=true;CHECK(S::ApplyRecord(&actor,pending,nullptr) && writes==2 && loads==1);
  // A live actor can acquire another key while native getData is running.
  Reset();onBase=[]{key=L"new_item";};
  CHECK(!S::ApplyRecord(&actor,Incoming(),nullptr)&&!writes&&!loads);

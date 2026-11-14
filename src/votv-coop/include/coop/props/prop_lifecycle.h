@@ -1,6 +1,6 @@
-// coop/props/prop_lifecycle.h -- Aprop_C spawn/destroy/extract wire observers.
+// coop/props/prop_lifecycle.h -- Aprop_C spawn and destroy wire observers.
 //
-// The host-authoritative prop sync layer, three seams:
+// The host-authoritative prop sync layer, two seams:
 //   - Aprop_C::Init POST (a script-gate name watch on Init, keeping the bodies ProcessEvent
 //     dispatched): the host broadcasts PropSpawn for a keyed prop born there. A Blueprint-internal
 //     birth (a deferred spawn's construction script) is expressed at FinishSpawningActor by
@@ -27,11 +27,11 @@ namespace coop::prop_lifecycle {
 
 // Cache the session pointer. Call once at boot, BEFORE any code path
 // that could fire DrainPending* or the observers (e.g. before NetPumpTick
-// starts ticking). The Install / InstallInventory functions ALSO accept
-// a session pointer for backward compatibility, but this dedicated
-// setter exists so the session is bound from the moment Drain* may run
-// (NetPumpTick can call Drain* on a frame BEFORE g_netLocal is resolved
-// + Install* is reached, leaving the queue undrained until Install runs).
+// starts ticking). Install ALSO accepts a session pointer for backward
+// compatibility, but this dedicated setter exists so the session is bound
+// from the moment Drain* may run (NetPumpTick can call Drain* on a frame
+// BEFORE g_netLocal is resolved + Install is reached, leaving the queue
+// undrained until Install runs).
 void SetSession(coop::net::Session* session);
 
 // Register the Init watch, seed the known keyed props once it is live and prop_C is loaded, and

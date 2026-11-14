@@ -4,6 +4,7 @@
 // for a prop adopted into tracking after the join. Interface: coop/props/prop_snapshot.h.
 
 #include "coop/props/prop_snapshot.h"
+#include "coop/creatures/npc_join_delivery.h"
 
 #include "coop/config/config.h"  // ReadEnv, the dedupe-bypass drill
 #include "coop/element/prop.h"
@@ -11,6 +12,7 @@
 #include "coop/creatures/kerfur_entity.h"  // IsKerfurActor; a kerfur's only signal is KerfurConvert
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_save_data.h"
 #include "coop/props/pile_look.h"
@@ -22,6 +24,7 @@
 #include "coop/props/remote_prop.h"
 #include "coop/save/join_window_baseline.h"  // TryGetPileXform / ClumpXform, the join snapshot's match key
 #include "coop/props/trash_channel.h"  // ExpressClumpGeneration, behind a clump's row
+#include "coop/net/snapshot_send_scope.h"  // SnapshotBegin and each drained prop pass the slot's join gate
 #include "coop/props/snapshot_census.h"  // the per-class completeness census on SnapshotComplete
 #include "coop/dev/eid_lifetime_trace.h"  // read-only: capture-eid vs wire-eid
 #include "coop/dev/force_overdestroy_test.h"  // dev only: inject the over-destroy to prove the floor
@@ -51,21 +54,41 @@ namespace PT = coop::prop_element_tracker;
 // TriggerForSlot on it.
 std::atomic<coop::net::Session*> g_session_ptr{nullptr};
 
-// The running drain's enumeration, game thread only.
-std::vector<void*> g_snapshotCandidates;
-std::vector<coop::element::ElementId> g_snapshotEids;  // parallel; same idx as g_snapshotCandidates
-// Each candidate's GUObjectArray index, captured while it was live: DrainChunk re-validates with
-// IsLiveByIndex, so a candidate purged between enumeration and its tick is rejected without a
-// dereference.
-std::vector<int32_t> g_snapshotInternalIdxs;
+// The running drain's enumeration, game thread only. A candidate is an ELEMENT ID, not an actor:
+// an entity re-skins mid-drain (a pile becomes a clump becomes a pile), so the actor the
+// enumeration saw may be gone at the candidate's turn while the eid still names the entity. The
+// drain resolves each eid to its element's current actor at its turn. MTA's SendMapInformation
+// (CMapManager.cpp:195-297) does copy element pointers (CEntityAddPacket.h:29), but builds and
+// serialises them in one synchronous call, so no element can die between; ours is time-sliced
+// (snapshot_send_scope.h), hence the id.
+std::vector<coop::element::ElementId> g_snapshotCandidates;
 size_t g_snapshotCandidateIdx = 0;
 // PropSpawns actually sent this drain (skips excluded); reported in SnapshotComplete.
 uint32_t g_snapshotSentTotal = 0;
-// Rows left out this drain because the prop's location or rotation could not be read; reported at
-// completion.
-uint32_t g_snapshotUnreadTotal = 0;
+// Why a candidate that resolved to a live actor still sent no row; each is counted per drain and
+// named in the completion line.
+enum class Skip : uint8_t { kNone, kChildActor, kDevSkipChipPile, kNotLive, kWireSuppressed,
+                            kPerPlayer, kNoIdentity, kUnread, kCount };
+constexpr const char* kSkipNames[static_cast<size_t>(Skip::kCount)] = {
+    "none", "child_actor", "dev_skip_chippile", "not_live", "wire_suppressed", "per_player",
+    "no_identity", "unread"};
+uint32_t g_snapshotSkipped[static_cast<size_t>(Skip::kCount)]{};
+// Candidates whose element or actor was gone at their turn (the one expected drop), per drain.
+uint32_t g_snapshotDropped = 0;
 // The slot being drained (-1 = none) and the slots waiting their turn.
 int g_currentTargetSlot = -1;
+uint64_t g_drainCompletionToken = 0;
+struct DrainRecipient {
+    coop::net::Session* session=nullptr;
+    uint32_t generation=0,serial=0;
+    uint64_t stops=0;
+    bool Current(int slot)const {
+        return session&&session==g_session_ptr.load(std::memory_order_acquire)&&
+            serial==coop::net::session_serial::Current()&&session->StopCount()==stops&&
+            session->running()&&session->role()==coop::net::Role::Host&&
+            session->IsSlotConnected(slot)&&session->peerGenerationForSlot(slot)==generation;
+    }
+} g_drainRecipient;
 std::vector<int> g_pendingSlots;
 
 // Slots whose bracket was deferred: the lanes are not configured yet, the registry does not yet
@@ -144,34 +167,33 @@ constexpr size_t kSnapshotChunkSize = 100;
 // array walk), sets the target slot and opens the bracket. The caller ensures no drain is in
 // progress. Per-candidate liveness is re-checked in DrainChunk.
 void StartEnumerationFor(int peerSlot) {
+    auto* session=g_session_ptr.load(std::memory_order_acquire);
+    const auto token=coop::npc_join_delivery::BeginSnapshot(peerSlot,session);
+    if(!token){DeferSlot_(peerSlot,DeferReason::LanesNotReady,"world-ready gate is closed");return;}
+    g_drainRecipient={session,session->peerGenerationForSlot(peerSlot),coop::net::session_serial::Current(),session->StopCount()};
+    g_drainCompletionToken=token;
     g_currentTargetSlot = peerSlot;
     g_deferLogged[peerSlot] = DeferReason::None;  // it got through; a later defer is news again
     // The generation this drain expresses: TriggerForSlot dedupes a re-trigger of the same slot for
     // the same generation.
     g_drainSeedGen = PT::SeedGeneration();
     g_snapshotCandidates.clear();
-    g_snapshotEids.clear();
-    g_snapshotInternalIdxs.clear();
     g_snapshotCandidateIdx = 0;
     int skippedDying = 0, skippedDead = 0;
     // SnapshotActorsByType copies (actor, id, index) under the registry mutex; no Element is
-    // dereferenced after it releases, and the eid travels with the actor so the drain takes no
-    // per-candidate lock.
+    // dereferenced after it releases. Only the eid is kept: the actor is judged live now, for the
+    // majority-dead guard, and resolved again from the eid at the candidate's turn.
     std::vector<coop::element::Registry::ActorIdPair> pairs;
     const size_t trackedCount =
         coop::element::Registry::Get().SnapshotActorsByType(
             coop::element::ElementType::Prop, pairs);
     g_snapshotCandidates.reserve(trackedCount);
-    g_snapshotEids.reserve(trackedCount);
-    g_snapshotInternalIdxs.reserve(trackedCount);
     for (const auto& pr : pairs) {
         if (!pr.actor) { ++skippedDead; continue; }
         // IsLiveByIndex: a mass purge does not fire K2_DestroyActor, so dying props linger in the
         // registry, and IsLive on the freed pointer faults. Only the GUObjectArray slot is read.
         if (!R::IsLiveByIndex(pr.actor, pr.internalIdx)) { ++skippedDying; continue; }
-        g_snapshotCandidates.push_back(pr.actor);
-        g_snapshotEids.push_back(pr.id);
-        g_snapshotInternalIdxs.push_back(pr.internalIdx);
+        g_snapshotCandidates.push_back(pr.id);
     }
     // A registry whose dying elements outnumber its live ones is mid-purge, not a live world: this
     // closes the window (up to 4 s) between a world transition and the reaper's next scan raising
@@ -192,12 +214,14 @@ void StartEnumerationFor(int peerSlot) {
             g_snapshotCandidates.size(), peerSlot, trackedCount, skippedDead, skippedDying, kSnapshotChunkSize);
 
     g_snapshotSentTotal = 0;
-    g_snapshotUnreadTotal = 0;
-    // SnapshotBegin carries the candidate count (the progress denominator) on the bulk lane ahead
+    std::fill(std::begin(g_snapshotSkipped), std::end(g_snapshotSkipped), 0u);
+    g_snapshotDropped = 0;
+    // SnapshotBegin carries the candidate count (the progress denominator) on the Default lane ahead
     // of the first PropSpawn; in-lane ordering keeps it first. Host only.
     if (auto* s = g_session_ptr.load(std::memory_order_acquire)) {
         coop::net::SnapshotBeginPayload b{};
         b.propTotal = static_cast<uint32_t>(g_snapshotCandidates.size());
+        coop::net::SnapshotSendScope scope(peerSlot);  // the bracket opens ahead of the slot's held sends
         s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::SnapshotBegin, &b, sizeof(b));
     }
 }
@@ -206,12 +230,12 @@ void StartEnumerationFor(int peerSlot) {
 // (which must not send SnapshotComplete).
 void ClearDrainState_() {
     g_snapshotCandidates.clear(); g_snapshotCandidates.shrink_to_fit();
-    g_snapshotEids.clear(); g_snapshotEids.shrink_to_fit();
-    g_snapshotInternalIdxs.clear(); g_snapshotInternalIdxs.shrink_to_fit();
     g_snapshotCandidateIdx = 0;
     g_currentTargetSlot = -1;
+    g_drainCompletionToken = 0;
     g_snapshotSentTotal = 0;
-    g_snapshotUnreadTotal = 0;
+    std::fill(std::begin(g_snapshotSkipped), std::end(g_snapshotSkipped), 0u);
+    g_snapshotDropped = 0;
 }
 
 // Dequeues through TriggerForSlot until a drain starts or the queue empties: a not-ready slot is
@@ -240,6 +264,13 @@ bool DrillHoldsSlot_(int peerSlot) {
     return false;
 }
 
+// Is a snapshot for `peerSlot` still to come behind the running drain: queued, or deferred for a retry.
+bool QueuedBehind_(int peerSlot) {
+    if (peerSlot < 1 || peerSlot >= coop::players::kMaxPeers) return false;
+    return g_deferredSlots[peerSlot] ||
+           std::find(g_pendingSlots.begin(), g_pendingSlots.end(), peerSlot) != g_pendingSlots.end();
+}
+
 void DequeuePending_() {
     while (g_currentTargetSlot == -1 && !g_pendingSlots.empty()) {
         const int next = g_pendingSlots.front();
@@ -250,9 +281,12 @@ void DequeuePending_() {
 
 void CompleteDrainForCurrentSlot(coop::net::Session* s) {
     if (s && g_currentTargetSlot >= 1) {
+        if(s!=g_session_ptr.load(std::memory_order_acquire))return;
+        const int slot=g_currentTargetSlot;
+        const auto token=g_drainCompletionToken;
         coop::net::SnapshotEndPayload e{};
         e.propSent = g_snapshotSentTotal;
-        // SnapshotComplete closes the bracket as the last bulk-lane message, so the joiner lifts
+        // SnapshotComplete closes the bracket as the last message of the snapshot, so the joiner lifts
         // its cover only once the whole stream landed. Its tail is the per-class completeness
         // census, an independent GUObjectArray count of live chipPiles (not the registry
         // enumeration); the joiner's sweep keeps a class it claimed fewer of than the host
@@ -263,12 +297,35 @@ void CompleteDrainForCurrentSlot(coop::net::Session* s) {
         const int budget = coop::net::kMaxReliablePayload - static_cast<int>(sizeof(e));
         coop::snapshot_census::BuildHostTail(tail, budget);
         buf.insert(buf.end(), tail.begin(), tail.end());
-        if (s->SendReliableToSlot(g_currentTargetSlot, coop::net::ReliableKind::SnapshotComplete,
-                                  buf.data(), static_cast<int>(buf.size())))
-            CloseBracket_(g_currentTargetSlot);
+        // Completion owns these bytes and this bracket token until the recipient's NPC births
+        // and the marker are admitted. Other slots can enumerate while this one waits. The callback
+        // closes its gate only after acceptance, preserving any newer bracket for the same slot.
+        const auto seed=g_drainSeedGen;
+        if(s!=g_session_ptr.load(std::memory_order_acquire))return;
+        const bool queued = coop::npc_join_delivery::CompleteSnapshot(slot,token,buf,
+            [](coop::net::Session* session,int slot) {
+                if (!HasSnapshotFor(slot)) session->CloseJoinGate(slot);
+                CloseBracket_(slot);
+            },[seed]{return PT::SeedGeneration()==seed&&PT::IsRegistrySeededForCurrentWorld()&&!PT::InPurgeEpisode();},
+            [](coop::net::Session*,int slot) {
+                DeferSlot_(slot,DeferReason::RegistryIncoherent,"registry changed while NPC join delivery was pending");
+            });
+        if (!queued) return;
     }
-    UE_LOGI("snapshot: drain complete for slot %d (%zu candidates, %u sent, %u left out unread)",
-            g_currentTargetSlot, g_snapshotCandidates.size(), g_snapshotSentTotal, g_snapshotUnreadTotal);
+    // Every candidate is accounted for: sent, skipped for a named reason, or dropped as gone.
+    uint32_t skippedTotal = 0;
+    char skipDetail[160] = "";
+    size_t skipLen = 0;
+    for (size_t r = 0; r < static_cast<size_t>(Skip::kCount); ++r) {
+        if (g_snapshotSkipped[r] == 0) continue;
+        skippedTotal += g_snapshotSkipped[r];
+        const int w = std::snprintf(skipDetail + skipLen, sizeof(skipDetail) - skipLen, "%s%s=%u",
+                                    skipLen ? ", " : "", kSkipNames[r], g_snapshotSkipped[r]);
+        if (w > 0 && skipLen + static_cast<size_t>(w) < sizeof(skipDetail)) skipLen += static_cast<size_t>(w);
+    }
+    UE_LOGI("snapshot: drain complete for slot %d (%zu candidates: %u sent, %u skipped (%s), %u dropped (gone))",
+            g_currentTargetSlot, g_snapshotCandidates.size(), g_snapshotSentTotal, skippedTotal,
+            skipLen ? skipDetail : "none", g_snapshotDropped);
     coop::dev::eid_lifetime_trace::EmitVerdict();  // read-only: capture-eid vs wire-eid verdict
     ClearDrainState_();
     // The next pending slot re-enumerates: the world may have changed since this drain started.
@@ -276,30 +333,34 @@ void CompleteDrainForCurrentSlot(coop::net::Session* s) {
 }
 
 // The one PropSpawnPayload builder, shared by the bracketed drain and the incremental express.
-// False when the actor is not expressible: null, dead, wire-suppressed, per-player, or keyless and
-// not a chipPile. internalIdx >= 0 re-checks liveness by index (the drain's cached index); < 0
-// means the caller confirmed it. A keyless chipPile keeps key.len 0, so the receiver takes the
-// eid-only lane.
+// False when the actor is not expressible: null, dead, a child actor, wire-suppressed, per-player,
+// or keyless and not a chipPile; `why`, when given, names which (Skip). internalIdx >= 0 re-checks
+// liveness by index; < 0 means the caller confirmed it. A keyless chipPile keeps key.len 0, so the
+// receiver takes the eid-only lane.
 bool BuildPropSpawnPayload_(void* obj, coop::element::ElementId eid, int32_t internalIdx,
-                            coop::net::PropSpawnPayload& p, int matchSlot, bool* unread = nullptr) {
-    if (!obj) return false;
+                            coop::net::PropSpawnPayload& p, int matchSlot, Skip* why = nullptr) {
+    const auto skip = [why](Skip reason) {
+        if (why) *why = reason;
+        return false;
+    };
+    if (!obj) return skip(Skip::kNotLive);
     // A child actor (a kerfur's eye cam) is never expressed: without MarkPropElement it would go
     // out as a keyed payload with elementId 0 and re-create a floating mirror the gated destroy
     // seam never tears down. Predicate and rationale: ue_wrap::engine::IsChildActor.
-    if (ue_wrap::engine::IsChildActor(obj)) return false;
+    if (ue_wrap::engine::IsChildActor(obj)) return skip(Skip::kChildActor);
     // Dev only, ini-gated: skipping chipPile expression leaves the joiner's natives unclaimed, so
     // its sweep would doom them en masse and the completeness floor must keep them. A no-op without
     // the ini key.
     if (coop::dev::force_overdestroy_test::HostSkipChipPileExpression() && ue_wrap::prop::IsChipPile(obj)) {
-        return false;
+        return skip(Skip::kDevSkipChipPile);
     }
     // By index: a candidate purged since enumeration is rejected without touching freed memory.
-    if (internalIdx >= 0 && !R::IsLiveByIndex(obj, internalIdx)) return false;
+    if (internalIdx >= 0 && !R::IsLiveByIndex(obj, internalIdx)) return skip(Skip::kNotLive);
     const std::wstring cls = R::ClassNameOf(obj);
     // The same wire-suppress and per-player skips as the Init observer: an intermediate variant
     // (mushroom7_C) and a per-player prop never cross the wire.
-    if (coop::prop_lifecycle::IsWireSuppressedPropClass(cls)) return false;
-    if (coop::prop_lifecycle::IsPerPlayerPropClass(cls)) return false;
+    if (coop::prop_lifecycle::IsWireSuppressedPropClass(cls)) return skip(Skip::kWireSuppressed);
+    if (coop::prop_lifecycle::IsPerPlayerPropClass(cls)) return skip(Skip::kPerPlayer);
     p.className.len = 0;
     for (size_t j = 0; j < cls.size() && j < 63; ++j) {
         p.className.data[p.className.len++] = static_cast<char>(cls[j]);
@@ -311,7 +372,7 @@ bool BuildPropSpawnPayload_(void* obj, coop::element::ElementId eid, int32_t int
         // no stable identity, matching the client sweep's universe test.
         if (!ue_wrap::prop::IsTrashActor(obj) ||
             eid == coop::element::kInvalidId || eid == 0) {
-            return false;
+            return skip(Skip::kNoIdentity);
         }
         // key.len stays 0: the eid-only lane.
     } else {
@@ -330,8 +391,7 @@ bool BuildPropSpawnPayload_(void* obj, coop::element::ElementId eid, int32_t int
     ue_wrap::FVector loc{};
     ue_wrap::FRotator rot{};
     if (!ue_wrap::engine::TryGetActorLocation(obj, loc) || !ue_wrap::engine::TryGetActorRotation(obj, rot)) {
-        if (unread) *unread = true;
-        return false;
+        return skip(Skip::kUnread);
     }
     p.look = coop::pile_look::Capture(obj);
     p.locX = loc.X; p.locY = loc.Y; p.locZ = loc.Z;
@@ -360,11 +420,12 @@ bool BuildPropSpawnPayload_(void* obj, coop::element::ElementId eid, int32_t int
     // The trash variant; GetChipType is 0 for a class without the property.
     p.chipType = ue_wrap::prop::GetChipType(obj);
     p.elementId = (eid == coop::element::kInvalidId) ? 0u : eid;
-    // For a chipPile in a join snapshot (matchSlot is the joiner), the save-time position from the
-    // host's blob map, so the client's twin destroy matches the native loaded at the old spot even
-    // if the host moved the pile in the join-load window. The incremental express passes -1 (no
-    // twin on the client); no map entry, no stamp, and the receiver falls back to the live pose.
-    // The form in the key is the form at the CAPTURE, which the entity may have left since.
+    // For a trash actor in a join snapshot (matchSlot is the joiner), the key the joiner's native
+    // sits at. It is the capture's alone, from the pile map or the clump map (an eid sits in exactly
+    // one of them), so its key AND form are the save's, and this row is the key's one carrier: no
+    // convert repeats it. The entity may have left that form since; the receiver's formMoved path
+    // then keys the native as saved. The incremental express passes -1 (no twin on the client); no map
+    // entry, no stamp, and the receiver falls back to the live pose.
     p.hasMatchPos = coop::net::match_form::kNone;
     if (matchSlot >= 1 && p.elementId != 0 && ue_wrap::prop::IsTrashActor(obj)) {
         ue_wrap::FVector sv;
@@ -403,7 +464,7 @@ void TriggerForSlot(int peerSlot) {
     OpenBracket_(peerSlot);
     // IsSlotReady, not IsSlotConnected: the connection handle exists a few ms before the lanes are
     // configured, and a drain triggered in that window queues ~1,700 PropSpawns on the
-    // high-priority lane instead of the bulk lane.
+    // lane 0 instead of the Default lane.
     if (!s->IsSlotReady(peerSlot)) {
         DeferSlot_(peerSlot, DeferReason::LanesNotReady, "its lanes are not configured yet");
         return;
@@ -469,6 +530,17 @@ void DrainChunk() {
     if (g_currentTargetSlot == -1) return;
     auto* s = g_session_ptr.load(std::memory_order_acquire);
     if (!s) return;
+    const int drainingSlot=g_currentTargetSlot;
+    const auto drainingToken=g_drainCompletionToken;
+    const auto recipient=g_drainRecipient;
+    const auto current=[&]{return g_currentTargetSlot==drainingSlot&&g_drainCompletionToken==drainingToken&&
+        coop::npc_join_delivery::SnapshotCurrent(drainingSlot,drainingToken);};
+    if(!current()) {
+        CancelForSlot(drainingSlot);
+        if(recipient.Current(drainingSlot))DeferSlot_(drainingSlot,DeferReason::RegistryIncoherent,"snapshot identity changed");
+        return;
+    }
+    if(!s->IsSlotWorldReady(drainingSlot))return;
     // A target that disconnected mid-drain aborts now, or every remaining candidate pays its
     // reflection reads to send into a closed connection.
     if (!s->IsSlotConnected(g_currentTargetSlot)) {
@@ -505,44 +577,55 @@ void DrainChunk() {
                                     g_snapshotCandidates.size());
     int sent = 0;
     for (; g_snapshotCandidateIdx < limit; ++g_snapshotCandidateIdx) {
-        void* obj = g_snapshotCandidates[g_snapshotCandidateIdx];
-        // Liveness re-validated by the cached index (a purge since enumeration); once it passes,
-        // the UFunction reads below are safe, since the GC purge runs on the game thread and cannot
-        // interleave mid-tick.
-        const int32_t cachedIdx = g_snapshotCandidateIdx < g_snapshotInternalIdxs.size()
-                                      ? g_snapshotInternalIdxs[g_snapshotCandidateIdx]
-                                      : -1;
-        if (!obj || !R::IsLiveByIndex(obj, cachedIdx)) continue;
-        // The eid cached at enumeration.
-        const coop::element::ElementId eid =
-            g_snapshotCandidateIdx < g_snapshotEids.size()
-                ? g_snapshotEids[g_snapshotCandidateIdx]
-                : coop::element::kInvalidId;
+        const coop::element::ElementId eid = g_snapshotCandidates[g_snapshotCandidateIdx];
+        // The eid's CURRENT actor: an entity that re-skinned since the enumeration (a pile that
+        // became a clump) is the same candidate in its new form, and its row is built from the
+        // actor as it is now. Liveness is re-validated by the element's cached index (a purge since
+        // enumeration); once it passes, the UFunction reads below are safe, since the GC purge runs
+        // on the game thread and cannot interleave mid-tick. Ids recycle: an eid freed since the
+        // enumeration can name an element of another type now, and that is gone too, as the old
+        // enumeration by type guaranteed.
+        const coop::element::Element* el = coop::element::Registry::Get().Get(eid);
+        void* obj = (el && el->GetType() == coop::element::ElementType::Prop) ? el->LiveActor() : nullptr;
+        if (!obj) {
+            // The one expected drop: the entity is gone, not replaced.
+            if (++g_snapshotDropped == 1 || g_snapshotDropped % 100 == 0)
+                UE_LOGI("snapshot: eid=%u gone at its turn -- dropped (#%u)", static_cast<unsigned>(eid),
+                        g_snapshotDropped);
+            continue;
+        }
         coop::net::PropSpawnPayload p{};
         // -1: liveness was just re-validated. The target slot makes this the join drain, so a pile
         // gets its save-time match key.
-        bool unread = false;
-        if (!BuildPropSpawnPayload_(obj, eid, -1, p, g_currentTargetSlot, &unread)) {
+        Skip why = Skip::kNone;
+        const bool built=BuildPropSpawnPayload_(obj,eid,-1,p,drainingSlot,&why);
+        if(!current())return;
+        if (!built) {
+            ++g_snapshotSkipped[static_cast<size_t>(why)];
             // A failed read is a dispatch that faulted, which a retry repeats: the row is left out,
             // named here and counted in the completion line.
-            if (unread) {
-                ++g_snapshotUnreadTotal;
+            if (why == Skip::kUnread)
                 UE_LOGW("snapshot: row for eid=%u (%p) left out for slot %d -- its location or rotation could not be read",
                         static_cast<unsigned>(eid), obj, g_currentTargetSlot);
-            }
             continue;
         }
+        // The drained prop is the snapshot's own send, so its spawn, clump generation and save record
+        // pass the slot's join gate; the sends the gate holds join the lane after the last of these.
+        coop::net::SnapshotSendScope scope(g_currentTargetSlot);
         // To the one slot: the other peers got these props from their own drain.
         s->SendReliableToSlot(g_currentTargetSlot,
                               coop::net::ReliableKind::PropSpawn,
                               &p, sizeof(p));
+        if(!current())return;
         // A clump's row says what the actor is; its carry generation rides behind it, on the same
         // lane, or the joiner holds every pose of it for good.
         if (ue_wrap::prop::IsGarbageClump(obj))
             coop::trash_channel::ExpressClumpGeneration(*s, eid, obj, g_currentTargetSlot);
+        if(!current())return;
         // The prop's own save record to the same slot, behind its spawn row: a prop whose state
         // changed after the transferred save was written is not in that save.
         coop::prop_save_data::PublishWithSpawn(s, obj, p.key, g_currentTargetSlot);
+        if(!current())return;
         ++sent;
     }
     g_snapshotSentTotal += static_cast<uint32_t>(sent);
@@ -564,9 +647,9 @@ static void BroadcastIncrementalPropSpawn_(coop::net::Session* s, void* actor, c
     coop::net::PropSpawnPayload p{};
     // -1 and -1: liveness confirmed by the caller, and a mid-game express has no save-loaded twin
     // to stamp a match key for.
-    bool unread = false;
-    if (!BuildPropSpawnPayload_(actor, eid, -1, p, -1, &unread)) {   // not expressible
-        if (unread)
+    Skip why = Skip::kNone;
+    if (!BuildPropSpawnPayload_(actor, eid, -1, p, -1, &why)) {   // not expressible
+        if (why == Skip::kUnread)
             UE_LOGW("snapshot: incremental PropSpawn for %sprop %p (eid=%u) not sent -- its location or rotation "
                     "could not be read",
                     kindTag, actor, static_cast<unsigned>(eid));
@@ -647,6 +730,7 @@ void DeliverLateRegisteredProps(const std::vector<void*>& lateProps) {
 }
 
 void CancelForSlot(int peerSlot) {
+    coop::npc_join_delivery::CancelCompletion(peerSlot);
     // A slot that disconnects while deferred is not retried; cleared before the in-progress check.
     if (peerSlot >= 1 && peerSlot < coop::players::kMaxPeers) {
         g_deferredSlots[peerSlot] = false;
@@ -676,6 +760,7 @@ size_t OnDisconnect() {
     // No deferred slot survives into the next session, and no closed bracket either.
     g_deferredSlots.fill(false);
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
+        coop::npc_join_delivery::CancelCompletion(slot);
         OpenBracket_(slot);
         g_deferRetryAtMs[slot] = 0;
         g_deferLogged[slot] = DeferReason::None;
@@ -687,6 +772,11 @@ size_t OnDisconnect() {
 
 bool IsBracketClosed(int peerSlot) {
     return peerSlot >= 1 && peerSlot < coop::players::kMaxPeers && g_bracketClosed[peerSlot];
+}
+
+bool HasSnapshotFor(int peerSlot) {
+    return peerSlot >= 1 && peerSlot < coop::players::kMaxPeers &&
+           (g_currentTargetSlot == peerSlot || QueuedBehind_(peerSlot) || coop::npc_join_delivery::HasCompletion(peerSlot));
 }
 
 }  // namespace coop::prop_snapshot

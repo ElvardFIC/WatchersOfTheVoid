@@ -8,6 +8,8 @@
 
 #include <string>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace ue_wrap::engine {
 
@@ -17,7 +19,8 @@ namespace ue_wrap::engine {
 bool ReturnToMainMenu();
 
 // Load a save slot through the game's own entry (LoadGameFromSlot, setSaveSlotObject with
-// loadObjects=true, then untitled_1; the save selects the mode). `forceGameMode` >= 0 writes that
+// loadObjects=true, then the mode's initial map; the save selects the mode).
+// `forceGameMode` >= 0 writes that
 // enum_gamemode ordinal instead of deriving it from the slot-name prefix, which the coop slot
 // `zcoop_<pid>` lacks. False if the slot is missing or the load cannot dispatch. Game thread.
 bool LoadStorySave(const wchar_t* slot, int forceGameMode = -1);
@@ -31,6 +34,12 @@ void ResetCachedSave();
 // so the host's snapshot mirrors onto it with nothing to reconcile away. The blank save has no
 // slot file, so the mode is named rather than derived from a prefix. Game thread.
 bool StartFreshGame(int gameMode);
+
+// The rules the next StartFreshGame writes into its blank save's localGameRules before the save's
+// rules are put in force: (game_rules key, value text) pairs, as game_rules::WriteSavedRule takes
+// them. Consumed by the one fresh save that call creates, then cleared; a save loaded from a slot
+// is never touched. Set before the call, from the thread that drives the boot; empty clears.
+void SetFreshGameRules(const std::vector<std::pair<std::string, std::string>>& rules);
 
 // ---- Save-object-ready hook ----
 // Fires once per LoadStorySave / StartFreshGame, on the game thread, with the USaveGame* about to

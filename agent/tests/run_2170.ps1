@@ -12,6 +12,10 @@ try {
   & "$output/$name.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
  }
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/cord_2170_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/cord_32.obj" "/Fe$output/cord_32.exe" agent/tests/cord_intent_2170_test.cpp /link /OPT:REF
+ if($LASTEXITCODE -ne 0){throw '32-peer cord fixture compile failed'}
+ & "$output/cord_32.exe"
+ if($LASTEXITCODE -ne 0){throw '32-peer cord fixture failed'}
  if($CompileSources){
   foreach($file in @('coop/interactables/cord_sync','ue_wrap/devices/cord')) {
    $name=$file -replace '/','_'

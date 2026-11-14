@@ -2,11 +2,11 @@
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / '_research'))
+sys.path.insert(0, str(root.parent / '_research'))
 from kismet_dis import Package, Dis, find_script
 
 def body(asset, function):
-    p = Package(str(root / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
+    p = Package(str(root.parent / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
     e = next(e for e in p.exports if e['name'] == function and p.class_of_export(e) == 'Function')
     code, _ = find_script(p.export_data(e))
     rows = Dis(p, code).run()
@@ -39,7 +39,8 @@ source = root / 'src/votv-coop/src'
 revive = (source / 'coop/player/death_revive.cpp').read_text()
 run = revive[revive.index('bool RunRevive('):revive.index('// How many pump ticks')]
 assert run.index('ExtinguishMainPlayerFire(pawn)') < run.index('V::Write(V::Field::Health') < run.index('ClearDeadFlag(pawn)')
-assert 'fireCleared && vitalsOk' in run
+assert 'V::Read(V::Field::BurningTime, &burnTime)' in run
+assert 'vitalsOk && haveBurnTime && burnTime <= 0.f' in run
 spawn = (source / 'ue_wrap/actors/puppet_spawn.cpp').read_text()
 assert 'SetMainPlayerCanRagdoll(actor, false)' in spawn
 remote = (source / 'coop/player/remote_player_ragdoll.cpp').read_text()

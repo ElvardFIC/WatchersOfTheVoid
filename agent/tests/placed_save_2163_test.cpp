@@ -2,6 +2,7 @@
 #include "../../src/votv-coop/src/coop/world/garden_actions.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
+#include "llama_marker_boundary_stubs.h"
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
@@ -89,9 +90,9 @@ namespace ue_wrap::engine {
 bool DestroyActor(void* p) { ++test::destroyed; if(!test::failDestroy)static_cast<test::Actor*>(p)->live=false;return !test::failDestroy; }
 }
 namespace ue_wrap::placed_save {
-Kind ClassKind(const std::wstring& s) { return s==L"dirthole_C" ? Kind::DirtHole : s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : (s==L"growingPlant_C"||s==L"growingPlant_pine_C"||s==L"growingPlant_stolasHerb_C") ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : (s==L"customWall_C"||s==L"customWall_wetConcrete_C") ? Kind::Wall : Kind::None; }
+Kind ClassKind(const std::wstring& s) { return s==L"llamaSoul_C" ? Kind::Marker : s==L"dirthole_C" ? Kind::DirtHole : s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : (s==L"growingPlant_C"||s==L"growingPlant_pine_C"||s==L"growingPlant_stolasHerb_C") ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : (s==L"customWall_C"||s==L"customWall_wetConcrete_C") ? Kind::Wall : Kind::None; }
 Kind Type(void* a) { return a ? ClassKind(static_cast<test::Actor*>(a)->record.className) : Kind::None; }
-bool PlacementCaller(Kind k,void* f) { return k!=Kind::None && f==reinterpret_cast<void*>(1); }
+bool PlacementCaller(Kind k,void* f) { return k!=Kind::None && k!=Kind::Marker && f==reinterpret_cast<void*>(1); }
 bool Ready(void* a) {test::GardenCallback(test::gardenReady);if(!test::gardenReadyAnswers.empty()){const bool result=test::gardenReadyAnswers.front();test::gardenReadyAnswers.pop_front();return result;}return test::ready && a!=test::notReady; }
 bool Capture(void* a,test::Rec& r) { ++test::captures;r=static_cast<test::Actor*>(a)->record;if(test::captureCallback)test::captureCallback();return test::captureOK; }
 std::wstring ExistingKey(void* a) {auto key=static_cast<test::Actor*>(a)->record.key;test::GardenCallback(test::gardenKey);return key; }

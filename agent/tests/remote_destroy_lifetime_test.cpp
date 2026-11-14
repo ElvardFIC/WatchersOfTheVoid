@@ -109,3 +109,5 @@ Registry& Registry::Get(){static Registry registry;return registry;}
 ElementId Registry::EidForActor(void*)const{return kInvalidId;}
 }
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return L"rifle";}}
+
+namespace coop::element::bind_wait { void GiveUp(uint32_t,const char*) {} }

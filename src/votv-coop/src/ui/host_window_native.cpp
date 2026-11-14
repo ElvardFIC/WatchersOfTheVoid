@@ -10,6 +10,7 @@
 #include "coop/config/config_registry.h"
 #include "coop/session/session_manager.h"
 #include "ui/host_session_settings.h"   // step two, what Next opens
+#include "ui/host_game_mode.h"
 #include "ui/input_focus.h"
 #include "ui/native_screen.h"
 #include "ui/server_browser_native.h"   // CloseNow, the sibling hand-over
@@ -45,7 +46,7 @@ using ue_wrap::FLinearColor;
 // Layout. 980 matches the browser, and at 900 the connection descriptions clipped mid-word, which
 // reads as a rendering fault rather than a long sentence.
 constexpr float kWindowW  = 980.f;
-constexpr float kWindowH  = 640.f;
+constexpr float kWindowH  = 704.f;
 constexpr float kRowH     = 56.f;
 constexpr float kBorderPx = 2.f;
 constexpr float kPadPx    = 6.f;
@@ -97,6 +98,7 @@ void* g_status   = nullptr;
 std::string g_lastStatus;
 void* g_backBtn  = nullptr;
 void* g_hostBtn  = nullptr;
+std::array<void*,host_game_mode::kChoices.size()> g_modeButtons{};
 // Sized from the table, never spelled again: as a literal beside a literal-sized table, every
 // loop was a separate place to forget when the table shrank, and an over-run loop reads a null
 // and silently draws nothing.
@@ -238,6 +240,11 @@ void PaintRow(const Row& r, bool selected, bool hovered, bool versionConflict = 
 
 void RepaintAll() {
     PaintRow(g_newGameRow, g_selectedSlot.empty(), g_hoverRow == -1);
+    for (size_t i=0;i<g_modeButtons.size();++i) {
+        if (g_modeButtons[i]) E::SetWidgetRenderOpacity(g_modeButtons[i],
+            !g_selectedSlot.empty()?0.35f:
+            host_game_mode::Value()==host_game_mode::kChoices[i].mode?1.f:0.6f);
+    }
     for (size_t i = 0; i < g_saveRows.size(); ++i)
         PaintRow(g_saveRows[i], SlotIndex() == static_cast<int>(i),
                  g_hoverRow == static_cast<int>(i),
@@ -285,6 +292,16 @@ bool BuildScreen(void* switcher) {
     NS::AddText(col, L"WORLD", 16, kAccent, NS::kJustLeft, 0.f);
     g_newGameRow = BuildRow(col, 1.f, 0.f, 0.f);
     SetText(g_newGameRow.a, L"New game", kText);
+
+    NS::AddText(col,L"NEW GAME MODE",16,kAccent,NS::kJustLeft,0.f);
+    void* modeRow=NS::Spawn(L"HorizontalBox",col);
+    if (!modeRow) return false;
+    for (size_t i=0;i<g_modeButtons.size();++i) {
+        g_modeButtons[i]=NS::BuildButton(modeRow,backDonor,host_game_mode::kChoices[i].wideLabel,16);
+        if (!g_modeButtons[i]) return false;
+        NS::SetHSlot(NS::SlotOf(g_modeButtons[i]),1.f,NS::kFill,NS::kCenter);
+    }
+    NS::AddVFill(col,modeRow,0.f,NS::kFill,NS::kCenter);
 
     void* listBox = NS::Spawn(L"SizeBox", col);
     g_list = listBox ? NS::Spawn(L"ScrollBox", listBox) : nullptr;
@@ -378,7 +395,7 @@ void SyncSaves() {
     }
     // Nothing to repair: the selection is a slot name, so a re-sort, a shrink and a rescan leave it
     // on the same world, or on none if that save is gone.
-
+    if (!g_selectedSlot.empty() && SlotIndex()<0) g_selectedSlot.clear();
     RepaintAll();
 }
 
@@ -421,10 +438,7 @@ void DoNext() {
         // hosted from here died on "slot already exists".
         c.newName       = "Coop";
         c.nameIsDerived = true;
-        // Story, as on the other host surface: a NEW game in any other mode needs the native map
-        // picker (cbox_sboxLevel), which this window does not carry. Hosting an EXISTING save of
-        // any mode works, and the joiner then comes up in it.
-        c.mode    = ue_wrap::game_mode::kStory;
+        c.mode = host_game_mode::Value();
     } else {
         const sb::SaveInfo& save = g_saves[static_cast<size_t>(sel)];
         // The game's own slot menu stops on a save of another version with "Conflict version!", the
@@ -477,6 +491,14 @@ void PollChrome() {
     // does not, and unifying both on geometry turned a passing close into a failing one.
     if (g_backBtn  && E::WidgetIsHovered(g_backBtn))  { Hide("BACK"); return; }
     if (g_hostBtn  && E::WidgetIsHovered(g_hostBtn))  { DoNext(); return; }
+    if (g_selectedSlot.empty()) {
+        for (size_t i=0;i<g_modeButtons.size();++i) {
+            if (g_modeButtons[i] && E::WidgetIsHovered(g_modeButtons[i])) {
+                host_game_mode::Select(host_game_mode::kChoices[i].mode);
+                RepaintAll(); return;
+            }
+        }
+    }
     for (int i = 0; i < kConnCount; ++i)
         if (g_connRow[i] && NS::CursorOverWidget(g_connRow[i])) { g_connMode = i; RepaintAll(); return; }
     if (g_newGameRow.bg && NS::CursorOverWidget(g_newGameRow.bg)) {
@@ -522,6 +544,7 @@ void Show() {
     sb::RefreshAsync();          // the list is stale by definition between openings
     SyncSaves();
     DropConflictWarning();       // a warning belongs to one opening
+    RepaintAll();                // shared mode may have changed on the fallback screen
     // The status is written by the one edge-gated writer in OnMenuTick, on this same tick; a second
     // writer here needed a second cache, and two caches for one widget is what once left the line
     // permanently blank.
@@ -586,6 +609,7 @@ void OnMenuTick(void* menu, void* switcher) {
         g_menu = menu;
         g_root = nullptr; g_list = nullptr; g_status = nullptr; g_scrimW = nullptr;
         g_backBtn = nullptr; g_hostBtn = nullptr;
+        g_modeButtons={};
         g_newGameRow = Row{};
         g_saveRows.clear();
         for (int i = 0; i < kConnCount; ++i) { g_connRow[i] = nullptr; g_connLabel[i] = nullptr; }

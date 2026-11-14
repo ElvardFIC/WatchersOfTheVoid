@@ -18,6 +18,9 @@ public:
  bool poseActive=false;PropPoseSnapshot pose{};
  void SetLocalPropPose(bool active,const PropPoseSnapshot& snapshot){poseActive=active;pose=snapshot;}
  bool connected()const{return linked;}Role role()const{return mode;}
+ uint64_t StopCount()const{return 0;}
+ uint32_t peerGenerationForSlot(int)const{return 1;}
+ bool IsSlotConnected(int slot)const{return linked&&slot>=0&&slot<kMaxPeers;}
  bool IsSlotWorldReady(int slot)const{return ready.at(slot);}
  bool SendReliableToSlot(int slot,ReliableKind k,const void* data,int n){
   if(k!=ReliableKind::PropFire||n!=sizeof(PropFirePayload))std::abort();

@@ -30,7 +30,8 @@ bool LocalIsSitting();
 // A peer sat on a chair, or stood up. Game thread.
 void OnAnchor(uint8_t slot, const coop::net::SitAnchorPayload& payload);
 
-// After the puppet pose: put a remote sitter on the chair they named.
+// After puppet and prop presentation: interpolate the named chair and seated
+// body together. Pending chair lookup waits without applying the body anchor.
 void DriveRemotes();
 
 void OnPeerLeft(uint8_t slot);

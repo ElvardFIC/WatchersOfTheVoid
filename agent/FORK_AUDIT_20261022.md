@@ -1,3 +1,177 @@
+# Selected integration — 8 November 2026
+
+Compared upstream `49023201c` against the integrated `4fbf1acf0`: 431 graph
+commits, 450 changed files. Enumerated 64 upstream-network forks (including this
+repository) and seven direct forks; fetched 69 of the 70 other default branches.
+`Marlore/temp-mail-generator` remains unavailable. This covers public default
+branches, not all feature branches. Inventory, exact heads and commit lists:
+`build/fork-review-20261108/{forks,comparisons}.json` and `upstream-commits.txt`.
+The upstream head is reviewed, not merged wholesale. Integrated ancestry remains
+`4fbf1acf0`; the selected source adaptations below do not claim all 431 commits.
+
+| Item / provenance | Selected change or disposition |
+| --- | --- |
+| M1 / existing origin merge | Resolve five remaining conflicts using the newer local test inventory, EmoteWheel protocol assertion, backlog and condensed verification history. The older origin history remains recoverable in Git. |
+| M2 / existing origin merge | Remove duplicate protocol comments, CoordTowerState, tower fields and struct declarations introduced by the previous conflict resolution. Preserve HEAD's IDs, sizes and 32 peers. |
+| M3 / public fork inventory | Fetch and compare the default heads above; keep the per-repository commit inventory as review evidence. |
+| M4 / kdp80 `c6b82f83d` | Apply zero End velocities as well as nonzero ones; retain component/actor/session ownership checks between native writes. |
+| M5 / BitRoit `50c864631` | Use the unified Registry when detecting a placed actor, retiring placement retries and clearing refused-placement recovery. A registered remote mirror is already canonical even without local authorship. |
+| M6 / BitRoit `50c864631` | Module-denial and upgrade-ghost cleanup also recognize registered mirrors, so legitimate copies are not selected as untracked ghosts. |
+| M7 / BitRoit `52cdcd819` | Install the existing personal-rest controller with the session. Retain this fork's personal-sleep policy and native factor. |
+| M8 / upstream `bba245191`, Ghezra `fb28e336c` | Include the Steam utility header that defines the IP address formatter inline. |
+| M9 / upstream `95cba1361` | Count all eight canonical-envelope bytes when splitting floppy-slot sets; the generation occupies four of them. |
+| M10 / upstream `95cba1361` | Refuse an incoming slot claim larger than the existing sender ceiling before native writes. Preserve this fork's current limits and wire version. |
+
+Retained/excluded after review:
+
+- kdp80 `8763b1658` disables simulation on settled props; local PhysFlagsOf
+  describes an asleep body, not necessarily a disabled one. Keep simulation
+  eligibility for native PhysicsHandle pickup. Do not freeze workbenches by a
+  class-name substring. Tick-cadence reductions lack coverage for our retry owners.
+- BitRoit's forced process termination after 1.5 seconds, repair-widget watchdog,
+  local Escape polling and 5x solo-rest policy are not imported. Repair-widget
+  lifetime and the signed minigame sentinel need a separate native review. Its
+  Gone-response destruction needs an exact actor/episode proof before adoption.
+- BitRoit's large `4420f6f1e` commit combines entity, vehicle, ragdoll, cache and
+  cadence changes. Preserve newer local ownership implementations; do not replace
+  them with the older fork snapshot or its parallel documentation/test inventory.
+- Upstream battery-off publication (`63aa82f7e`) and destroy-window single reads
+  (`338ef476d`) are already covered locally. Disc capacities already exceed the
+  earlier 32 KB limit; only the newly identified envelope/admission bugs land.
+- Upstream toolgun, walking mannequin, plant/ambient, woodchipper, cremator,
+  Kerfur carried-disc/command-feedback and food-authority groups need adaptation
+  to the retained protocol, native transactions and existing controllers. Keep
+  UP2/UP4/UP5/UP6 and the current entity/resource backlog open.
+- Ghezra's new body-push publisher (`74ab6e6cf`) changes syncer admission and adds
+  a publisher; it is a reference for the open contact/jitter investigation, not
+  proof that this fork can safely add another transform owner. New drone timing,
+  chipper feed, hacksaw, container-break and ATV groups likewise overlap owners.
+- FadeTNT1 targets game 0.10.0 and another protocol family; no game-port or wire
+  identity replacement. TheBrokenWaLL's drone-sack rewrite needs the existing
+  drone/item ownership review. pypsik154's Steam watcher/UI/ragdoll additions and
+  DOMSER12's ATV/mining/microphone features are not isolated fixes for this pass.
+- VoidCrew and Cairn primarily add distribution/product changes. Dafirka and
+  older fork fixes retain the dispositions below. Default heads with no unique
+  commits supply no additional changes; rewritten historical commits are not
+  automatically new fixes. CI baseline relaxations are excluded.
+
+No public version/protocol bump, package, installation, commit or push. The
+pre-existing origin merge has resolved paths but remains uncommitted. Tests and
+native-gameplay limits are recorded in TESTLOG; this review does not qualify a
+new DLL or release.
+
+# Fork head recheck — 4 November 2026
+
+The subsequent owner-requested three-way history merge is recorded in TESTLOG.
+It preserves the fork adaptations below and records upstream `4fbf1acf0` as a
+parent. The earlier 436-commit graph counter below describes the pre-merge audit.
+
+Rechecked the 50 previously reachable default heads through GitHub. Only arigalit
+and Ghezra advanced: arigalit now matches the integrated upstream `4fbf1acf0`;
+Ghezra reaches `33d98330c`, 41 commits after the first review below. Dafirka stays
+at `593b7900c`. This recheck covers the known inventory, not newly created forks
+or every nondefault branch. Marlore was unavailable in the initial inventory.
+Exact results: build/sync-2164/fork-heads-recheck-20261104.json.
+
+| New Ghezra commits | Disposition against this fork |
+| --- | --- |
+| `25b3d247b` | Adapted both full-disc size fixes: complete save bodies may use the blob capacity; a slot reserves outer-header space. Keep checked native writes, sender budgets, canonical ordering and lifetime guards. Regression fixtures reject the old 32 KiB limits and still reject over-capacity data. |
+| `e345a2c5c` | Already covered by item_activate::TickConnect's 250 ms native-state poll, signature deduplication and refused-send retries. Preserve the existing world/player and recipient guards. |
+| `351c2de97`, `4b700fba2`, `20f069d3f`, `9f77019a2`, `4e43152b4` | Overlap the existing kitchen, grill, food condition and native action routes. Retain the fork's transaction and mutation guards; no wholesale kitchen/food wire replacement. Remaining output arbitration stays in WORK. |
+| `9c8d1e24f`, `a151c68c0`, `b0a738d4b`, `eccd87156`, `ff68b1264` | Overlap radio/media, dish/operator and world-sound routes. Preserve those owners rather than add parallel writers. Native rendered/audio parity remains unverified. |
+| `1bc4675d1` | Follow-up: exact ownership of concurrent disc inserts. Its unbounded claim queue and fixed 2.5 s eject delay do not supply this fork's occupancy, departure and uncertain-native-effect guarantees. Do not import a timer as proof of output completion. |
+| `13b120e67` | Follow-up: host admission for module purchases, distinct from level rows. The local module branch still runs natively; adding fork-specific direction values requires explicit admission, debit/output and retry design. |
+| `10b3a8c8e` | Follow-up: provenance for transient spawner drops during join. Do not exempt every actor with a lifespan or relax the incomplete-snapshot valve; those predicates do not establish personal ownership. |
+| `880a94727`, `99e48cd60`, `3d9b29f3f` | Travel-policy candidates. Do not silently disable backrooms or destroy personal ending/dream actors. Map exact native trigger, cancellation and session/world lifetime before adapting cleanup. |
+| `be135453f` | Shared save notices are a separate missing UI/wire feature; save refusal must not imply a successful write. No replacement of host save policy. |
+| `c5f90ee0a`, `c5e431dfb`, `7e5155084`, `557f79626`, `a62fedc24`, `700175fe6`, `860a85146` | Ambient creature/fixture, walker targeting/anger and beehive adapters extend existing entity work. Their new wire kinds cannot replace published IDs or the current creature owners. Keep the entity backlog open. |
+| `0205b2187`, `01bb30834`, `b2b36352e`, `6223bd7e1`, `175141e1a`, `d32fa0af0`, `a3a61615c`, `33d98330c` | Plant, fire, hose, spill, construction/nail and vent adapters need reconciliation with current garden/resource, damage, grime and event owners. Construction repair still needs one debit/output/refund transaction. Do not install parallel native writers. |
+| `661b5f96e` | Cache/poll refactor belongs to the new ambient lanes; those owners are not installed here. Retain the separately adapted watch/CDO caches and native lifetime checks. |
+| `c2212c777`, `c9e634433`, `f032763b9` | Optional browser filters and Ghezra's `bg` build identity are fork features. Keep this fork's own identity and compatibility checks. |
+| `cfaf9248d`, `85e9074f9`, `c9878576f` | Changes to that fork's live-game drills, not directly reusable production fixes. Keep the local offline suites and record native acceptance separately. |
+
+All 41 commits are accounted for above. Imported code does not establish gameplay
+acceptance for either fork. Original source transfer and prior fork fixes follow.
+
+# Fork and upstream refresh — 1 November 2026
+
+Development target: **0.9.2164**. Fetched upstream **4fbf1acf0e0ec7d14350132cd3de01d6a86aa552**.
+Git reports 436 upstream graph commits outside HEAD: 306 covered by the previous
+`dc4cd7307` source integration and 130 new commits transferred in this refresh.
+The source integration preserves fork adaptations rather than importing upstream's
+protocol number or overwriting working changes. HEAD and the real index remain
+unchanged; upstream ancestry is not recorded until an explicitly requested commit.
+
+Enumerated 51 other default heads across the upstream network and the direct
+WatchersOfTheVoid forks; 50 fetched successfully. Marlore/temp-mail-generator
+still returns not found. This inventory covers publicly returned default branches,
+not every nondefault branch or unpublished work. Evidence:
+`build/forks-2164.json`, `build/fork-heads-2164.json`, and
+`build/sync-2164/{fork-comparison,upstream-commits}.json`.
+
+## Applied or retained
+
+| Provenance | Decision |
+| --- | --- |
+| Ghezra `97f1f6072` | Disable cast shadows on both puppet body mesh slots so the body does not cut its own flashlight cone. The adapted wrapper checks the parameter write and uses serial-aware dispatch resolution. Rendered acceptance remains open. |
+| Dafirka `d52f22cfc` | Cache name-watch lookup, revalidate the table slot, and reuse settled dead watches. The production fixture checks 100000 repeated registrations, equal text at another address and a stale cached slot. |
+| Dafirka `61874dfdf`, `979c95e8c`, `4a945e3a7` | Stop re-ensuring settled native destruction watches for deer, centipede and mannequin on every tick. |
+| Dafirka `15fa7c39a` | Keep serverbox delivery cursors and per-recipient state when Install is re-ensured for the same session serial. |
+| Dafirka `593b7900c`, reflection subset | Cache class default objects by requested class, object serial and both names. Keep the fork's two-pass console layout checks, which protect callback retirement; omit unrelated profiling-only additions. |
+| Upstream `e931d30da` through `4fbf1acf0` | Transfer rapid record updates, container host escrow/reservations/overlap arming, throw election/damage bounds, snapshot position waits and associated drills. Preserve native extraction publication and its fingerprint; retain fork identity, food, hold, checked write and lifetime safeguards at conflicts. |
+| Dafirka `321813735`, Ghezra balance/coin/can fixes | Existing per-recipient balance debt, owned native coin collection and mutation-ready canned-food publication already cover these fixes with additional lifetime and transaction guards. Keep those implementations; adapt upstream CI fixtures to them. |
+| Older reviewed forks | Retain existing generator, coasting, laptop/screen, disk string, class capacity and birth/lifetime adaptations. Rewritten historical pelmentor/Claude commits are not treated as independent new fork fixes. |
+
+## Exclusions and follow-up
+
+Ghezra's `70641f091` toolgun lane is a useful UG3 implementation reference,
+but its symmetric state relay needs the fork's host admission and hold/lifetime
+policy. Its `764bdb93b` signal settings need the existing operator lease; its
+first-holder election must not replace our current hold arbitration wholesale.
+The can route is already covered locally. Save announcements and class/beam
+inspection tools are separate features, not required repairs for this transfer.
+No upstream/fork CI weakening, public version changes or replacement wire IDs
+were imported. Existing gv1nd capacity and Dev-prizrakk/Shinobu2/Tarangok fixes
+remain superseded by current implementations where noted in the older review.
+
+The upstream removal of the takeObj fingerprint is excluded because the retained
+fork extraction publisher still watches that exact body. Old container CAS files
+and fixed-version package scripts have no active consumers and were removed after
+checking recoverable HEAD copies. Five superseded coordinate-tower/hit-intent source files were also removed
+after explicit owner approval; the previous automatic rejection and exact
+recoverable paths are recorded in the cleanup inventory.
+
+The source transfer builds with development protocol **2219**. Published IDs are
+retained, HitIntent keeps 242, container request/reply/commit use 264/265/266,
+and PropRelease/PropDropIntent retain the fork fields at 94/214 bytes. The old
+2163/b2217 archive and release.json remain the last qualified package.
+Verification and multiplayer limits are recorded in TESTLOG.md.
+
+# Refreshed fork review — 28 October 2026
+
+The inventory below is historical. A fresh default-head review now enumerates
+3 direct WatchersOfTheVoid forks and 44 publicly returned upstream forks
+(46 other repositories after deduplication; 45 reachable). Marlore remains
+unreachable. Exact heads and the current-upstream comparison are preserved in
+build/fork-review-20261028/{forks,heads,comparison-current-upstream}.json.
+
+The new direct fork gxrxrt/WatchersOfTheVoid, default fix/coop-stability at
+fee106791, contributes 31 commits outside our branch/current upstream.
+Five source adaptations are now implemented: generator_C watch ownership,
+player-body prop coasting, exact slapper Character/source admission, and
+readiness/lease-aware bounded inheritance for laptop and shared-screen state.
+Per-item provenance, excluded changes and verification are in the current
+[WORK](WORK.md) and [TESTLOG](TESTLOG.md). The fork's other wire kinds and
+protocol 2903 were not merged into protocol 2217.
+
+gv1nd's capacity fix remains superseded by our 8192-slot table; mega-maks2011
+still contributes README text only. LoKoGoRus's new five-seat patch is
+superseded by the existing 32-peer implementation. Several fresh fork heads
+are identical to upstream snapshots and add no independent fixes. The newly
+reachable rosonoka head retains pelmentor's older rewritten upstream history.
+This review covers publicly returned default heads, not unpublished changes
+or every nondefault branch of the upstream network.
+
 # Selected upstream fixes
 
 Compared fork `21941a2df` with VOTV-MP/Multivoid `93dd26cc2`: 39 graph commits

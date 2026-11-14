@@ -5,6 +5,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 
@@ -22,26 +23,32 @@ namespace R = reflection;
 struct BaseEvent {
     const wchar_t* name;
     ue_wrap::CachedObjRef cls;
-    void* fn = nullptr;
+    ue_wrap::CachedObjRef fn;
     bool  missed = false;
+    const wchar_t* owner = P::name::PropClass;
 };
 
 BaseEvent g_grabPrelude{L"playerGrabbed_pre"};
 BaseEvent g_thrown{P::name::PropThrownFn};
 BaseEvent g_setPropProps{L"setPropProps"};
+BaseEvent g_glowstickRelease{L"releaseGlowstick", {}, {}, false, L"prop_glowstick_C"};
 
 void* Resolve(BaseEvent& e) {
-    if (e.missed) return nullptr;
-    if (e.fn && e.cls.Alive()) return e.fn;
-    e.cls.Set(R::FindClass(P::name::PropClass));
-    if (!e.cls.Raw()) return nullptr;  // not loaded yet
-    e.fn = R::FindFunction(e.cls.Raw(), e.name);
-    if (!e.fn) {
-        UE_LOGW("prop_events: %ls.%ls did not resolve -- a receiver does not replay it", P::name::PropClass,
+    if (!e.cls.Alive()) {
+        e.fn.Reset();
+        e.missed = false;
+        e.cls.Set(R::FindClass(e.owner));
+    }
+    void* cls = e.cls.Get();
+    if (!cls || e.missed) return nullptr;
+    if (void* fn = e.fn.Get()) return fn;
+    e.fn.Set(R::FindFunction(cls, e.name));
+    if (!e.fn.Alive()) {
+        UE_LOGW("prop_events: %ls.%ls did not resolve -- a receiver does not replay it", e.owner,
                 e.name);
         e.missed = true;
     }
-    return e.fn;
+    return e.fn.Get();
 }
 
 }  // namespace
@@ -52,6 +59,21 @@ bool CallBaseGrabPrelude(void* prop) {
     if (!fn) return false;
     ParamFrame f(fn);  // the player and the hit result stay zeroed: the base body reads neither
     return f.valid() && Call(prop, f);
+}
+
+GrabPreludeResult ReplayRemoteGrabPrelude(void* prop) {
+    if (!prop || !R::IsLive(prop)) return GrabPreludeResult::NotReady;
+    CachedObjRef target;
+    target.Set(prop);
+    void* glowstick = object_index::ClassByName(L"prop_glowstick_C");
+    if (!target.Alive()) return GrabPreludeResult::NotReady;
+    const bool isGlowstick = glowstick && R::IsDescendantOfAny(R::ClassOf(prop), &glowstick, 1);
+    BaseEvent& event = isGlowstick ? g_glowstickRelease : g_grabPrelude;
+    void* fn = Resolve(event); // exact declaring owner, including inherited colour variants
+    if (!fn || !target.Alive()) return GrabPreludeResult::NotReady;
+    ParamFrame frame(fn);
+    if (!frame.valid() || !target.Alive() || !event.fn.Is(fn)) return GrabPreludeResult::NotReady;
+    return Call(prop, frame) ? GrabPreludeResult::Applied : GrabPreludeResult::Failed;
 }
 
 bool CallBaseSetPropProps(void* prop, bool isStatic, bool frozen, bool sleeping) {
@@ -70,5 +92,25 @@ bool CallPropThrown(void* prop, void* player) {
     ParamFrame f(fn);
     return f.valid() && f.Set<void*>(L"Player", player) && Call(prop, f);
 }
+
+namespace {
+
+// A pure BP function with one out bool, run on the prop's own class (a Dispatch lookup, memoised per class).
+bool AskBool(void* prop, const wchar_t* fnName, const wchar_t* outName, bool& out) {
+    if (!prop || !R::IsLive(prop)) return false;
+    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(prop), fnName);
+    if (!fn) return false;
+    ParamFrame f(fn);
+    bool value = false;
+    if (!f.valid() || !Call(prop, f) || !f.GetRaw(outName, &value, static_cast<int32_t>(sizeof value))) return false;
+    out = value;
+    return true;
+}
+
+}  // namespace
+
+bool ReadIgnoreSave(void* prop, bool& out) { return AskBool(prop, L"ignoreSave", L"ignoreSave", out); }
+
+bool ReadCanPickup(void* prop, bool& out) { return AskBool(prop, L"canPickup", L"return", out); }
 
 }  // namespace ue_wrap::prop

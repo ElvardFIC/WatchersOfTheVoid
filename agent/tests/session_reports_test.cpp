@@ -1,4 +1,4 @@
-// Actual production classifiers and companion-spawn controller, with engine reads doubled.
+// Actual production console classifiers and sleep controller; ATV lifecycle runs separately.
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -71,31 +71,6 @@ namespace ue_wrap::world_singleton {void* Gamemode(){return &rest::gm;}}
 namespace rest {
 #include "sleep_rest_controller.inc"
 }
-namespace atv {
-Obj source, minted;
-int liveCount=1,spawns=0,watches=0;
-namespace A {
-bool GetRootTransform(void*,FVector& p,FRotator& r){p={};r={};return true;}
-bool IsDriven(void*){return false;}
-bool FindCompanionLocation(void*,FVector& p){p={0,150,0};return true;}
-void* SpawnMirror(const wchar_t*,const FVector&,const FRotator&){++spawns;++liveCount;return &minted;}
-bool DestroyMirror(void*){--liveCount;return true;}
-}
-struct Entry{void* actor;int idx;};
-std::unordered_map<std::wstring,Entry> g_atvs{{L"native",{&source,1}}};
-bool g_companionSpawned=true,g_companionCapped=true;
-void* g_companionActor=nullptr;
-std::wstring g_companionKey;
-uint64_t g_companionSettledSince=0,g_compStillSince=1000;
-void* g_compSrc=&source;FVector g_compLoc{};
-constexpr uint64_t kCompanionSettleMs=1000;
-int LiveAtvCount(){return liveCount;}
-bool IsSynthKey(const std::wstring&){return false;}
-bool IsLocalGrabber(void*,void*){return false;}
-void WatchMintedCompanion(uint64_t){++watches;}
-void RepairCompanionKeyCollision(){}
-#include "companion_retry.inc"
-}
 int main(){
     using namespace screen;
     for(int i=0;i<7;++i)g_widgets[i].cls=&widgetClasses[i];
@@ -108,10 +83,6 @@ int main(){
     widget.used=nullptr;assert(ClassifyWidgetClaimKey(&widget).empty());
     second.located=false;assert(ClassifyDeviceActorClaimKey(&second).empty());
     Obj desk{&deviceClasses[0]};assert(ClassifyDeviceActorClaimKey(&desk)==L"desk");
-    atv::TrySpawnCompanion(20000);assert(atv::spawns==1 && atv::g_companionActor==&atv::minted && !atv::g_companionCapped);
-    atv::TrySpawnCompanion(21000);assert(atv::spawns==1 && atv::watches==1);
-    atv::g_companionActor=nullptr;atv::g_companionCapped=true;
-    atv::TrySpawnCompanion(24000);assert(atv::spawns==1); // two native ATVs already exist
     coop::net::Session session;rest::g_session=&session;
     rest::OnSleepPost({});assert(rest::g_resting && rest::dilation==1 && rest::custom==20);
     coop::sleep_sync::unanimous=true;rest::Tick();assert(!rest::g_resting && rest::dilation==20 && rest::custom==1);
@@ -121,6 +92,6 @@ int main(){
     rest::Tick();assert(!rest::g_resting && rest::dilation==20);
     session.linked=true;session.mode=coop::net::Role::Client;rest::OnSleepPost({});rest::Tick();
     assert(rest::g_resting && rest::dilation==1 && rest::custom==20);
-    puts("PASS independent physical console claims and failed companion recovery without a third ATV");
+    puts("PASS independent physical console claims");
     puts("PASS actual sleep controller: host personal rest, unanimous acceleration, wake/join changes, solo host and unchanged client rate");
 }

@@ -79,21 +79,34 @@ uint8_t FrozenSleepBitsOf(void* actor) {
 }
 
 void ConvergeFrozenSleep(void* actor, uint8_t physFlags) {
+    ConvergeFrozenSleep(actor, physFlags, {});
+}
+bool ConvergeFrozenSleep(void* actor, uint8_t physFlags, const std::function<bool()>& current) {
     namespace pf = coop::net::propspawn_flags;
-    if (!(physFlags & pf::kLiveState) || !actor || !ue_wrap::prop::IsDescendantOfProp(actor)) return;
+    const auto allowed = [&] {return !current || current();};
+    if (!allowed()) return false;
+    if (!(physFlags & pf::kLiveState) || !actor) return true;
+    const bool prop = ue_wrap::prop::IsDescendantOfProp(actor);
+    if (!allowed()) return false;
+    if (!prop) return true;
     const bool wantFrozen = (physFlags & pf::kFrozen) != 0;
     const bool wantSleep  = (physFlags & pf::kSleep) != 0;
     const bool isFrozen = ue_wrap::prop::IsFrozen(actor);
+    if (!allowed()) return false;
     const bool isSleep  = ue_wrap::prop::IsSleeping(actor);
-    if (isFrozen == wantFrozen && isSleep == wantSleep) return;
+    if (!allowed()) return false;
+    if (isFrozen == wantFrozen && isSleep == wantSleep) return true;
+    const bool fixed = ue_wrap::prop::IsStatic(actor);
+    if (!allowed()) return false;
     const bool ok = (!wantFrozen && !wantSleep)
         ? ue_wrap::prop::CallAwakeUnfreeze(actor)
-        : ue_wrap::prop::CallBaseSetPropProps(actor, ue_wrap::prop::IsStatic(actor), wantFrozen, wantSleep);
+        : ue_wrap::prop::CallBaseSetPropProps(actor, fixed, wantFrozen, wantSleep);
     if (!ok) {
         UE_LOGW("prop_wire_parity: %p frozen=%d sleep=%d -> want frozen=%d sleep=%d -- the game's verb did "
                 "not dispatch; the copy keeps its flags", actor, isFrozen ? 1 : 0, isSleep ? 1 : 0,
                 wantFrozen ? 1 : 0, wantSleep ? 1 : 0);
     }
+    return allowed() && ok;
 }
 
 bool SpParitySimulate(uint8_t physFlags) {
@@ -102,10 +115,15 @@ bool SpParitySimulate(uint8_t physFlags) {
 }
 
 void RestoreSpParityPhysicsAfterConverge(void* actor, uint8_t physFlags) {
-    if (!actor || !R::IsLive(actor)) return;
+    RestoreSpParityPhysicsAfterConverge(actor, physFlags, {});
+}
+bool RestoreSpParityPhysicsAfterConverge(void* actor, uint8_t physFlags, const std::function<bool()>& current) {
+    const auto allowed = [&] {return !current || current();};
+    if (!allowed() || !actor || !R::IsLive(actor)) return false;
     void* mesh = ue_wrap::prop::GetStaticMesh(actor);
-    if (!mesh) return;
-    ue_wrap::engine::SetComponentSimulatePhysics(mesh, SpParitySimulate(physFlags));
+    if (!allowed()) return false;
+    if (!mesh) return true;
+    return ue_wrap::engine::SetComponentSimulatePhysics(mesh, SpParitySimulate(physFlags)) && allowed();
 }
 
 }  // namespace coop::prop_wire_parity

@@ -41,12 +41,12 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& p,
 void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
                           const coop::net::ItemActivatePayload& p);
 
-// Per-slot connect-time flashlight replay. Snapshots the local pawn's current flashlight
-// state and sends it to one specific peer. Called from the harness's per-slot connect edge;
+// Per-slot connect-time flashlight replay. Queues a fresh local-pawn sample for
+// one specific peer, retried until accepted. Called from the per-slot connect edge;
 // a single aggregate broadcast that fired once would skip late joiners. `peerSlot` is the
 // players-registry slot of the newly joined peer (1 and up on the host; 0 on a client).
-// No-op with a log if the local flashlight is off (the receiver's puppet default is already
-// off). Game thread only.
+// ON and OFF are both replayed. Recipient identity is held through preparation
+// and completion; target delivery does not satisfy regular broadcast dedup. Game thread only.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // The host-relay late-joiner replay. Where QueueConnectBroadcastForSlot replays this peer's
@@ -54,12 +54,13 @@ void QueueConnectBroadcastForSlot(int peerSlot);
 // item state to the joiner, so it converges to the live world (the packet is edge-triggered,
 // so a flashlight already on before the joiner arrived would otherwise stay dark until the
 // owner next toggles). Host only (the relay hub holds the per-peer cache); no-op on clients.
-// `newSlot` is the freshly connected client's slot. Game thread only.
+// `newSlot` is the freshly connected client's slot. Refused sends stay owed to
+// the captured recipient and author connections. Game thread only.
 void ReplayPeerStatesToSlot(int newSlot);
 
-// The per-tick worker. Drains the pending broadcast queued at connect (retries the reliable
-// send until the channel accepts it, then updates the observer's dedup signature so the next
-// press does not re-send) and the per-peer pending applies (walks the puppet registry; each
+// The per-tick worker. Drains connect replay with a shared 64-targeted-send budget
+// and a rotating cursor, retaining newer work through callbacks. Drains per-peer
+// pending applies (walks the puppet registry; each
 // slot with a pending payload and a valid puppet is applied and cleared). Cheap when nothing
 // is pending. Game thread only.
 void TickConnect();

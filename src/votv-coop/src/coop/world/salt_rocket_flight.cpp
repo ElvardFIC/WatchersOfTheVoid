@@ -104,7 +104,7 @@ void Tick() {
     for (int i = 0; i < g_count; ++i) {
         void* rocket = g_firing[i].Get();
         if (!rocket) continue;
-        coop::prop_drive_host::Claim(rocket, "salt rocket fire");
+        (void)coop::prop_drive_host::ClaimOwned(rocket, coop::prop_drive_host::ClaimSource::Rocket, "salt rocket fire");
         if (kept != i) g_firing[kept] = g_firing[i];
         ++kept;
     }

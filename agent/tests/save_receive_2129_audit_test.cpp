@@ -3,6 +3,7 @@
 #include "../../src/votv-coop/src/coop/save/save_transfer.cpp"
 #include "../../src/votv-coop/src/coop/save/save_blob_codec.cpp"
 #include "../../src/votv-coop/src/coop/save/slot_file_read.cpp"
+#include "../../src/votv-coop/src/coop/net/client_authorship.h"
 #include <cstdlib>
 #include <iterator>
 #include <new>
@@ -28,6 +29,11 @@ void LogReceivedMap(const IdMap&) {}
 }
 namespace coop::save_identity_bind { void SetReceivedMap(const save_identity_map::IdMap&) {} void OnDisconnect() {} }
 namespace coop::join_window_baseline { void ClearForSlot(int) {} }
+namespace coop::dev::atv_spawn_drill {void OnSlotStreamComplete(int){std::abort();}}
+namespace coop::dev::host_settle_drill {void NoteHold(){std::abort();}void NoteCapture(){std::abort();}}
+namespace coop::host_world_settle {uint32_t MsSinceWorldBegan(){std::abort();}bool Settled(){std::abort();}}
+namespace coop::net::fake_link_steps {void NoteOrigin(Origin){}}
+namespace coop::roster_ledger {void RegisterPerSlotClear(PerSlotClearFn,void*){}}
 // Host/engine functions are link boundaries, never exercised by this receive test.
 namespace coop::config_registry::detail { struct RegistryDef {
     static FlagRow Flag() { return {nullptr,RegistryCtorKey{}}; }
@@ -78,7 +84,7 @@ static std::vector<uint8_t> Read() {
 }
 static void Receive(NC::Session& s,const std::vector<uint8_t>& wire) {
     for(uint32_t i=0;size_t(i)*NC::kSaveChunkBytes<wire.size();++i) {
-        auto msg=Chunk(wire,i);s.bulkSink(0,msg.data(),int(msg.size()));
+        auto msg=Chunk(wire,i);s.bulkSink(msg.data(),int(msg.size()));
     }
 }
 int main(int argc,char** argv) {
@@ -118,9 +124,12 @@ int main(int argc,char** argv) {
     // CRC failure must never replace the last complete slot.
     ST::ClientArm();++h.crc32;ST::OnBegin(h);Receive(session,encoded);
     CHECK(ST::GetClientState()==ST::ClientState::Failed);CHECK(Read()==plain);
-    ST::ClientArm();session.saveBeginSink(1,reinterpret_cast<const uint8_t*>(&h),sizeof(h));
+    // Session rejects client-authored save traffic before either ordered sink.
+    CHECK(NC::AuthorshipOf(NC::ReliableKind::SaveTransferBegin)==NC::ClientAuthorship::Host);
+    CHECK(NC::AuthorshipOf(NC::ReliableKind::SaveTransferChunk)==NC::ClientAuthorship::Host);
+    ST::ClientArm();
     CHECK(ST::GetClientState()==ST::ClientState::WaitingBegin);
-    session.saveBeginSink(0,reinterpret_cast<const uint8_t*>(&h),sizeof(h));
+    session.saveBeginSink(reinterpret_cast<const uint8_t*>(&h),sizeof(h));
     CHECK(ST::GetClientState()==ST::ClientState::Receiving);
     ST::OnDisconnect();CHECK(!std::filesystem::exists(Dst()));
     ST::ClientArm();ST::OnBegin(Header(plain,plain,false));Receive(session,plain);
@@ -128,9 +137,9 @@ int main(int argc,char** argv) {
     // Duplicate Begin and short/out-of-order chunks cannot produce a partial save.
     h=Header(plain,plain,false);ST::ClientArm();ST::OnBegin(h);ST::OnBegin(h);
     CHECK(ST::GetClientState()==ST::ClientState::Failed);
-    ST::ClientArm();ST::OnBegin(h);auto msg=Chunk(plain,1);session.bulkSink(0,msg.data(),int(msg.size()));
+    ST::ClientArm();ST::OnBegin(h);auto msg=Chunk(plain,1);session.bulkSink(msg.data(),int(msg.size()));
     CHECK(ST::GetClientState()==ST::ClientState::Failed);
-    ST::ClientArm();ST::OnBegin(h);msg=Chunk(plain,0);session.bulkSink(0,msg.data(),int(msg.size()-1));
+    ST::ClientArm();ST::OnBegin(h);msg=Chunk(plain,0);session.bulkSink(msg.data(),int(msg.size()-1));
     CHECK(ST::GetClientState()==ST::ClientState::Failed);CHECK(Read()==plain);
     // A buffered final write can fail only on close. A byte-range lock permits
     // opening/truncation but refuses writes: exercise a real Windows I/O failure.
@@ -157,7 +166,7 @@ int main(int argc,char** argv) {
     std::vector<uint8_t> allocationBlob(31,0x42);
     ST::OnDisconnect();ST::ClientArm();ST::OnBegin(Header(allocationBlob,allocationBlob,false));msg=Chunk(allocationBlob,0);
     bool escaped=false;test::failAlloc=true;
-    try { session.bulkSink(0,msg.data(),int(msg.size())); } catch(const std::bad_alloc&) {escaped=true;}
+    try { session.bulkSink(msg.data(),int(msg.size())); } catch(const std::bad_alloc&) {escaped=true;}
     test::failAlloc=false;CHECK(!escaped);CHECK(ST::GetClientState()==ST::ClientState::Failed);
     ST::OnDisconnect();CHECK(ST::GetClientState()==ST::ClientState::Idle);ST::GetProgress(done,total);
     CHECK(done==0&&total==0);CHECK(!std::filesystem::exists(Dst()));

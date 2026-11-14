@@ -1,67 +1,88 @@
+include(${CMAKE_CURRENT_LIST_DIR}/sources_ue_wrap.cmake)
 # DLL translation units; development probes are appended from sources_dev.cmake.
 set(VOTVCOOP_SOURCES
-    src/bootstrap/dllmain.cpp
-    src/bootstrap/boot.cpp
-    src/bootstrap/refuse_dialog.cpp
-    src/loader/cppmod_entry.cpp
-    src/loader/cppmod_stubs.asm
-    src/ue_wrap/core/log.cpp
-    src/ue_wrap/core/paths.cpp
-    src/ue_wrap/core/game_build.cpp
-    src/ue_wrap/core/caller_locals.cpp
-    src/ue_wrap/core/scan_ledger.cpp
-    src/ue_wrap/core/sig_scan.cpp
-    src/ue_wrap/core/gc_pin.cpp
-    src/ue_wrap/core/reflection.cpp
-    src/ue_wrap/core/reflection_call.cpp
-    src/ue_wrap/core/uobject_listeners.cpp
-    src/ue_wrap/core/object_index.cpp
-    src/ue_wrap/core/reflection_dispatch.cpp
-    src/ue_wrap/core/reflection_props.cpp
-    src/ue_wrap/core/asset_load.cpp
-    src/ue_wrap/core/engine_heap.cpp
-    src/ue_wrap/core/hook.cpp
-    src/ue_wrap/core/hook_drill.cpp
-    src/ue_wrap/core/hot_path_guard.cpp
-    src/ue_wrap/core/game_thread.cpp
-    src/ue_wrap/core/game_thread_wait.cpp
-    src/ue_wrap/core/walk_census.cpp
-    src/ue_wrap/core/pe_detour.cpp
-    src/ue_wrap/core/pe_diag.cpp
-    src/ue_wrap/engine/spawn_gate.cpp
-    src/ue_wrap/engine/actor_end_play.cpp
-    src/ue_wrap/core/ufunction_hook.cpp
-    src/ue_wrap/facts/function_row.cpp
-    src/ue_wrap/core/script_bytecode.cpp
-    src/ue_wrap/core/script_fingerprint.cpp
-    src/ue_wrap/core/script_gate.cpp
+    src/coop/props/hit_target_prop.cpp
+    src/coop/props/bracket_position_wait.cpp
+    src/coop/props/prop_damage_gate.cpp
+    src/coop/props/prop_throw.cpp
+    src/coop/props/prop_throw_host.cpp
+    src/coop/props/prop_container_extract.cpp
+    ${VOTVCOOP_SOURCES_UE_WRAP_1}
+    ${VOTVCOOP_SOURCES_UE_WRAP_2}
     src/ue_wrap/core/script_gate_registry.cpp
-    src/ue_wrap/core/script_gate_names.cpp
-    src/ue_wrap/core/script_loop.cpp
-    src/ue_wrap/engine/engine.cpp
-    src/ue_wrap/engine/engine_save.cpp
-    src/ue_wrap/engine/data_table.cpp
-    src/ue_wrap/actors/begin_equipment.cpp
-    src/ue_wrap/actors/container_inventory.cpp
-    src/ue_wrap/actors/container_openers.cpp
-    src/ue_wrap/actors/container_view.cpp
-    src/ue_wrap/actors/floppy_disc.cpp
-    src/ue_wrap/actors/sleepingbag.cpp
-    src/ue_wrap/actors/notebook.cpp
-    src/ue_wrap/actors/hook.cpp
-    src/ue_wrap/world/keyed_objects.cpp
-    src/coop/items/hook_sync.cpp
-    src/coop/items/hook_anchor.cpp
-    src/coop/items/hook_retrieve.cpp
-    src/coop/props/bucket_sync.cpp
-    src/coop/props/water_pour_sync.cpp
     src/ue_wrap/actors/water_pour.cpp
     src/ue_wrap/actors/building_material.cpp
     src/ue_wrap/actors/dingus_music.cpp
     src/ue_wrap/actors/watoy.cpp
     src/ue_wrap/actors/sponge_effects.cpp
     src/ue_wrap/actors/physics_gun.cpp
+    src/ue_wrap/engine/engine_ragdoll_skin.cpp
+    src/ue_wrap/devices/cremator.cpp
+    src/ue_wrap/world/media_player.cpp
+    src/ue_wrap/world/sky_black_hole.cpp
+    src/ue_wrap/world/ariral_ship.cpp
+    src/ue_wrap/devices/kitchen_machine.cpp
+    src/ue_wrap/devices/grill.cpp
+    src/ue_wrap/devices/grill_saved_state.cpp
+    src/ue_wrap/devices/cargo_lift.cpp
+    src/ue_wrap/actors/prop_ignite.cpp
+    src/ue_wrap/actors/radial_impulse.cpp
+    src/ue_wrap/actors/explosion_blast.cpp
+    src/ue_wrap/actors/prop_explosion.cpp
+    src/ue_wrap/devices/service_panel.cpp
+    src/ue_wrap/world/madness.cpp
+    src/ue_wrap/world/radio_player.cpp
+    src/ue_wrap/actors/player_support.cpp
+    src/ue_wrap/desk/coords_visual.cpp
+    src/ue_wrap/devices/laptop_ui.cpp
+    src/ue_wrap/actors/rufus.cpp
+    src/ue_wrap/actors/llama.cpp
+    src/ue_wrap/actors/llama_trigger.cpp
+    src/ue_wrap/actors/llama_timer.cpp
+    src/ue_wrap/actors/llama_marker.cpp
+    src/ue_wrap/actors/llama_events.cpp
+    src/ue_wrap/actors/llama_begin_restore.cpp
+    src/ue_wrap/actors/fossilhound_presentation.cpp
+    src/ue_wrap/actors/pressure_washer.cpp
+    src/ue_wrap/actors/sit_pose.cpp
+    src/ue_wrap/actors/food.cpp
+    src/ue_wrap/actors/cooking_food.cpp
+    src/ue_wrap/actors/floor_bed.cpp
+    src/ue_wrap/world/event_location.cpp
+    src/ue_wrap/actors/safe.cpp
+    src/ue_wrap/actors/placed_save.cpp
+    src/ue_wrap/actors/placed_save_record.cpp
+    src/ue_wrap/actors/wall_creative.cpp
+    src/ue_wrap/actors/wall_build.cpp
+    src/ue_wrap/actors/wall_drying.cpp
+    src/ue_wrap/actors/material_saved_state.cpp
+    src/ue_wrap/devices/atv_steering.cpp
+    src/ue_wrap/actors/player_blood.cpp
+    src/ue_wrap/devices/drink_spill.cpp
+    src/ue_wrap/core/component_calls.cpp
+    src/ue_wrap/actors/sleep_display.cpp
+    src/ue_wrap/desk/shared_screen.cpp
+    src/ue_wrap/actors/inventory.cpp
+    src/ue_wrap/hotbar/icons.cpp
+    src/ue_wrap/actors/save_record.cpp
+    src/bootstrap/dllmain.cpp
+    src/bootstrap/boot.cpp
+    src/bootstrap/refuse_dialog.cpp
+    src/loader/cppmod_entry.cpp
+    src/loader/cppmod_stubs.asm
+    src/coop/items/hook_sync.cpp
+    src/coop/items/hook_anchor.cpp
+    src/coop/items/hook_retrieve.cpp
+    src/coop/props/bucket_sync.cpp
+    src/coop/props/water_pour_sync.cpp
     src/coop/props/dingus_music_sync.cpp
+    src/coop/player/emote_sync.cpp
+    src/ue_wrap/actors/emote_wheel.cpp
+    src/coop/props/llama_sync.cpp
+    src/coop/props/llama_trigger.cpp
+    src/coop/props/llama_timers.cpp
+    src/coop/props/llama_events.cpp
+    src/coop/props/llama_begin_restore.cpp
     src/coop/props/watoy_sync.cpp
     src/coop/props/sponge_effects_sync.cpp
     src/coop/props/prop_knock.cpp
@@ -71,163 +92,16 @@ set(VOTVCOOP_SOURCES
     src/coop/items/broom_stroke.cpp
     src/coop/items/broom_push.cpp
     src/coop/items/gravity_motion.cpp
-    src/ue_wrap/engine/save_capture.cpp
-    src/ue_wrap/engine/save_to_slot_hook.cpp
-    src/ue_wrap/engine/engine_audio.cpp
-    src/ue_wrap/engine/engine_bones.cpp
-    src/ue_wrap/engine/engine_component.cpp
-    src/ue_wrap/engine/hit_result.cpp
-    src/ue_wrap/engine/engine_hurt_flash.cpp
-    src/ue_wrap/engine/screen_state.cpp
-    src/ue_wrap/engine/engine_mainplayer.cpp
-    src/ue_wrap/engine/engine_player_verbs.cpp
-    src/ue_wrap/engine/scs_rig.cpp
-    src/ue_wrap/engine/engine_playerragdoll.cpp
-    src/ue_wrap/engine/engine_ragdoll_skin.cpp
-    src/ue_wrap/engine/engine_attach.cpp
-    src/ue_wrap/devices/door.cpp
-    src/ue_wrap/devices/cremator.cpp
-    src/ue_wrap/devices/base_window.cpp
-    src/ue_wrap/devices/window_canvas.cpp
-    src/ue_wrap/devices/grime.cpp
-    src/ue_wrap/world/daynightcycle.cpp
-    src/ue_wrap/world/media_player.cpp
-    src/ue_wrap/world/active_events.cpp
-    src/ue_wrap/world/jellyfish_path.cpp
-    src/ue_wrap/world/bad_sun.cpp
-    src/ue_wrap/world/red_sky.cpp
-    src/ue_wrap/world/explosion.cpp
-    src/ue_wrap/world/explosion_source.cpp
-    src/ue_wrap/world/skysphere.cpp
-    src/ue_wrap/world/sky_black_hole.cpp
-    src/ue_wrap/world/ariral_ship.cpp
-    src/ue_wrap/world/directionalwind.cpp
-    src/ue_wrap/devices/lightswitch.cpp
-    src/ue_wrap/devices/garage.cpp
-    src/ue_wrap/devices/appliance.cpp
-    src/ue_wrap/devices/kitchen_machine.cpp
-    src/ue_wrap/devices/grill.cpp
-    src/ue_wrap/devices/grill_saved_state.cpp
     src/coop/interactables/grill_hand_sync.cpp
     src/coop/interactables/grill_edits.cpp
-    src/ue_wrap/devices/cargo_lift.cpp
-    src/ue_wrap/actors/prop_fire.cpp
-    src/ue_wrap/actors/prop_ignite.cpp
     src/coop/props/prop_fire_sync.cpp
     src/coop/props/explosion_sync.cpp
     src/coop/props/explosion_prop_motion.cpp
-    src/ue_wrap/actors/radial_impulse.cpp
     src/coop/props/explosion_events.cpp
-    src/ue_wrap/actors/explosion_blast.cpp
-    src/ue_wrap/actors/prop_explosion.cpp
-    src/ue_wrap/devices/service_panel.cpp
     src/coop/world/service_panel_sync.cpp
     src/coop/world/desk_short_circuit_sync.cpp
     src/coop/world/madness_sync.cpp
-    src/ue_wrap/world/madness.cpp
     src/coop/world/radio_sync.cpp
-    src/ue_wrap/world/radio_player.cpp
-    src/ue_wrap/devices/cord.cpp
-    src/ue_wrap/actors/player_support.cpp
-    src/ue_wrap/devices/power_control.cpp
-    src/ue_wrap/devices/generator.cpp
-    src/ue_wrap/devices/generator_panel.cpp
-    src/ue_wrap/devices/atv.cpp
-    src/ue_wrap/devices/atv_condition.cpp
-    src/ue_wrap/devices/drone.cpp
-    src/ue_wrap/devices/drone_console.cpp
-    src/ue_wrap/devices/windturbine.cpp
-    src/ue_wrap/devices/door_box.cpp
-    src/ue_wrap/desk/device_screen.cpp
-    src/ue_wrap/desk/space_renderer.cpp
-    src/ue_wrap/desk/console_desk.cpp
-    src/ue_wrap/desk/comp_pane.cpp
-    src/ue_wrap/desk/coords_panel.cpp
-    src/ue_wrap/desk/coords_visual.cpp
-    src/ue_wrap/desk/dish.cpp
-    src/ue_wrap/desk/dish_writers.cpp
-    src/ue_wrap/desk/sat_console.cpp
-    src/ue_wrap/desk/coord_tower.cpp
-    src/ue_wrap/desk/tape_caddy.cpp
-    src/ue_wrap/devices/floppy_slot.cpp
-    src/ue_wrap/devices/laptop.cpp
-    src/ue_wrap/devices/laptop_ui.cpp
-    src/ue_wrap/devices/portable_pc.cpp
-    src/ue_wrap/devices/floppybox.cpp
-    src/ue_wrap/devices/serverbox.cpp
-    src/ue_wrap/devices/security_camera.cpp
-    src/ue_wrap/devices/laptop_widget.cpp
-    src/ue_wrap/desk/desk_audio.cpp
-    src/ue_wrap/desk/phys_mods.cpp
-    src/ue_wrap/desk/desk_press.cpp
-    src/ue_wrap/desk/desk_detector.cpp
-    src/ue_wrap/desk/desk_ping.cpp
-    src/ue_wrap/desk/drive_chain.cpp
-    src/ue_wrap/desk/drive_eraser.cpp
-    src/ue_wrap/desk/daily_task.cpp
-    src/ue_wrap/actors/sleep.cpp
-    src/ue_wrap/world/email.cpp
-    src/ue_wrap/devices/passwordlock.cpp
-    src/ue_wrap/core/trace.cpp
-    src/ue_wrap/actors/fossilhound.cpp
-    src/ue_wrap/actors/fossilhound_presentation.cpp
-    src/ue_wrap/actors/wisp.cpp
-    src/ue_wrap/actors/swinger.cpp
-    src/ue_wrap/actors/broom.cpp
-    src/ue_wrap/actors/fire_extinguisher.cpp
-    src/ue_wrap/actors/pressure_washer.cpp
-    src/ue_wrap/actors/chip_pile.cpp
-    src/ue_wrap/engine/engine_pawn.cpp
-    src/ue_wrap/engine/engine_physics.cpp
-    src/ue_wrap/engine/world_identity.cpp
-    src/ue_wrap/engine/engine_nav.cpp
-    src/ue_wrap/engine/engine_widget.cpp
-    src/ue_wrap/engine/umg_build.cpp
-    src/ue_wrap/engine/save_browser.cpp
-    src/ue_wrap/engine/gvas_meta.cpp
-    src/ue_wrap/core/reflected_offset.cpp
-    src/ue_wrap/core/call.cpp
-    src/ue_wrap/core/fname_utils.cpp
-    src/ue_wrap/core/ftext_utils.cpp
-    src/ue_wrap/core/fstring_utils.cpp
-    src/ue_wrap/core/field_io.cpp
-    src/ue_wrap/desk/signal_dynamic.cpp
-    src/ue_wrap/desk/meadow_store.cpp
-    src/ue_wrap/desk/saved_signals.cpp
-    src/ue_wrap/actors/puppet.cpp
-    src/ue_wrap/actors/puppet_spawn.cpp
-    src/ue_wrap/actors/sit_pose.cpp
-    src/ue_wrap/actors/kerfur.cpp
-    src/ue_wrap/actors/food.cpp
-    src/ue_wrap/actors/cooking_food.cpp
-    src/ue_wrap/actors/kerfus.cpp
-    src/ue_wrap/actors/zombie.cpp
-    src/ue_wrap/actors/int_objects.cpp
-    src/ue_wrap/world/votv_lib.cpp
-    src/ue_wrap/world/economy.cpp
-    src/ue_wrap/world/profile.cpp
-    src/ue_wrap/world/event_list.cpp
-    src/ue_wrap/world/order_economy.cpp
-    src/ue_wrap/world/store_catalog.cpp
-    src/ue_wrap/world/weapon_catalog.cpp
-    src/ue_wrap/actors/prop.cpp
-    src/ue_wrap/actors/prop_keys.cpp
-    src/ue_wrap/actors/floor_bed.cpp
-    src/ue_wrap/actors/prop_flags.cpp
-    src/ue_wrap/actors/prop_gather.cpp
-    src/ue_wrap/actors/spawner_stamp.cpp
-    src/ue_wrap/actors/prop_events.cpp
-    src/ue_wrap/actors/prop_use.cpp
-    src/ue_wrap/actors/garbage_bag.cpp
-    src/ue_wrap/actors/vitals.cpp
-    src/ue_wrap/actors/effects.cpp
-    src/ue_wrap/world/game_mode.cpp
-    src/ue_wrap/world/world_singleton.cpp
-    src/ue_wrap/world/world_instances.cpp
-    src/ue_wrap/world/game_rules.cpp
-    src/ue_wrap/world/upgrades.cpp
-    src/ue_wrap/world/game_rules_pane.cpp
-    src/ue_wrap/engine/spawn_menu.cpp
     src/coop/player/movement_ledger.cpp
     src/coop/player/remote_player.cpp
     src/coop/player/remote_player_ragdoll.cpp
@@ -243,6 +117,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_hold.cpp
     src/coop/props/remover_request.cpp
     src/coop/props/remote_prop.cpp
+    src/coop/props/remote_prop_drive.cpp
     src/coop/props/unresolved_pose_ledger.cpp
     src/coop/props/remote_prop_convert.cpp
     src/coop/props/remote_prop_destroy.cpp
@@ -270,9 +145,11 @@ set(VOTVCOOP_SOURCES
     src/coop/comms/chat_bubbles.cpp
     src/coop/comms/peer_action_feed.cpp
     src/coop/dispatch/event_feed.cpp
+    src/coop/dispatch/event_dispatch_container_act.cpp
     src/coop/dispatch/event_dispatch_economy.cpp
     src/coop/dispatch/event_dispatch_entity.cpp
     src/coop/dispatch/event_dispatch_intent.cpp
+    src/coop/dispatch/event_dispatch_prop_drive.cpp
     src/coop/dispatch/event_dispatch_signal.cpp
     src/coop/dispatch/event_dispatch_state.cpp
     src/coop/dispatch/event_dispatch_world.cpp
@@ -281,6 +158,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/turbine_sync.cpp
     src/coop/interactables/upgrade_sync.cpp
     src/coop/interactables/interactable_sync.cpp
+    src/coop/interactables/cord_sync.cpp
     src/coop/creatures/kerfur_convert.cpp
     src/coop/creatures/kerfur_convert_client.cpp
     src/coop/creatures/kerfur_convert_host.cpp
@@ -308,8 +186,9 @@ set(VOTVCOOP_SOURCES
     src/coop/world/power_panel.cpp
     src/coop/world/power_puzzle.cpp
     src/coop/world/power_upgrade.cpp
-    src/coop/world/coord_tower_ops.cpp
-    src/coop/world/coord_tower_rows.cpp
+    src/coop/world/fuse_tower_ops.cpp
+    src/coop/world/fuse_tower_rows.cpp
+    src/coop/world/fuse_tower_kind.cpp
     src/coop/interactables/atv_sync.cpp
     src/coop/interactables/atv_stream_gates.cpp
     src/coop/interactables/atv_authority.cpp
@@ -350,19 +229,11 @@ set(VOTVCOOP_SOURCES
     src/coop/world/event_rate.cpp
     src/coop/world/event_schedule_authority.cpp
     src/coop/world/event_location_sync.cpp
-    src/ue_wrap/world/event_location.cpp
-    src/ue_wrap/actors/safe.cpp
-    src/ue_wrap/actors/placed_save.cpp
-    src/ue_wrap/actors/placed_save_record.cpp
     src/coop/world/placed_save_sync.cpp
     src/coop/world/garden_actions.cpp
     src/coop/world/wall_build_sync.cpp
     src/coop/world/wall_creative_sync.cpp
-    src/ue_wrap/actors/wall_creative.cpp
-    src/ue_wrap/actors/wall_build.cpp
-    src/ue_wrap/actors/wall_drying.cpp
     src/coop/world/material_save_sync.cpp
-    src/ue_wrap/actors/material_saved_state.cpp
     src/coop/world/media_sync.cpp
     src/coop/world/event_active_sync.cpp
     src/coop/world/creature_event_relay.cpp
@@ -379,9 +250,6 @@ set(VOTVCOOP_SOURCES
     src/coop/props/drink_spill_sync.cpp
     src/coop/player/blood_sync.cpp
     src/coop/interactables/atv_steering_sync.cpp
-    src/ue_wrap/devices/atv_steering.cpp
-    src/ue_wrap/actors/player_blood.cpp
-    src/ue_wrap/devices/drink_spill.cpp
     src/coop/session/player_handshake.cpp
     src/coop/session/player_handshake_prefs.cpp
     src/coop/session/player_handshake_nick.cpp
@@ -391,6 +259,7 @@ set(VOTVCOOP_SOURCES
     src/coop/player/item_activate.cpp
     src/coop/player/player_damage.cpp
     src/coop/player/player_hit.cpp
+    src/coop/player/hit_intent.cpp
     src/coop/player/hit_judge.cpp
     src/coop/player/ragdoll_gate.cpp
     src/coop/player/death_revive.cpp
@@ -412,9 +281,10 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/npc_mirror_brain.cpp
     src/coop/creatures/npc_mirror_brain_table.cpp
     src/coop/creatures/creature_hit.cpp
-    src/coop/creatures/creature_hit_intent.cpp
+    src/coop/creatures/hit_target_creature.cpp
     src/coop/creatures/npc_pose_drive.cpp
     src/coop/creatures/npc_pose_host.cpp
+    src/coop/creatures/npc_join_delivery.cpp
     src/coop/creatures/npc_sync.cpp
     src/coop/creatures/npc_sync_install.cpp
     src/coop/creatures/npc_world_enum.cpp
@@ -427,6 +297,8 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/kavotia_sync.cpp
     src/coop/creatures/grayboar_turn.cpp
     src/coop/creatures/piramid_sync.cpp
+    src/coop/creatures/geom_octa_sync.cpp
+    src/coop/creatures/geom_octa_relay.cpp
     src/coop/creatures/roach_sync.cpp
     src/coop/creatures/owner_entity_sync.cpp
     src/coop/world/world_actor_sync.cpp
@@ -443,7 +315,6 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_key_index.cpp
     src/coop/props/prop_destroy_seam.cpp
     src/coop/props/prop_lifecycle.cpp
-    src/coop/props/prop_container_extract.cpp
     src/coop/props/prop_food_state.cpp
     src/coop/props/prop_food_sync.cpp
     src/coop/props/food_save_sync.cpp
@@ -471,6 +342,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/trash_collect_sync.cpp
     src/coop/props/trash_use_intercept.cpp
     src/coop/props/trash_morph_gate.cpp
+    src/coop/props/trash_native_hold.cpp
     src/coop/props/trash_pile_sync.cpp
     src/coop/props/trash_mirror.cpp
     src/coop/player/puppet_carry_drive.cpp
@@ -478,6 +350,9 @@ set(VOTVCOOP_SOURCES
     src/coop/props/trash_sweep.cpp
     src/coop/props/prop_drive_host.cpp
     src/coop/props/prop_drive_stream.cpp
+    src/coop/props/prop_syncer_host.cpp
+    src/coop/props/prop_syncer_client.cpp
+    src/coop/props/prop_child_release.cpp
     src/coop/props/prop_park.cpp
     src/coop/props/rider_hold.cpp
     src/coop/world/weather_sync.cpp
@@ -519,9 +394,9 @@ set(VOTVCOOP_SOURCES
     src/coop/element/quiescence_drain.cpp
     src/coop/element/quiescence_drain_selftest.cpp
     src/coop/element/identity_create.cpp
+    src/coop/element/bind_wait.cpp
     src/coop/element/identity_destroy.cpp
     src/coop/element/portable_identity.cpp
-    src/ue_wrap/core/component_calls.cpp
     src/coop/net/peer_admission.cpp
     src/coop/net/peer_admission_selftest.cpp
     src/coop/net/end_reason.cpp
@@ -555,6 +430,7 @@ set(VOTVCOOP_SOURCES
     src/coop/net/refusal_tally.cpp
     src/coop/net/send_admission.cpp
     src/coop/net/send_backlog.cpp
+    src/coop/net/snapshot_send_scope.cpp
     src/coop/net/send_rate_control.cpp
     src/coop/net/fake_link_steps.cpp
     src/coop/net/ice_config.cpp
@@ -581,10 +457,12 @@ set(VOTVCOOP_SOURCES
     src/coop/session/local_grants.cpp
     src/coop/session/grants_sync.cpp
     src/coop/session/net_pump.cpp
+    src/coop/session/host_world_settle.cpp
     src/coop/session/net_pump_world_ready.cpp
     src/coop/player/puppet_drive.cpp
     src/coop/props/registry_reaper.cpp
     src/coop/session/pause_guard.cpp
+    src/coop/session/connect_replay.cpp
     src/coop/session/subsystems.cpp
     src/coop/session/world_ready_answer.cpp
     src/coop/player/local_streams.cpp
@@ -610,7 +488,6 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/toggle_verbs.cpp
     src/coop/interactables/kitchen_sync.cpp
     src/coop/world/cargo_lift_sync.cpp
-    src/coop/interactables/cord_sync.cpp
     src/coop/props/prop_support_sync.cpp
     src/coop/interactables/drive_rack_sync.cpp
     src/coop/interactables/desk_snd_fx.cpp
@@ -621,17 +498,18 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/dish_calib_sync.cpp
     src/coop/interactables/download_arm_sync.cpp
     src/coop/interactables/tape_caddy_sync.cpp
+    src/coop/interactables/coffee_intent.cpp
+    src/coop/interactables/coffee_state.cpp
     src/coop/interactables/laptop_sync.cpp
     src/coop/interactables/laptop_ui_sync.cpp
     src/coop/interactables/portable_pc_lid.cpp
+    src/coop/interactables/swinger_join_pose.cpp
     src/coop/interactables/laptop_buffer_sync.cpp
     src/coop/interactables/floppy_slot_entry.cpp
     src/coop/interactables/mirror_slot_entry.cpp
     src/coop/interactables/floppy_slot_sync.cpp
     src/coop/interactables/floppybox_sync.cpp
     src/coop/interactables/signal_catch_sync.cpp
-    src/ue_wrap/actors/sleep_display.cpp
-    src/ue_wrap/desk/shared_screen.cpp
     src/coop/interactables/shared_screen_sync.cpp
     src/coop/player/sleep_sync.cpp
     src/coop/creatures/wisp_attack_sync.cpp
@@ -648,16 +526,30 @@ set(VOTVCOOP_SOURCES
     src/coop/game_build/game_build.cpp
     src/coop/items/inventory_wire.cpp
     src/coop/items/save_record_wire.cpp
+    src/coop/props/container_act_host.cpp
+    src/coop/props/container_act_host_overlap.cpp
+    src/coop/props/container_act_host_put.cpp
+    src/coop/props/container_act_put.cpp
+    src/coop/props/container_act_request.cpp
+    src/coop/props/container_act_selftest.cpp
+    src/coop/props/container_act_selftest_overlap.cpp
+    src/coop/props/container_act_selftest_put.cpp
+    src/coop/props/container_act_state.cpp
+    src/coop/props/container_act_wire.cpp
+    src/coop/props/container_apply_hold.cpp
     src/coop/props/container_birth.cpp
+    src/coop/props/container_contents_io.cpp
+    src/coop/props/container_arming.cpp
+    src/coop/props/container_contents_publish.cpp
     src/coop/props/container_contents_sync.cpp
     src/coop/props/container_park.cpp
+    src/coop/props/container_reach.cpp
+    src/coop/props/container_record_edit.cpp
     src/coop/props/container_slice_wire.cpp
+    src/coop/props/container_truth.cpp
     src/coop/props/container_view_close.cpp
-    src/coop/props/container_write_policy.cpp
-    src/ue_wrap/actors/inventory.cpp
-    src/ue_wrap/hotbar/icons.cpp
+    src/coop/props/container_writer_watch.cpp
     src/coop/items/hotbar_icon_edge.cpp
-    src/ue_wrap/actors/save_record.cpp
     src/coop/world/email_sync.cpp
     src/coop/net/blob_chunks.cpp
     src/coop/interactables/signal_wire.cpp
@@ -675,9 +567,11 @@ set(VOTVCOOP_SOURCES
     src/ui/voice_icons.cpp
     src/ui/voice_panel.cpp
   src/coop/dev/floppy_selftest.cpp
+    src/coop/input/game_window_proc.cpp
     src/coop/input/input_owner.cpp
     src/coop/session/teleport_client.cpp
     src/ui/imgui_overlay.cpp
+    src/ui/overlay_seams.cpp
     src/ui/overlay_diag.cpp
     src/ui/overlay_test_arm.cpp
     src/ui/overlay_cursor.cpp
@@ -686,6 +580,8 @@ set(VOTVCOOP_SOURCES
     src/ui/overlay_backend_dx11.cpp
     src/ui/overlay_backend_dx12.cpp
     src/ui/overlay_backend_dx12_capture.cpp
+    src/ui/overlay_backend_vk.cpp
+    src/ui/overlay_backend_vk_frame.cpp
     src/ui/dev_menu.cpp
     src/ui/dev_panes.cpp
     src/ui/skins_panel.cpp

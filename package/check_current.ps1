@@ -1,8 +1,9 @@
-param(
+﻿param(
     [string]$BuildDirectory='build/votv-coop-2154',
     [string]$EvidenceDirectory='build/todo-audit',
     [string]$AssetDirectory='../_research/current-assets',
-    [string[]]$CheckGroups=@()
+    [string[]]$CheckGroups=@(),
+    [switch]$ChecksOnly
 )
 $ErrorActionPreference='Stop'
 $checkout=Split-Path -Parent $PSScriptRoot
@@ -15,7 +16,7 @@ function Get-SourceStamp {
     $production=Join-Path $checkout 'src/votv-coop'
     $files=@(Get-ChildItem -LiteralPath (Join-Path $production 'include'),(Join-Path $production 'src') -Recurse -File |
         Where-Object { $_.Extension -in @('.h','.hpp','.cpp','.inc','.rc') })
-    $files+=Get-Item -LiteralPath (Join-Path $production 'CMakeLists.txt'),(Join-Path $production 'sources.cmake')
+    $files+=Get-Item -LiteralPath (Join-Path $production 'CMakeLists.txt'),(Join-Path $production 'sources.cmake'),(Join-Path $production 'sources_ue_wrap.cmake'),(Join-Path $production 'sources_dev.cmake')
     $rows=foreach($file in ($files | Sort-Object FullName)) {
         $file.FullName.Substring($production.Length)+':'+(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     }
@@ -29,6 +30,7 @@ function Invoke-Check([string]$Name,[string]$Program,[string[]]$Arguments) {
     # Expected-failure controls write assertions to stderr and still pass their
     # runner. Record the runner's exit code instead of treating stderr as failure.
     $ErrorActionPreference='Continue'
+    $global:LASTEXITCODE=$null
     & $Program @Arguments 2>&1 | Out-File -LiteralPath $log -Encoding UTF8
     $code=$LASTEXITCODE
     $results.Add([pscustomobject]@{Runner=$Name;ExitCode=$code;Log=$log})
@@ -40,15 +42,23 @@ try {
     $sourceAtStart=Get-SourceStamp
     [IO.File]::WriteAllText((Join-Path $evidence 'source-start.sha256'), $sourceAtStart)
     foreach($name in @(
-        'run_player_reports','run_host_players','run_session_reports','run_sat_console_delivery','run_sat_console_callbacks','run_container_recovery','run_container_birth','run_container_apply','run_ariral_ship','run_inventory_apply','run_profile_join','run_2174','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
-        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_events',
-        'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
+        'run_prop_syncer',
+        'run_prop_syncer_host',
+        'run_prop_publisher','run_prop_verb','run_prop_claim','run_kerfus_state','run_kerfus_intent','run_served_player','run_omega_command','run_handtaken',
+        'run_prop_stream_scope',
+        'run_swinger_delivery',
+        'run_prop_control_delivery',
+        'run_prop_end_delivery',
+        'run_cord_continuation',
+        'run_emote','run_intent_queue','run_coffee','run_tower_ops','run_tower_rows','run_tower_wrappers','run_physics_native','run_child_release','run_radio','run_local_release','run_player_reports','run_host_players','run_game_modes','run_session_reports','run_sat_console_delivery','run_sat_console_callbacks','run_container_recovery','run_container_birth','run_container_apply','run_ariral_ship','run_inventory_apply','run_profile_join','run_2174','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
+        'run_sleep_personal','run_dream_identity','run_entity_sync','run_npc_join','run_npc_pose','run_geom_octa','run_entity_adapters','run_garden_sync','run_laptop_ui','run_world_sound','run_flashlight_native','run_flashlight_join','run_flashlight_click','run_events','run_fork_review',
+        'run_placement','run_swinger_join','run_vulkan_context','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
-        'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
-        'run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_explosion_motion',
+        'run_stow_2157','run_2160','run_2161','run_2162','run_2163','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
+        'run_llama_marker','run_llama_events','run_llama_begin_restore','run_llama_timers','run_llama_trigger','run_llama','run_rufus','run_maxwell_native','run_madness_recovery','run_atv_companion','run_seat_presentation','run_chair_sync','run_light_presentation','run_lightswitch_native','run_atv_recovery','run_atv_spawn_lifetime','run_2149','run_2177','run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_upstream_refresh','run_upstream_containers','run_fork_watch_cache','run_explosion_motion',
         'run_nonentity','run_cooking','run_food_callbacks','run_prop_action_delivery','run_prop_action_native','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_save_record','run_kitchen',
-        'run_scorch','run_sponge_effects','run_toy_music','run_wall_creative','run_water_pour',
+        'run_scorch','run_sponge_effects','run_window_stroke','run_toy_music','run_wall_creative','run_water_pour','run_prop_drive_lifetime','run_glowstick_grab','run_2124','run_2126',
         'run_watoy','run_windows','run_2166','run_wall_delivery','run_2176','run_2157','run_2145','run_2147'
     )) {
         Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")
@@ -56,10 +66,10 @@ try {
     foreach($entry in @(@('coin_collect','-CollectOnly'),@('inventory_capture','-InventoryOnly'))) {
         Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1',$entry[1])
     }
-    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+    foreach($name in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test','sat_console_native_contract_test')) {
         $arguments=@("agent/tests/$name.py")
         $runner=$name
-        if($name -in @('dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+        if($name -in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
             $arguments+=$AssetDirectory
         }
         if($name -eq 'sync_native_contract_test') {
@@ -73,8 +83,20 @@ try {
     . (Join-Path $checkout '../_toolchain/env.ps1')
     Invoke-Check 'disk_utf8' $python @('agent/tests/disk_utf8_test.py')
     Invoke-Check 'reliablekind_gate' $python @('.github/ci/reliablekind_gate.py','--drill')
+    Invoke-Check 'build_order' 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/build_order_test.ps1')
     foreach($requested in $CheckGroups){if($requested -notin $results.Runner){throw "Unknown check group: $requested"}}
     if((Get-SourceStamp) -ne $sourceAtStart){throw 'Production sources changed during the regression run; rerun against a stable source tree'}
+    if(@($results | Where-Object ExitCode -ne 0).Count){throw 'Current checks failed; Release build not started; see results.json and runner logs'}
+    if($CheckGroups.Count){
+        Write-Output "PASS $($results.Count) selected validation groups; scoped checks do not build a Release"
+        return
+    }
+    & (Join-Path $PSScriptRoot 'check_prebuild.ps1') -EvidenceDirectory $evidence
+    if((Get-SourceStamp) -ne $sourceAtStart){throw 'Production sources changed during pre-build checks'}
+    if($ChecksOnly){
+        Write-Output "PASS $($results.Count) validation groups and repository gates; checks only, Release build not started"
+        return
+    }
     $build=if([IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory}else{Join-Path $checkout $BuildDirectory}
     # CMake's always-run glob check makes Ninja dry runs pessimistically schedule
     # reconfiguration. Complete the real incremental build, then check the snapshot.
@@ -105,6 +127,5 @@ try {
     $identity | Add-Member -NotePropertyName SourceSnapshotSHA256 -NotePropertyValue $sourceAtStart
     $identity | Add-Member -NotePropertyName BuildUpToDate -NotePropertyValue $true
     $identity | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'verification.json') -Encoding UTF8
-    if(@($results | Where-Object ExitCode -ne 0).Count){throw 'Current checks failed; see results.json and runner logs'}
     Write-Output "PASS $($results.Count) current validation groups; gameplay remains unverified"
 } finally {Pop-Location}

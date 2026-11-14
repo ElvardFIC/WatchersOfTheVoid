@@ -2,6 +2,8 @@
 
 #include "coop/dev/game_window.h"
 
+#include "coop/input/game_window_proc.h"
+
 namespace coop::dev::game_window {
 namespace {
 
@@ -16,19 +18,44 @@ BOOL CALLBACK PickThreadWindow(HWND h, LPARAM lp) {
 }  // namespace
 
 HWND GameWindow() {
+    // The window the mod subclasses is the one its keys and messages travel through, so it is the
+    // one to post to; the thread scan below answers only before that subclass exists.
+    if (void* subclassed = coop::input::game_window_proc::Hwnd()) return static_cast<HWND>(subclassed);
     HWND found = nullptr;
     ::EnumThreadWindows(::GetCurrentThreadId(), &PickThreadWindow, reinterpret_cast<LPARAM>(&found));
     return found;
 }
 
-bool PostKeyPress(unsigned vk) {
-    HWND hwnd = GameWindow();
-    if (!hwnd || vk == 0) return false;
-    // lParam carries the repeat count and the scan code; the release sets the previous-state and transition bits.
+namespace {
+
+// lParam carries the repeat count and the scan code; the release sets the previous-state and transition bits.
+LPARAM KeyParam(unsigned vk, bool up) {
     const LPARAM scan = static_cast<LPARAM>(::MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)) << 16;
-    const bool down = ::PostMessageW(hwnd, WM_KEYDOWN, vk, 1 | scan) != 0;
-    const bool up = ::PostMessageW(hwnd, WM_KEYUP, vk, 1 | scan | (1LL << 30) | (1LL << 31)) != 0;
+    return up ? (1 | scan | (1LL << 30) | (1LL << 31)) : (1 | scan);
+}
+
+}  // namespace
+
+bool PostKeyDown(unsigned vk) {
+    HWND hwnd = GameWindow();
+    return hwnd && vk != 0 && ::PostMessageW(hwnd, WM_KEYDOWN, vk, KeyParam(vk, false)) != 0;
+}
+
+bool PostKeyUp(unsigned vk) {
+    HWND hwnd = GameWindow();
+    return hwnd && vk != 0 && ::PostMessageW(hwnd, WM_KEYUP, vk, KeyParam(vk, true)) != 0;
+}
+
+bool PostKeyPress(unsigned vk) {
+    const bool down = PostKeyDown(vk);
+    const bool up = PostKeyUp(vk);
     return down && up;
+}
+
+bool PostChar(wchar_t c) {
+    HWND hwnd = GameWindow();
+    if (!hwnd) return false;
+    return ::PostMessageW(hwnd, WM_CHAR, static_cast<WPARAM>(c), 1) != 0;
 }
 
 unsigned VirtualKeyOf(const std::wstring& displayName) {

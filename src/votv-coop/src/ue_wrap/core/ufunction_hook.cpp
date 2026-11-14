@@ -116,6 +116,7 @@ thread_local bool t_inCb = false;
 // exactly as long as the callback runs (CurrentCallerFrame, CurrentResult).
 thread_local CallerFrame t_frame{nullptr, nullptr};
 thread_local void*       t_result = nullptr;
+thread_local void*       t_nativeFunction = nullptr;
 
 inline void* ReadPtr(void* base, size_t off) {
     return *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(base) + off);
@@ -169,7 +170,9 @@ void __fastcall NativeThunk(void* context, void* stack, void* result) {
     t_inCb = true;
     t_frame = frame;
     t_result = s.resultBytes>0 ? result : nullptr;
+    t_nativeFunction = s.ufunction;
     const int rc = RunCbSEH(s.cb, context, srcObj, spawned);
+    t_nativeFunction = nullptr;
     t_result = nullptr;
     t_frame = CallerFrame{nullptr, nullptr};
     t_inCb = false;
@@ -221,7 +224,9 @@ void __fastcall PreThunk(void* context, void* stack, void* result) {
     t_inCb = true;
     t_frame = CallerFrame{ReadPtr(stack, P::off::FFrame_Node),
                           static_cast<uint8_t*>(ReadPtr(stack, P::off::FFrame_Locals))};
+    t_nativeFunction = s.ufunction;
     const int rc = RunPreCbSEH(s.pre, context, srcObj, parms, &verdict);
+    t_nativeFunction = nullptr;
     t_frame = CallerFrame{nullptr, nullptr};
     t_inCb = false;
     if (rc != 0) {
@@ -303,6 +308,8 @@ bool ReadPreSignature(void* ufunction, Slot& into) {
 CallerFrame CurrentCallerFrame() { return t_frame; }
 
 void* CurrentResult() { return t_result; }
+
+void* CurrentNativeFunction() { return t_nativeFunction; }
 
 bool SetArmed(void* ufunction, PostNativeCallback cb, bool armed) {
     for (int i = 0; i < g_slotCount; ++i) {

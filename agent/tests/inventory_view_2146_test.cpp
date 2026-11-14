@@ -1,5 +1,6 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/inventory.cpp"
 #include "../../src/votv-coop/src/ue_wrap/actors/container_view.cpp"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
@@ -68,3 +69,8 @@ int main(){using namespace test;
  haveFn=false;CHECK(!ue_wrap::container_view::Refresh(&box));CHECK(calls==1);
  puts("PASS native empty equipment equality, old-profile repair, occupied data preservation, active matching container refresh only");
 }
+
+// Adjacent container-put controls are exercised by the container act suite.
+namespace ue_wrap::reflection {bool FindBoolProperty(void*,const wchar_t*,int32_t&,uint8_t&){std::abort();}}
+namespace ue_wrap {bool ParamFrame::GetRaw(const wchar_t*,void*,int32_t)const{std::abort();}}
+namespace ue_wrap::facts {Resolved ResolveOn(const Function&,void*){std::abort();}}

@@ -51,7 +51,7 @@ assert not any(salt.class_of_export(e) == 'Function' for e in salt.exports)
 
 sub = (root / 'src/votv-coop/src/coop/session/subsystems.cpp').read_text()
 assert sub.index('explosion_prop_motion::Install(&session)') < sub.index('native_explosion_sync::Install(&session)')
-assert sub.index('explosion_prop_motion::Tick()') < sub.index('prop_drive_host::Tick(session)')
+assert sub.index('explosion_prop_motion::Tick()') < sub.index('prop_drive_host::Pump(session, isHost)')
 assert 'explosion_prop_motion::OnDisconnect()' in sub
 wrapper = (root / 'src/votv-coop/src/ue_wrap/actors/radial_impulse.cpp').read_text()
 assert 'L"Radius"' in wrapper and 'L"ImpulseStrength"' in wrapper and 'L"ObjectTypesToAffect"' in wrapper

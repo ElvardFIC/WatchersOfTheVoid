@@ -15,6 +15,7 @@ int32_t SlotSerial(int32_t i){return i>=0&&i<512?test::objects[i].serial:0;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 bool IsLiveByIndex(void* a,int32_t i){return i>=0&&i<512&&a==&test::objects[i]&&test::objects[i].live;}
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
+void* ClassOf(void*){return &test::objects[511];}
 const FName& NameOf(void*){static FName n{};return n;}
 bool NameStartsWith(const FName&,const wchar_t*){return false;}
 bool NameEquals(const FName&,const wchar_t*){return false;}
@@ -23,6 +24,7 @@ int32_t ParamOffset::Of(void*){return 0;}
 int32_t FunctionFrameSize(void*){return 16;}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return (void*)(uintptr_t)test::world;}void* WorldOf(void*){return CurrentWorld();}}
+namespace coop::net::session_serial {uint32_t Current(){return test::world;}}
 namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return 1;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::script_gate {
@@ -32,18 +34,18 @@ bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return true;}void Res
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}}
 namespace ue_wrap::engine {void* ParentActorOf(void*,std::wstring*){return nullptr;}}
 namespace ue_wrap::cord {
-bool ReadHeadPose(void*,FVector&,FRotator&){return false;}
-bool WriteHeadPose(void*,const FVector&,const FRotator&){std::abort();}
+bool ReadHeadPose(void*,FVector&,FRotator&,const std::function<bool()>&){return false;}
+bool WriteHeadPose(void*,const FVector&,const FRotator&,const std::function<bool()>&){std::abort();}
 bool IsCord(void* a){return a&&static_cast<test::Obj*>(a)->type==1;}
 bool IsSocket(void* a){return a&&static_cast<test::Obj*>(a)->type==2;}
-void* Parent(void*){return nullptr;}bool InCableReach(void*,void*){return true;}
+void* Parent(void*){return nullptr;}bool InCableReach(void*,void*,const std::function<bool()>&){return true;}
 void* Socket(void* a){return a?static_cast<test::Obj*>(a)->socket:nullptr;}
 void* Occupant(void* a){return a?static_cast<test::Obj*>(a)->occupant:nullptr;}
 bool Dragging(void* a){return a&&static_cast<test::Obj*>(a)->drag;}
 bool Powered(void* a,bool& out){out=static_cast<test::Obj*>(a)->power;return true;}
 bool SetPower(void* a,bool on){auto& v=*static_cast<test::Obj*>(a);if(v.power!=on){v.power=on;++test::powers;test::Callback();}return true;}
 bool Disconnect(void* a){auto& v=*static_cast<test::Obj*>(a);if(v.socket){static_cast<test::Obj*>(v.socket)->occupant=nullptr;v.socket=nullptr;++test::disconnects;test::Callback();}return true;}
-bool Connect(void* a,void* b){auto& v=*static_cast<test::Obj*>(a);auto& s=*static_cast<test::Obj*>(b);
+bool Connect(void* a,void* b,const std::function<bool()>&){auto& v=*static_cast<test::Obj*>(a);auto& s=*static_cast<test::Obj*>(b);
  if(v.socket==b&&s.occupant==a)return true;if(!test::connectOk)return false;
  ++test::connects;v.socket=b;s.occupant=a;test::Callback();return true;}
 }
@@ -84,3 +86,5 @@ int main(){
  puts("PASS actual cord controller: linear identity reads, heartbeat coalescing, no-op convergence, drag/occupancy, duplicate/key/serial, retries, callback invalidation and world teardown");
 #endif
 }
+
+namespace ue_wrap::prop { std::wstring GetActorSaveKeyString(void* p){return GetInteractableKeyString(p);} }

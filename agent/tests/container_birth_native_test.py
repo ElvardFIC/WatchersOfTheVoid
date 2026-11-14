@@ -1,5 +1,6 @@
 """Verify the native takeObj contract before relying on its successful result."""
 from pathlib import Path
+import re
 import sys
 
 research = Path(__file__).resolve().parents[3] / "_research"
@@ -26,3 +27,11 @@ extract = function("prop_container", "extract")
 assert "->takeObj(Local(index), false," in extract
 assert extract.index("->putObjectInventory2(") < extract.index("->loadData(")
 print("PASS native extraction: successful restored object out, failed null out, saved-row removal and separate record-only container path")
+
+root = Path(__file__).resolve().parents[2]
+subsystems = (root / 'src/votv-coop/src/coop/session/subsystems.cpp').read_text(encoding='utf-8-sig')
+subsystems = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/', '', subsystems)
+install = re.search(r'^void Install\(coop::net::Session& session\) \{(.*?)^\}', subsystems, re.M | re.S)
+assert install and re.search(r'\bcoop::prop_lifecycle::InstallInventory\s*\(\s*&session\s*\)\s*;', install[1]), \
+    'Retained native extraction publisher must be installed and drained by the active session pump'
+print('PASS retained extraction publisher is wired into the production session install pump')

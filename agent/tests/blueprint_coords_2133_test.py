@@ -2,10 +2,10 @@
 from pathlib import Path
 import struct,sys
 root=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(root/'_research'))
+sys.path.insert(0,str(root.parent/'_research'))
 from kismet_dis import Package,Dis
 def body(asset,name):
- p=Package(str(root/'_research/assets'/('VotV__Content__'+asset+'.uasset')))
+ p=Package(str(root.parent/'_research/assets'/('VotV__Content__'+asset+'.uasset')))
  e=next(e for e in p.exports if e['name']==name and p.class_of_export(e)=='Function')
  data=p.export_data(e)
  for tail in (12,14):

@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace coop::prop_wire_parity {
@@ -54,6 +55,7 @@ uint8_t FrozenSleepBitsOf(void* actor);
 // touched: a write here runs init(), which wakes the body. A verb that does not dispatch is said.
 // Game thread.
 void ConvergeFrozenSleep(void* actor, uint8_t physFlags);
+bool ConvergeFrozenSleep(void* actor, uint8_t physFlags, const std::function<bool()>& current);
 
 // SP-parity simulate state from the wire identity flags. Aprop_C::init() computes
 // SetSimulatePhysics(NOT(static || frozen || sleep)), so a settled prop is simulate-ENABLED but
@@ -65,5 +67,6 @@ bool SpParitySimulate(uint8_t physFlags);
 // host's rest pose in an identical transferred world, so the body wakes at a valid pose. Aprop_C
 // only, for the same reason as ReconcileToHostPhysics.
 void RestoreSpParityPhysicsAfterConverge(void* actor, uint8_t physFlags);
+bool RestoreSpParityPhysicsAfterConverge(void* actor, uint8_t physFlags, const std::function<bool()>& current);
 
 }  // namespace coop::prop_wire_parity

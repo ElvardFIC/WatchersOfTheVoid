@@ -124,11 +124,9 @@ void NoteKerfurHolding(void* actor);
 // whose table the pose sweep owns. Game thread.
 void ForgetKerfurHolding(void* actor);
 
-// Host only, the connect snapshot: re-send an entity spawn (class and current transform) for
-// every already-spawned Npc Element to the freshly connected client, so a joiner materialises
-// mirrors of NPCs that spawned before it joined. The client's existing receiver materialises
-// each, and the mirror install is idempotent. Elements whose actor is not yet bound are
-// skipped. Game thread.
+// Host join delivery: capture owned registry identities for this recipient. The pump retries
+// refused/unreadable/unbound rows with current transforms, retiring accepted or replaced work.
+// SnapshotComplete waits for this recipient's rows; the receiver's birth is idempotent. Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // The host-only pre-existing world-NPC walk lives in coop/creatures/npc_world_enum.h and

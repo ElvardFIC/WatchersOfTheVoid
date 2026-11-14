@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 
 namespace coop::net { class Session; }
 
@@ -41,6 +43,28 @@ bool SeamsRefused(uint8_t seams);
 // host itself: the record goes). False, with no record, while one of those seams is not ready: the robot
 // then reads player 0 through all of them. Game thread.
 bool Serve(void* robot, uint8_t slot, uint8_t seams);
+
+struct Lease {
+    void* robot = nullptr;
+    uint64_t token = 0;
+    explicit operator bool() const { return robot && token; }
+};
+Lease ServeOwned(void* robot, uint8_t slot, uint8_t seams,
+                 const std::function<bool()>& current = {});
+bool Owns(const Lease& lease);
+bool UnserveOwned(const Lease& lease);
+
+struct AssignmentState;
+struct Assignment {
+    std::shared_ptr<const AssignmentState> state;
+    explicit operator bool() const { return bool(state); }
+};
+Assignment CaptureAssignment(void* robot);
+bool AssignmentCurrent(const Assignment& assignment);
+Lease AssignOwned(const Assignment& before, uint8_t slot, uint8_t seams,
+                  const std::function<bool()>& current = {});
+bool RestoreOwned(const Lease& attempt, const Assignment& before,
+                  const std::function<bool()>& current = {});
 
 // HOST: `robot`'s reads answer player 0 again. Game thread.
 void Unserve(void* robot);

@@ -41,6 +41,22 @@ from public_prose_scope import (
     measured, measured_md, measured_other, measured_src, names_path, other_file, read, tracked)
 
 
+def include_names(bare):
+    names = INCLUDE.findall(bare)
+    macros = {}
+    directives = re.compile(
+        r'^\s*#\s*(?:define\s+(\w+)\s+"([^"]+)"|undef\s+(\w+)|include\s+(\w+)\s*$)', re.M)
+    for match in directives.finditer(bare):
+        defined, filename, undefined, included = match.groups()
+        if defined:
+            macros[defined] = filename
+        elif undefined:
+            macros.pop(undefined, None)
+        elif included in macros:
+            names.append(macros[included])
+    return names
+
+
 def measure(repo):
     """-> (counters dict, contributors dict: counter -> Counter(path -> hits), detail dict:
     counter -> path -> [note]). `detail` carries the counters whose unit is not a line, so
@@ -203,13 +219,13 @@ def measure(repo):
     direct = collections.defaultdict(set)          # header path -> files that #include it directly
     fragments = collections.defaultdict(set)
     for path, bare in bare_by_file.items():
-        for inc in INCLUDE.findall(bare):
+        for inc in include_names(bare):
             inc = inc.replace("\\", "/")
             candidates = [posixpath.join(posixpath.dirname(path), inc)] + [root + inc for root in SRC_ROOTS]
             target = next((candidate for candidate in map(posixpath.normpath, candidates) if candidate in bare_by_file), None)
             if target is not None:
                 direct[target].add(path)
-                if target.endswith(".inc"):
+                if target.endswith(".inc") or (target.startswith(SRC_ROOTS[0]) and target.endswith(".h")):
                     fragments[path].add(target)
     reach_cache = {}
 

@@ -101,6 +101,10 @@ inline constexpr const wchar_t* NpcClass_WispO        = L"wisp_o_C";
 inline constexpr const wchar_t* NpcClass_WispP        = L"wisp_p_C";
 inline constexpr const wchar_t* NpcClass_WispBlu      = L"wisp_blu_C";
 // The allowlist array: resolved once at install through R::FindClass and cached. The classes load
+// geomOcta_C (AgeomOcta_C : ACharacter): the Geom Octahedron. Host-authored; a client's mirror keeps its presentation
+// and has only its decisions refused (coop/creatures/npc_mirror_brain).
+inline constexpr const wchar_t* NpcClass_GeomOcta     = L"geomOcta_C";
+
 // The allowlist array: resolved once at install through R::FindClass and cached. The classes load
 // on the first gameplay-level transition, not at the menu, so the install retries until every
 // eager entries are probed (the first kNpcAllowlistEagerSize). No missing creature
@@ -136,9 +140,12 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_TentacleBall,
     NpcClass_ArirGunStealer,
     NpcClass_Kavotia,
+    L"rufus_C",  // console Rufus and thiccfus_C (inherits rufus_C); no prop_thiccfus
+    L"arirSlapper_C", // native npc_arirFollower_C child spawned by slapperSummoner_C
+    NpcClass_GeomOcta,          // the Geom Octahedron; host-authored ACharacter, pose rides EntityPose
 };
 inline constexpr size_t kNpcAllowlistSize = sizeof(kNpcAllowlist) / sizeof(kNpcAllowlist[0]);
-inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 5;
+inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 8;
 static_assert(kNpcAllowlist[kNpcAllowlistEagerSize - 1] == NpcClass_WispBlu &&
                   kNpcAllowlist[kNpcAllowlistEagerSize] == NpcClass_GrayTest,
               "kNpcAllowlistEagerSize must end the eager entries at the late ones");
@@ -222,7 +229,7 @@ inline constexpr const wchar_t* SetActorScale3DFn = L"SetActorScale3D";  // AAct
 inline constexpr const wchar_t* SetLifeSpanFn = L"SetLifeSpan";  // AActor::SetLifeSpan(float InLifespan) -> void
 inline constexpr const wchar_t* SetActorTickEnabledFn = L"SetActorTickEnabled";
 inline constexpr const wchar_t* SetActorHiddenInGameFn = L"SetActorHiddenInGame";        // AActor::SetActorHiddenInGame(bool bNewHidden) -- visual-only (instant-world deferred-hide)
-inline constexpr const wchar_t* SetActorEnableCollisionFn = L"SetActorEnableCollision";  // AActor::SetActorEnableCollision(bool bNewActorEnableCollision) -- paired with hide so a hidden mirror is not grabbable
+inline constexpr const wchar_t* SetActorEnableCollisionFn = L"SetActorEnableCollision";  // AActor::SetActorEnableCollision(bool bNewActorEnableCollision) -- the Off mode of a mirror hide (a parked NPC, a held mirror)
 inline constexpr const wchar_t* DestroyActorFn = L"K2_DestroyActor";
 inline constexpr const wchar_t* TeleportToFn = L"K2_TeleportTo";  // bool(FVector, FRotator); large-distance teleport that survives Character/CMC constraints
 inline constexpr const wchar_t* GetActorBoundsFn = L"GetActorBounds";   // (bool,FVector&,FVector&,bool); world-space AABB of the actor's mesh
@@ -544,11 +551,8 @@ inline constexpr const wchar_t* PropInitFn            = L"Init";
 // entry is the BP class FName.
 inline constexpr const wchar_t* PropMushroomGrowingClass = L"prop_food_mushroom7_C";
 
-// The BP function all four inventory drop paths funnel through: a POST hook on UpropInventory_C
-// reads its out-params to broadcast PropSpawn. On the receiver Aprop_C.setKey is dispatched
-// between Begin and Finish so the prop's Init() does not overwrite Key with NewGuid.
-inline constexpr const wchar_t* PropInventoryClass      = L"propInventory_C";
-inline constexpr const wchar_t* PropInventoryTakeObjFn  = L"takeObj";
+// On the receiver Aprop_C.setKey is dispatched between Begin and Finish so the prop's Init() does not
+// overwrite Key with NewGuid.
 inline constexpr const wchar_t* PropSetKeyFn            = L"setKey";
 
 // UKismetStringLibrary::Conv_StringToName(const FString&) -> FName (BlueprintPure, dispatched on

@@ -1,4 +1,4 @@
-﻿#include "../../src/votv-coop/src/coop/interactables/shared_screen_sync.cpp"
+#include "../../src/votv-coop/src/coop/interactables/shared_screen_sync.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <cassert>
@@ -89,11 +89,11 @@ int main() {
     Deliver(pipe, Message(false, 1, State(5)), 1); Tick(); assert(visible[0].tab == 5);
     session.sent.clear(); S::QueueConnectBroadcastForSlot(3); Tick(); assert(session.sent.empty());
     session.ready[3] = true; Tick(); assert(Sent(session.sent, 3).rows[0].tab == 5);
-    // Reentrant teardown during a host multi-chunk broadcast must stop the old stream.
+    // Reentrant teardown after batch admission retires the old canonical and its completion.
     visible = State(5, std::wstring(500, L'x')); holder = 0; local = true; ++claim; Tick();
     visible = State(6, std::wstring(500, L'y')); session.sent.clear();
     session.callback = [] { S::OnDisconnect(); }; Tick();
-    assert(!S::g_session && S::g_canonical.empty() && session.sent.size() == 1);
+    assert(!S::g_session && S::g_canonical.empty() && !session.sent.empty() && session.sent.size() == session.sent.front().second.chunks);
 
     session.mode = net::Role::Client; session.sent.clear(); local = false; holder = 1;
     players::Registry::Get().local = 1; S::Install(&session);
@@ -135,5 +135,19 @@ int main() {
     widgetReady = true; Deliver(pipe, Message(true, 1, State(8), 1, 2), 0); Tick();
     assert(visible[0].tab == 8); // reused Session address accepts the new host's first revision
     S::OnDisconnect(); const auto before = applies; Tick(); assert(applies == before);
+    local=true;holder=1;widgetReady=true;applyReady=false;visible=State(9);session.sent.clear();
+    S::Install(&session);Deliver(pipe,Message(true,50,State(2),30,1),0);
+    Tick();Tick();assert(S::g_apply&&session.sent.empty());Tick();
+    assert(!S::g_apply&&visible[0].tab==9&&Sent(session.sent,0).rows[0].tab==9);
+    S::g_apply=true;widgetReady=false;session.sent.clear();
+    for(int n=0;n<8;++n)Tick();assert(S::g_apply&&!S::g_operatorFailures&&session.sent.empty());
+    widgetReady=true;Tick();Tick();assert(S::g_apply);
+    local=false;Tick();assert(S::g_apply&&!S::g_operatorFailures);
+    local=true;Tick();Tick();assert(S::g_apply);
+    Deliver(pipe,Message(true,51,State(3),31,1),0);Tick();
+    assert(S::g_apply&&S::g_operatorFailures==1);
+    session.sent.clear();onRead=[] { ++world; };Tick();assert(session.sent.empty());
+    Tick();assert(!S::g_apply&&S::g_target.empty());S::OnDisconnect();
+    puts("PASS shared-screen operator fallback: readable UI only, bounded retries, observer/loading retention, lease reset and readiness-read world retirement");
     puts("PASS shared screen lease/holder trust, stale snapshots, final-exit retry, new-operator seed, partial sends, join, teardown, native reentry and world travel");
 }

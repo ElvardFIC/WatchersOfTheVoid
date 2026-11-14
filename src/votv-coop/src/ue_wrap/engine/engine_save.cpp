@@ -14,11 +14,14 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/game_mode.h"
 #include "ue_wrap/world/game_rules.h"
+#include "ue_wrap/hotbar/icons.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ue_wrap::engine {
 
@@ -70,6 +73,8 @@ void* g_saveSlotsUiCdo  = nullptr;  // the ui_saveSlots_C CDO; getSavePrefix is 
 int32_t g_saveSlotsUiCdoIdx = -1;   // its GUObjectArray index; a BP CDO can be collected with its class
 void* g_getSavePrefixFn = nullptr;  // ui_saveSlots_C::getSavePrefix(mode) -> FString prefix
 bool  g_gameModeApplied = false;    // the GameMode is derived and written once per campaign
+// SetFreshGameRules' pending list; read only on the game thread, in StartFreshGame.
+std::vector<std::pair<std::string, std::string>> g_freshGameRules;
 
 // The ui_saveSlots_C CDO and its getSavePrefix, cached. The widget loads on the first menu or
 // gameplay transition; before that this returns false and the caller retries. getSavePrefix is
@@ -103,8 +108,8 @@ void ApplyGameModeFromSlot(void* gi, const wchar_t* slot, int forceGameMode = -1
     // The save-transfer slot carries a prefix the game's mode map cannot match, and a fresh coop
     // world has no slot file at all; both name their mode outright instead.
     if (forceGameMode >= 0) {
-        g_gameModeApplied = true;
         const int old = ue_wrap::game_mode::WriteTo(gi, forceGameMode);
+        g_gameModeApplied = old>=0 && ue_wrap::game_mode::ReadFrom(gi)==forceGameMode;
         UE_LOGI("engine: ApplyGameModeFromSlot -- slot '%ls' FORCED GameMode=%d (was %d; named mode)",
                 slot, forceGameMode, old);
         return;
@@ -119,13 +124,14 @@ void ApplyGameModeFromSlot(void* gi, const wchar_t* slot, int forceGameMode = -1
     const int bestMode = DeriveModeFromSlot(slot);
     // The widget is loaded and getSavePrefix is deterministic, so this latches whether or not a
     // prefix matched; a re-run would give the same answer.
-    g_gameModeApplied = true;
     if (bestMode >= 0) {
         const int old = ue_wrap::game_mode::WriteTo(gi, bestMode);
+        g_gameModeApplied = old>=0 && ue_wrap::game_mode::ReadFrom(gi)==bestMode;
         UE_LOGI("engine: ApplyGameModeFromSlot -- slot '%ls' prefix-matched GameMode=%d (was %d); "
                 "the mode a load outside the slot menu would leave at the engine default",
                 slot, bestMode, old);
     } else {
+        g_gameModeApplied = true;
         UE_LOGW("engine: ApplyGameModeFromSlot -- NO getSavePrefix prefix matched slot '%ls' "
                 "(GameMode stays %d)", slot, ue_wrap::game_mode::ReadFrom(gi));
     }
@@ -227,7 +233,8 @@ BootWorldView SurveyBootWorld(const char* who) {
         // right "wait" answer.
         v.curWorld = R::FindObjectByClass(P::name::WorldClass);
         if (v.curWorld &&
-            R::ToString(R::NameOf(v.curWorld)).find(L"ntitled") != std::wstring::npos)
+            (R::NameContains(R::NameOf(v.curWorld),L"ntitled") ||
+             R::NameContains(R::NameOf(v.curWorld),L"tutorial3")))
             v.gameplayLoading = true;
     }
     // The menu or preLoad: fall through, and the open is issued.
@@ -275,7 +282,38 @@ void PutSaveStartDayInForce(void* gi, void* save, const char* who) {
     sLastSave = save;
 }
 
+// The pending new-game rules written into the blank save's saved copy; a rule that did not take is
+// named, and the list is spent either way.
+void WriteFreshGameRules(void* save) {
+    namespace GR = ue_wrap::game_rules;
+    int written = 0;
+    for (const auto& kv : g_freshGameRules) {
+        switch (GR::WriteSavedRule(save, kv.first, kv.second)) {
+            case GR::WriteResult::Written: ++written; break;
+            case GR::WriteResult::UnknownKey:
+                UE_LOGW("engine: StartFreshGame -- new-game rule '%s' names no gameRules member", kv.first.c_str());
+                break;
+            case GR::WriteResult::BadValue:
+                UE_LOGW("engine: StartFreshGame -- new-game rule '%s' cannot take '%s'", kv.first.c_str(),
+                        kv.second.c_str());
+                break;
+            case GR::WriteResult::Unresolved:
+                UE_LOGW("engine: StartFreshGame -- new-game rule '%s': the blank save's rules are unresolved",
+                        kv.first.c_str());
+                break;
+        }
+    }
+    if (!g_freshGameRules.empty())
+        UE_LOGI("engine: StartFreshGame -- %d of %zu new-game rule(s) written to the blank save", written,
+                g_freshGameRules.size());
+    g_freshGameRules.clear();
+}
+
 }  // namespace
+
+void SetFreshGameRules(const std::vector<std::pair<std::string, std::string>>& rules) {
+    g_freshGameRules = rules;
+}
 
 bool GetSavePrefix(uint8_t mode, std::wstring& out) {
     out.clear();
@@ -378,9 +416,12 @@ bool LoadStorySave(const wchar_t* slot, int forceGameMode) {
     // The game mode from the slot prefix before the travel, retried each poll until the widget is
     // loaded.
     ApplyGameModeFromSlot(gi, slot, forceGameMode);
+    if (!g_gameModeApplied) return false;
+    if (!ue_wrap::hotbar::PrepareForWorld(ue_wrap::game_mode::ReadFrom(gi))) return false;
 
     std::wstring openCmd = L"open ";
-    openCmd += P::name::GameplayLevel;
+    openCmd += ue_wrap::game_mode::ReadFrom(gi)==ue_wrap::game_mode::kTutorial
+        ?L"/Game/maps/tutorial3":ue_wrap::game_mode::DefaultLevel(ue_wrap::game_mode::ReadFrom(gi));
     UE_LOGI("engine: LoadStorySave -- at preLoad/menu; (re)issuing '%ls' (save '%ls' registered)",
             openCmd.c_str(), slot);
     ExecuteConsoleCommand(openCmd.c_str());
@@ -458,9 +499,14 @@ bool StartFreshGame(int gameMode) {
         g_storySaveSlot = kFreshSlotName;                  // campaign identity
         UE_LOGI("engine: StartFreshGame -- created BLANK saveSlot_C = %p (idx %d, fresh New Game baseline)",
                 g_storySave, g_storySaveIdx);
+        WriteFreshGameRules(g_storySave);
         // A fresh client join still gets its per-player inventory applied onto the blank save
         // before loadObjects materialises it.
         FireSaveObjectReadyHook(g_storySave);
+    } else if (!g_freshGameRules.empty()) {
+        UE_LOGW("engine: StartFreshGame -- %zu new-game rule(s) named but the blank save already exists; "
+                "not written", g_freshGameRules.size());
+        g_freshGameRules.clear();
     }
 
     // The blank save registered under the pseudo-slot name.
@@ -488,9 +534,12 @@ bool StartFreshGame(int gameMode) {
         mode = ue_wrap::game_mode::kStory;
     }
     ApplyGameModeFromSlot(gi, kFreshSlotName, mode);
+    if (!g_gameModeApplied) return false;
+    if (!ue_wrap::hotbar::PrepareForWorld(mode)) return false;
 
     std::wstring openCmd = L"open ";
-    openCmd += P::name::GameplayLevel;
+    openCmd += mode==ue_wrap::game_mode::kTutorial
+        ?L"/Game/maps/tutorial3":ue_wrap::game_mode::DefaultLevel(mode);
     UE_LOGI("engine: StartFreshGame -- at preLoad/menu; issuing '%ls' (BLANK save registered, mode=%d %s)",
             openCmd.c_str(), mode, ue_wrap::game_mode::NameOrOrdinal(mode).c_str());
     ExecuteConsoleCommand(openCmd.c_str());

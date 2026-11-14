@@ -14,6 +14,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/reflection_props.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/reflected_offset.h"
 
@@ -183,6 +184,52 @@ bool CallMainPlayerUpdateHold(void* mainPlayer) {
     return f.valid() && Call(mainPlayer, f);
 }
 
+bool CallMainPlayerUpdateHoldWhile(void* mainPlayer,const std::function<bool()>& owner,bool* dispatched){
+    if(dispatched)*dispatched=false;
+    if(!mainPlayer||(owner&&!owner()))return false;
+    CachedObjRef actor,cls,fn;actor.Set(mainPlayer);if(!actor.Get())return false;
+    cls.Set(R::ClassOf(mainPlayer));
+    const auto current=[&]{return (!owner||owner())&&actor.Get()&&cls.Get()&&R::ClassOf(mainPlayer)==cls.Raw()&&actor.Get()&&cls.Get()&&(!owner||owner());};
+    if(!current())return false;fn.Set(R::FindFunction(cls.Raw(),L"updateHold"));
+    if(!current()||!fn.Get())return false;
+    ParamFrame frame(fn.Raw());if(!frame.valid()||!current()||!fn.Get())return false;
+    if(dispatched)*dispatched=true;
+    const bool result=Call(mainPlayer,frame);return current()&&fn.Get()&&result;
+}
+
+bool ReleaseMainPlayerGrabIfHoldingWhile(void* localPlayer,void* actor,const std::function<bool()>& owner,bool* dispatched){
+    if(dispatched)*dispatched=false;
+    if(!localPlayer||!actor||(owner&&!owner()))return false;
+    CachedObjRef pawn,pawnClass,prop,propClass;pawn.Set(localPlayer);prop.Set(actor);
+    if(!pawn.Get()||!prop.Get())return false;
+    pawnClass.Set(R::ClassOf(localPlayer));propClass.Set(R::ClassOf(actor));
+    const auto current=[&]{return (!owner||owner())&&pawn.Get()&&prop.Get()&&pawnClass.Get()&&propClass.Get()&&
+        R::ClassOf(localPlayer)==pawnClass.Raw()&&R::ClassOf(actor)==propClass.Raw()&&pawn.Get()&&prop.Get()&&(!owner||owner());};
+    if(!current())return false;const int32_t size=R::StructSize(pawnClass.Raw());if(!current())return false;
+    const auto field=[&](const wchar_t* name,int32_t& offset){std::wstring type;
+        if(!R::PropertyOffsetAndClass(pawnClass.Raw(),name,offset,type)||!current()||type!=L"ObjectProperty"||offset<0||offset>size||sizeof(void*)>size-offset)return false;
+        const auto fields=R::EnumerateStructFields(pawnClass.Raw());if(!current())return false;
+        for(const auto& f:fields)if(_wcsicmp(f.name.c_str(),name)==0)return f.offset==offset&&f.size==sizeof(void*);
+        return false;};
+    int32_t grab=-1,handle=-1,component=-1;
+    if(!field(L"grabbing_actor",grab)||!field(L"grabHandle",handle)||!field(L"grabbing_component",component)||!current())return false;
+    const auto overlap=[](int32_t a,int32_t b){return a<b+sizeof(void*)&&b<a+sizeof(void*);};
+    if(overlap(grab,handle)||overlap(grab,component)||overlap(handle,component))return false;
+    const auto read=[&](int32_t offset){void* p=nullptr;std::memcpy(&p,static_cast<uint8_t*>(localPlayer)+offset,sizeof p);return p;};
+    if(read(grab)!=actor)return false;void* phc=read(handle);void* capturedComponent=read(component);
+    CachedObjRef phcRef,phcClass,fn;
+    if(phc){phcRef.Set(phc);if(!current()||!phcRef.Get())return false;phcClass.Set(R::ClassOf(phc));
+        if(!current()||!phcClass.Get())return false;fn.Set(R::FindFunction(phcClass.Raw(),P::name::ReleaseComponentFn));
+        if(!current()||!phcRef.Get()||!phcClass.Get()||R::ClassOf(phc)!=phcClass.Raw()||!phcRef.Get()||!fn.Get()||!current()||read(grab)!=actor||read(handle)!=phc||read(component)!=capturedComponent)return false;
+        if(dispatched)*dispatched=true;
+        R::CallFunction(phc,fn.Raw(),nullptr);
+    }
+    if(phc&&(!phcRef.Get()||!phcClass.Get()||!fn.Get()||R::ClassOf(phc)!=phcClass.Raw()||!phcRef.Get()))return false;
+    if(!current()||read(grab)!=actor||read(handle)!=phc||read(component)!=capturedComponent)return false;
+    void* empty=nullptr;std::memcpy(static_cast<uint8_t*>(localPlayer)+grab,&empty,sizeof empty);
+    std::memcpy(static_cast<uint8_t*>(localPlayer)+component,&empty,sizeof empty);return true;
+}
+
 bool CallMainPlayerUseSelectedAction(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(mainPlayer), L"useSelectedAction");
@@ -225,6 +272,24 @@ bool CallPutObjectInventory2(void* mainPlayer, void* target, bool noNotify, bool
     if (!f.valid() || !f.Set<void*>(L"InputPin", target) || !f.Set<bool>(L"noNotify", noNotify) || !Call(mainPlayer, f))
         return false;
     taken = f.Get<bool>(L"return");
+    return true;
+}
+
+bool ReadInputRun(void* mainPlayer, bool& out) {
+    static void* sCls = nullptr;   // the class the bitfield was read from; asked again when it changes
+    static int32_t sOff = -1;
+    static uint8_t sMask = 0;
+    out = false;
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    void* const cls = R::ClassOf(mainPlayer);
+    if (cls != sCls) {
+        sCls = cls;
+        sOff = -1;
+        sMask = 0;
+        if (!R::FindBoolProperty(cls, L"input_run", sOff, sMask)) sOff = -1;
+    }
+    if (sOff < 0 || sMask == 0) return false;
+    out = (*(reinterpret_cast<const uint8_t*>(mainPlayer) + sOff) & sMask) != 0;
     return true;
 }
 
@@ -476,38 +541,53 @@ void* ReadMainPlayerGrabTimeline(void* mainPlayer) {
 
 void* GetMainPlayerLightR(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return nullptr;
-    void* light = *reinterpret_cast<void**>(
-        reinterpret_cast<uint8_t*>(mainPlayer) + P::off::AmainPlayer_light_R);
+    static R::InstanceOffset field{L"light_R"};
+    const int32_t offset=field.Of(mainPlayer);
+    if(offset<0)return nullptr;
+    void* light=nullptr;
+    std::memcpy(&light,static_cast<uint8_t*>(mainPlayer)+offset,sizeof(light));
     if (!light || !R::IsLive(light)) return nullptr;
     return light;
 }
 
 bool ReadFlashlightSnapshot(void* light, FlashlightSnapshot& out) {
     if (!light || !R::IsLive(light)) return false;
+    static R::InstanceOffset intensity{L"Intensity"},outer{L"OuterConeAngle"},inner{L"InnerConeAngle"};
+    const int i=intensity.Of(light),o=outer.Of(light),n=inner.Of(light);
+    int visible=-1;uint8_t mask=0;
+    if(i<0 || o<0 || n<0 || !R::FindBoolProperty(R::ClassOf(light),L"bVisible",visible,mask) ||
+       visible<0 || !mask)return false;
     auto* base = reinterpret_cast<uint8_t*>(light);
-    out.intensity       = *reinterpret_cast<float*>(base + P::off::ULightComponentBase_Intensity);
-    out.outerConeAngle  = *reinterpret_cast<float*>(base + P::off::USpotLightComponent_OuterConeAngle);
-    out.innerConeAngle  = *reinterpret_cast<float*>(base + P::off::USpotLightComponent_InnerConeAngle);
-    const uint8_t flags = *reinterpret_cast<uint8_t*>(base + P::off::USceneComponent_VisFlagsByte);
-    out.visible         = (flags & 0x10) != 0;
+    FlashlightSnapshot snapshot{};
+    std::memcpy(&snapshot.intensity,base+i,sizeof(float));
+    std::memcpy(&snapshot.outerConeAngle,base+o,sizeof(float));
+    std::memcpy(&snapshot.innerConeAngle,base+n,sizeof(float));
+    snapshot.visible=(base[visible]&mask)!=0;
+    out=snapshot;
     return true;
 }
 
 bool ReadMainPlayerFlashlightState(void* mainPlayer, MainPlayerFlashlightState& out) {
-    out = {};
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    int offsets[3]{};uint8_t masks[3]{};
+    const wchar_t* names[]{L"flashlight",L"hasFlashlight",L"crankFlashlight"};
+    for(int i=0;i<3;++i)
+        if(!R::FindBoolProperty(R::ClassOf(mainPlayer),names[i],offsets[i],masks[i]) ||
+           offsets[i]<0 || !masks[i])return false;
+    static R::InstanceOffset mode{L"flashlightMode"};
+    const int modeOffset=mode.Of(mainPlayer);if(modeOffset<0)return false;
     auto* base = reinterpret_cast<uint8_t*>(mainPlayer);
-    out.flashlight      = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_flashlight);
-    out.hasFlashlight   = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_hasFlashlight);
-    out.crankFlashlight = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_crankFlashlight);
-    out.mode            = *reinterpret_cast<uint8_t*>(base + P::off::AmainPlayer_flashlightMode);
+    out={(base[offsets[0]]&masks[0])!=0,(base[offsets[1]]&masks[1])!=0,
+         (base[offsets[2]]&masks[2])!=0,base[modeOffset]};
     return true;
 }
 
 bool WriteMainPlayerFlashlight(void* mainPlayer, bool newState) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    int offset=-1;uint8_t mask=0;
+    if(!R::FindBoolProperty(R::ClassOf(mainPlayer),L"flashlight",offset,mask) || offset<0 || !mask)return false;
     auto* base = reinterpret_cast<uint8_t*>(mainPlayer);
-    *reinterpret_cast<bool*>(base + P::off::AmainPlayer_flashlight) = newState;
+    base[offset]=newState?base[offset]|mask:base[offset]&static_cast<uint8_t>(~mask);
     return true;
 }
 
@@ -516,8 +596,7 @@ bool SetLightIntensity(void* light, float newIntensity) {
     void* fn = ResolveLightIntensityFn();
     if (!fn) return false;
     ParamFrame f(fn);
-    f.Set<float>(L"NewIntensity", newIntensity);
-    return Call(light, f);
+    return f.Set<float>(L"NewIntensity", newIntensity) && Call(light, f);
 }
 
 bool SetSceneComponentVisibility(void* sceneComponent, bool newVisibility, bool propagateToChildren) {
@@ -525,9 +604,8 @@ bool SetSceneComponentVisibility(void* sceneComponent, bool newVisibility, bool 
     void* fn = ResolveSceneVisibilityFn();
     if (!fn) return false;
     ParamFrame f(fn);
-    f.Set<bool>(L"bNewVisibility", newVisibility);
-    f.Set<bool>(L"bPropagateToChildren", propagateToChildren);
-    return Call(sceneComponent, f);
+    return f.Set<bool>(L"bNewVisibility", newVisibility) &&
+        f.Set<bool>(L"bPropagateToChildren", propagateToChildren) && Call(sceneComponent, f);
 }
 
 bool SetSpotLightOuterConeAngle(void* spotLight, float newAngle) {
@@ -535,8 +613,7 @@ bool SetSpotLightOuterConeAngle(void* spotLight, float newAngle) {
     ResolveSpotConeFns();
     if (!g_setSpotOuterConeAngleFn) return false;
     ParamFrame f(g_setSpotOuterConeAngleFn);
-    f.Set<float>(L"NewOuterConeAngle", newAngle);
-    return Call(spotLight, f);
+    return f.Set<float>(L"NewOuterConeAngle", newAngle) && Call(spotLight, f);
 }
 
 bool SetSpotLightInnerConeAngle(void* spotLight, float newAngle) {
@@ -544,8 +621,7 @@ bool SetSpotLightInnerConeAngle(void* spotLight, float newAngle) {
     ResolveSpotConeFns();
     if (!g_setSpotInnerConeAngleFn) return false;
     ParamFrame f(g_setSpotInnerConeAngleFn);
-    f.Set<float>(L"NewInnerConeAngle", newAngle);
-    return Call(spotLight, f);
+    return f.Set<float>(L"NewInnerConeAngle", newAngle) && Call(spotLight, f);
 }
 
 bool ReadMainPlayerRagdollState(void* mainPlayer, bool& isRagdoll, bool& dead) {
@@ -732,6 +808,50 @@ bool InvokeAddPlayerDamage(void* mainPlayer, float damage, bool blood) {
     // makes a synthetic hit unlike any hit the game produces.
     if (blood) f.Set<bool>(L"blood", true);
     return Call(mainPlayer, f);
+}
+
+bool BroadcastMainPlayerMouseXY(void* mainPlayer, float x, float y, int* delivered) {
+    if (delivered) *delivered = 0;
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    // A multicast delegate member is its invocation TArray {data, num, max} of FScriptDelegate: the bound
+    // object's slot index and serial, then the function's FName. The member is found by name and size once
+    // per player class.
+    struct Entry {
+        int32_t objectIndex;
+        int32_t objectSerial;
+        R::FName functionName;
+    };
+    struct List {
+        Entry*  data;
+        int32_t num;
+        int32_t max;
+    };
+    static void* sCls = nullptr;
+    static int32_t sOff = -1;
+    void* cls = R::ClassOf(mainPlayer);
+    if (!cls) return false;
+    if (cls != sCls) {
+        sCls = cls;
+        sOff = -1;
+        for (const R::StructFieldInfo& f : R::EnumerateStructFields(cls))
+            if (f.name == L"input_mouseXY" && f.size == static_cast<int32_t>(sizeof(List))) sOff = f.offset;
+    }
+    if (sOff < 0) return false;
+    const List* list = reinterpret_cast<const List*>(static_cast<uint8_t*>(mainPlayer) + sOff);
+    if (!list->data || list->num <= 0 || list->num > 64) return true;
+    const FVector2D xy{x, y};
+    int ran = 0;
+    for (int32_t i = 0; i < list->num; ++i) {
+        const Entry e = list->data[i];
+        void* obj = R::ObjectAt(e.objectIndex);
+        if (!obj || R::SlotSerial(e.objectIndex) != e.objectSerial || !R::IsLive(obj)) continue;
+        void* fn = R::FindDispatchFunctionCached(R::ClassOf(obj), R::ToString(e.functionName).c_str());
+        if (!fn || R::FindParamOffset(fn, L"mouseXY") < 0) continue;
+        ParamFrame f(fn);
+        if (f.valid() && f.Set<FVector2D>(L"mouseXY", xy) && Call(obj, f)) ++ran;
+    }
+    if (delivered) *delivered = ran;
+    return true;
 }
 
 

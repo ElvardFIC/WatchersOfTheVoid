@@ -42,7 +42,7 @@ for name in ('force','radius','damage','innerShake','outerShake'):
 assert tags['shake']==('ObjectProperty',4)
 
 s=root/'src/votv-coop'
-sub=(s/'src/coop/session/subsystems.cpp').read_text()
+sub=(s/'src/coop/session/subsystems.cpp').read_text() + (s/'src/coop/session/connect_replay.cpp').read_text()
 for call in ('Install(&session)','Tick()','OnDisconnect()'):
  assert 'coop::native_explosion_sync::'+call in sub
 assert 'coop::explosion_sync::Install(&session)' not in sub

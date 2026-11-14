@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/coop/items/gravity_motion.cpp"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstddef>
@@ -11,6 +12,8 @@ bool parked=false,held=false,frozen=false,stat=false,atv=false,door=false,result
 int wakes=0,pre=0,post=0;
 }
 namespace ue_wrap::reflection {
+bool IsLive(void* a) { return a && static_cast<test::Actor*>(a)->live; }
+void* ClassOf(void*) { std::abort(); } // YieldTarget is covered by local_hold_yield_test.
 int32_t InternalIndexOf(void* a) { return a ? static_cast<test::Actor*>(a)->id : -1; }
 int32_t SlotSerial(int32_t i) { return i==1 ? test::prop.serial : 1; }
 int32_t AllocateSlotSerial(int32_t i) { return SlotSerial(i); }
@@ -27,9 +30,20 @@ void* WorldOf(void*) { return CurrentWorld(); }
 uint32_t Generation() { return test::world; }
 }
 namespace ue_wrap::ufunction_hook {
-bool InstallPreHook(void*,PreNativeCallback,bool) { ++test::pre;return true; }
-bool InstallPostHook(void*,PostNativeCallback,bool) { ++test::post;return true; }
+bool InstallPreHook(const facts::Resolved& fn,PreNativeCallback,bool) { CHECK(fn.Fn()==&test::gun);++test::pre;return true; }
+bool InstallPostHook(const facts::Resolved& fn,PostNativeCallback,bool) { CHECK(fn.Fn()==&test::gun);++test::post;return true; }
 void* CurrentResult() { return &test::result; }
+}
+namespace ue_wrap::object_index {
+void* ClassByName(const wchar_t* name) { CHECK(std::wstring(name)==L"PrimitiveComponent"); return &test::component; }
+}
+namespace ue_wrap::facts {
+Resolved ResolveOn(const Function& row,void* cls) { CHECK(cls==&test::component); return Resolved(&test::gun,&row); }
+}
+namespace ue_wrap {
+ParamFrame::ParamFrame(void*) { std::abort(); }
+bool ParamFrame::SetRaw(const wchar_t*,const void*,int32_t) { std::abort(); }
+bool Call(void*,ParamFrame&) { std::abort(); }
 }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 namespace ue_wrap::script_gate { bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn) { return true; } }

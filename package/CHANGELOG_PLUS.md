@@ -1,3 +1,206 @@
+## 0.9.2163
+- Preserve native Tutorial placement on client joins and respawns instead of
+  importing a Story-map/profile position that can reach the native fatal exit.
+- Repair empty inventory item-icon cache files before non-Tutorial loads,
+  reject null texture tables and retry incomplete quick-slot refreshes.
+- Bind killer-wisp capture, tears, host destruction and NPC death watches to
+  exact source/victim bodies, world and request lifetimes; bound native retries
+  and require admitted victim delivery before committing the host kill deadline.
+- Register transformer watches against the native generator_C class.
+- Synchronize movable props pushed by host/player puppet bodies through the
+  existing host coasting stream, preserving held/static/frozen/hand exclusions.
+- Admit the chest's arirSlapper_C through the NPC lane with exact summoner output
+  filtering; attacks, item ownership and effects remain unfinished.
+- Let a laptop/shared-screen operator regain control after three persistently
+  refused inherited repaints on a readable UI; preserve loading seeds and leases.
+- Retain protocol 2217. The eleven requested third-party mods are not qualified
+  as multiplayer-compatible; this package does not install or bundle them.
+- Includes selected adaptations from gxrxrt/WatchersOfTheVoid by garar; source
+  commit attribution is recorded in agent/WORK.md and agent/FORK_AUDIT_20261022.md.
+
+## 0.9.2162
+- Add Tutorial, Story, Infinite, Ambience, Sandbox and Solar choices to both host
+  menus; preserve existing-save modes and use the native Tutorial entry map.
+- Read flashlight state through reflected offsets/bit masks, allow crank lights
+  and reapply received on/off state after remote pawn or light replacement.
+- Explicitly enable physics-to-pose blending and skeletal-component ticking
+  during ragdoll startup; real-peer T-pose acceptance remains open.
+- Bind held-toy captures to their dispatch function, input size/span and local
+  user; limit native state/squeak presentations per tick.
+- Share watoy presentation leases across copied and independent views; prevent
+  duplicate/stale cleanup and retain original hand/occupant/connection provenance.
+- Bound watoy native activation, cues and state work; cap reliable retries and
+  rotate refused state delivery fairly across recipients.
+- Capture original window brush material/size at the native draw, including
+  thrown sponges, instead of sampling the held item at a later tick.
+- Extract missing map headers and inventory level scripts for continuing event
+  work. Complete event routes and rendered multiplayer acceptance remain open.
+
+## 0.9.2161
+- Replace the old versioned cover with the supplied MULTIPLAYER MOD artwork and
+  update the package icon while preserving the full composition.
+- Select visible registered remote players for llama activation; preserve native
+  launch direction/velocity and stream both remote and local-host jumps.
+- Retain llama motion until the prop lane accepts it, with bounded retries and
+  hand/Kerfur ownership checks; finish admitted effects without repeating impulses.
+- Preserve llama sound lifetimes and quiet joins across heartbeat/retries, retain
+  ordering history and recover temporary Begin flags across session changes.
+- Pause pre-existing client llama timers without rearming them; restore owned
+  timers and suppressed Sphere/Begin initialization through checked native paths.
+- Synchronize the native llamaSoul save marker through the existing PlacedSave
+  route, with keyed adoption and host-only marker mutation.
+- Separate remote llama visuals from native event bookkeeping; remove only
+  verified local sender contributions and guard legacy absent-sender debits.
+- Synchronize llama event light/state and expiring sound cues from the host;
+  use quiet snapshots for players joining during the effect.
+- Keep native base prop initialization while suppressing independent client
+  jumps; restore the original jump-setting flag after initialization.
+- Retain scoped llama delivery/readiness retries, validate native effect bindings
+  and consume each admitted sound once across retries and nested updates.
+- Route Rufus/thiccfus console births through NPC identity/pose with exact output
+  filtering and scoped, deduplicated deferred enrollment.
+- Park Rufus mirrors before their native AI/HUD/damage/child branches run; require
+  a ready graph guard before allocation, finish and adoption.
+- Restore the native mesh/animation binding and stream visible body yaw; retry
+  failed preparation while stationary and preserve model pitch/roll.
+- Guard Maxwell/variant music reads and phase seeks with current toy/component/
+  class/function identity and coherent sound duration, looping and pitch.
+- Validate native audio parameters, preserve caller state across callbacks and
+  retain newer playback during nested updates without restarting unchanged music.
+- Bound and deduplicate indexed toy collection; protect touch/toggle/squeak
+  preparation and keep failed pitch reads from overwriting valid output.
+- Recover Madness music/HUD through session/world changes, readiness loss,
+  stopped components and refused cleanup; preserve newer state during callbacks.
+- Bind Madness sends to recipient identity, retain join retries and compensate
+  event age only while music is playing.
+- Validate current native factory/query bindings and return layouts; update HUD
+  text/count directly without replaying addCount's enemy-spawn callback.
+- Keep companion creation scoped to the host/world and checked ATV instances;
+  restart settling after movement, rotation, riding, carrying or count uncertainty.
+- Permit an existing coop-key rig as the sole source, bound saved-body waiting
+  and recover creation after a rejected third ATV or refused cleanup.
+- Protect companion index/key ownership, preserve current driver state during
+  publication/rebinding and retry refused spawn announcements.
+- Retain chair placement while the sender's first pose loads; validate anchor
+  distance, world and current local occupancy before applying it.
+- Preserve adjacent sitting/IK flags, recover reloaded animation metadata and
+  support mesh-shift restoration for all 32 players.
+- Keep authored mesh offsets through failed writes and nested cleanup; apply
+  full parent rotation and vertical forward motion on tilted seats.
+- Refresh head look and flashlight world aim after final seat placement, with
+  checked native rotation calls and no raw rotation fallback.
+- Guard ATV driver poses by rig/seat/player identity, readable finite transforms
+  and accepted writes; give the ATV seat priority over an old chair anchor.
+- Stream small seated-player movements and every chair rotation axis at up to
+  20 Hz; interpolate the chair and body together through wrapped angles.
+- Admit a chair before placing its rider, retry late chair discovery, cancel
+  placement on stand/laptop/sleep/ragdoll and retire stale session/peer work.
+- Keep stand-up packets from rotating released chairs and preserve fresh seating
+  state through refused sends, replaced objects and nested callbacks.
+- Validate finite/frozen ATV spawn inputs and current class/key layout, native
+  services and original world/context through deferred creation and finish.
+- Refuse foreign deferred returns and failed whole-rig placement; clean up only
+  the captured rig incarnation. Stop garage queries on source retirement or movement.
+- Hold lamp/ambient source and exact ambient-component identity through native
+  preparation/completion; reject retired or replaced bindings.
+- Bound and copy switch-audio parameters, verify the hooked callee, recover spatial
+  resources and reject invalid audio/positions while preserving nested replay context.
+- Recover replaced/incomplete light-root and switch metadata without fixed offset
+  fallbacks; read live state, switch position and breaker through separate bool masks.
+- Bound switch-to-group array lookup, check group-call arguments and retain
+  object/function/world/layout identity through group and switch replay calls.
+- Retry refused flashlight join seeds and cached host relays for the original
+  recipient/source connection. Replay current ON/OFF state with owned packet bytes.
+- Preserve newer light state through nested sends; pace targeted replay through
+  one rotating 64-attempt budget and wait for active, ready recipient links.
+- Recover incomplete ATV hit-guard installation so a temporary startup refusal
+  cannot permanently block companion creation; retry honk/mount watches independently.
+- Validate impulse-frame bounds, companion yaw, deferred spawn/finish results and
+  rig-teleport arguments; clean up failed deferred bodies before publication.
+- Retry initially refused light-group watches and stop network light guards when
+  the session stops. Remove merged duplicate console code that blocked compilation.
+- Guard console atlas/factory/init/command/log preparation by current object,
+  class, function and layout bindings. Reject malformed parameter/panel-array bounds.
+- Preserve newer command fields and stop retired clear/input operations; validate
+  both console backing-log fields before starting display-only clearing.
+- Guard remote flashlight clicks by current peer/body/session identity, retain
+  transitions through unavailable resources/positions and recover replaced assets.
+- Preserve newer states through nested preparation, refuse non-finite positions
+  and wait for spatial attenuation instead of playing an unattenuated click.
+- Freeze held-toy sound identity and action before native use; bind deferred
+  music/squeaks to exact sender/recipient connections through reconnect and reentry.
+- Preserve overflow retries and fresh join debt, own incoming packets, share a
+  64-send budget and enforce transient expiry/clock retirement.
+- Guard native watoy state/audio/effect preparation by current source, component,
+  mesh/template and service identities; refuse unreadable or non-finite outputs.
+- Keep requester/presentation checks through activation/audio, validate spawned
+  particles and preserve fresh View ownership during Apply/Clear reentry.
+- Guard watoy session, activation invocation and requester/recipient connection
+  ownership; preserve current rows/queues through nested sends and cleanup.
+- Reserve activation capture capacity, retain overflow cue retries and copy
+  incoming packets before native authorization. Wire layout remains unchanged.
+- Retire world toy music/squeak work across session restarts and transport
+  replacement; keep exact PRE/POST ownership through nested native callbacks.
+- Preserve overflow retries, own received packets, share a 64-send tick budget,
+  expire transient sounds across callbacks and validate keys consistently.
+- Keep ongoing sponge-foam fixes in public version 2161. Scope effects to their
+  session, invocation, original prop/hand and exact player/recipient connection.
+- Preserve queue admission and ordered retries, bound per-tick work and expiry,
+  and guard native hit-result ownership without replaying stock consumption.
+
+- Retain a bay-window dab when native preparation is unavailable; consume an
+  admitted canvas draw once, including uncertain failure.
+- Guard window, canvas, material, function and class lifetimes through native
+  preparation, parameter writes and callback-driven replacement.
+- Check scalar updates and every draw/factory binding, including exact Vector2D
+  layout; missing metadata retries instead of permanently disabling drawing.
+- Read held brushes only while their author, item, stock and material remain
+  current; reject unreadable or non-finite values without publishing partial output.
+- Preserve brush ownership through factory failure, GC pinning, teardown and
+  reentry; wait when the shared signal canvas state cannot be established.
+- Every version is a test version, requires extensive testing and may be unstable.
+  Rendered multiplayer, original-dab brush provenance, dynamic grime and full-save
+  parity remain open.
+
+
+
+- Retain bay-window sponge strokes through refused reliable sends, preserving
+  their order and sealed brush values until delivery or a 20-second expiry.
+- Bound sending and replay to eight dabs per tick; preserve admitted queued work
+  when full and protect queues from nested native/transport callbacks.
+- Retire strokes across world, session-start, role, stop and disconnect changes.
+- Validate draw ranges and source readiness while accepting host-relayed origins.
+- Check window slot serials and scan generations; stop replay on replacement,
+  signal playback or source retirement, and recover replaced/failed draw hooks.
+- Clean obsolete artifacts before version work and reconcile the active TODO/WORK.
+- Every version is a test version, requires extensive testing and may be unstable.
+  Rendered multiplayer, dynamic grime sources and full-save parity remain open.
+
+## 0.9.2160
+
+- Package the current combined fork and upstream source as DLL/network **b2215**
+  for VotV **0.9.0n**. All players must update together.
+- Finish the remembered 2-32-player chooser across both hosting menus and all
+  admission paths. Larger automatic lobbies still need the matching master service.
+- Implement shared shovel holes, can-portion guards, all-player sleep voting,
+  companion ATV recovery and current Ariral ship presentation/join state.
+- Improve concurrent console ownership, ordered request/history delivery,
+  input consumption and native display callback lifetime.
+- Preserve exact inventory/container identities through checked restoration,
+  refused sends, joining and proven local failed-extraction recovery.
+- Guard food final bites and MRE output provenance; fix native saw eligibility
+  lookup and protect damage/slice/hit/wall preparation from stale state.
+- Retain bleeding, ATV steering, blast-driven prop movement, material-stock and
+  guarded host wall-delivery changes since 0.9.2158.
+- Integrate upstream damage/creature intents, host ATV ownership/join tables,
+  editing/codecs and device/UI fixes while retaining fork synchronization guards.
+- Remove the main-menu tester roll and outdated promotional attribution.
+- The identical production source snapshot passed 94/94 offline groups. These
+  results are reused for the public-version change; Release, label and package
+  checks are fresh. Rendered multiplayer and remaining transaction/event cases
+  are still open. Every version is a test version, requires extensive testing
+  and may be unstable.
+
 ## 0.9.2158
 
 - Restore registration headroom for shared door, switch and container script watches.

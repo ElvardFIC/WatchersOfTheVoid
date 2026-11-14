@@ -24,7 +24,7 @@ assert 'Inst(fuelSpeed)' in f[8107] and 'VictoryFloatMinusEquals' in f[8153]
 assert 'Deactivate()' in f[4013] and 'Deactivate()' in f[4049]
 assert 'K2_DestroyComponent(self)' in f[4001]
 s=root/'src/votv-coop'
-sub=(s/'src/coop/session/subsystems.cpp').read_text()
+sub=(s/'src/coop/session/subsystems.cpp').read_text() + (s/'src/coop/session/connect_replay.cpp').read_text()
 for call in ('Install(&session)','Tick()','QueueConnect(slot)','OnPeerLeft(slot)','OnDisconnect()'):
  assert 'coop::prop_fire_sync::'+call in sub
 assert 'case ReliableKind::PropFire:' not in (s/'src/coop/net/session_lanes.h').read_text()

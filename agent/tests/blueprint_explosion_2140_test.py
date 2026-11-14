@@ -17,7 +17,7 @@ for cls in ['prop_pipebomb','prop_grenade','prop_landmine','prop_stickybomb','pr
 p=Package(str(research/'assets/VotV__Content__objects__misc__explosion_saltrocket.uasset'))
 assert not any(p.class_of_export(e)=='Function' for e in p.exports) # inherits the gated native graph
 s=root/'src/votv-coop'
-sub=(s/'src/coop/session/subsystems.cpp').read_text()
+sub=(s/'src/coop/session/subsystems.cpp').read_text() + (s/'src/coop/session/connect_replay.cpp').read_text()
 for call in ('Install(&session)','Tick()','OnDisconnect()'):
  assert 'coop::native_explosion_sync::'+call in sub
 assert 'coop::explosion_events::Install(&session)' not in sub

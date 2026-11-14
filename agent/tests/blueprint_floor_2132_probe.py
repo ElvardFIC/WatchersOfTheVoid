@@ -2,10 +2,10 @@
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / '_research'))
+sys.path.insert(0, str(root.parent / '_research'))
 from kismet_dis import Package, Dis, find_script
 def functions(asset, selected=None):
-    p = Package(str(root / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
+    p = Package(str(root.parent / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
     result = {}
     for e in p.exports:
         if p.class_of_export(e) == 'Function':
@@ -29,6 +29,6 @@ assert prop['gamemodeValid'] == 'return nothing\nend_of_script'
 assert '->assignKey(Inst(key)' in prop['getKey']
 lib = functions('main__lib', {'assignKey'})
 assert 'generateRandomKey(' in lib['assignKey'] and 'Out(keyIn) =' in lib['assignKey']
-source = (root / 'src/votv-coop/src/ue_wrap/actors/prop.cpp').read_text()
+source = (root / 'src/votv-coop/src/ue_wrap/actors/prop_keys.cpp').read_text()
 assert 'return ReadField<R::FName>(obj, P::off::Aprop_Key);' in source
 print('PASS evidence: floor gen does not run prop init/getKey; native getKey assigns identity, while mod reads the field directly')

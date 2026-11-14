@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <utility>
 
 namespace coop::net {
@@ -31,6 +32,31 @@ enum class Served : uint8_t { Done, Wait };
 template <class T>
 class IntentQueue {
 public:
+    IntentQueue() = default;
+    IntentQueue(const IntentQueue& other) : q_(other.q_), bucket_(other.bucket_) {}
+    IntentQueue(IntentQueue&& other) : q_(std::move(other.q_)), bucket_(other.bucket_) {
+        ++other.revision_;
+        other.bucket_.Reset();
+    }
+    IntentQueue& operator=(const IntentQueue& other) {
+        if (this != &other) {
+            auto pending = other.q_;
+            ++revision_;
+            q_ = std::move(pending);
+            bucket_ = other.bucket_;
+        }
+        return *this;
+    }
+    IntentQueue& operator=(IntentQueue&& other) {
+        if (this != &other) {
+            ++revision_;
+            q_ = std::move(other.q_);
+            bucket_ = other.bucket_;
+            ++other.revision_;
+            other.bucket_.Reset();
+        }
+        return *this;
+    }
     // Queues `v` behind the others: false when `cap` entries are already queued (nothing is queued then).
     bool Push(T&& v, size_t cap) {
         if (q_.size() >= cap) return false;
@@ -43,11 +69,30 @@ public:
     // returns, the head stays for the next call).
     template <class NowFn, class Fn>
     void Serve(const IntentBudget& b, NowFn&& now, Fn&& fn) {
-        if (q_.empty()) return;
-        if (!bucket_.Take(b, now())) return;
-        if (fn(q_.front()) == Served::Done) {
+        if (serving_ || q_.empty()) return;
+        serving_ = true;
+        struct Serving { bool& busy; ~Serving() { busy = false; } } serving{serving_};
+        const auto revision = revision_;
+        const auto clock = now();
+        if (revision != revision_ || q_.empty() || !bucket_.Take(b, clock)) return;
+        std::optional<T> head;
+        try { head.emplace(q_.front()); }
+        catch (...) {
+            if (revision == revision_) bucket_.Refund(b);
+            throw;
+        }
+        if (revision != revision_) return;
+        Served result;
+        try { result = fn(*head); }
+        catch (...) {
+            if (revision == revision_) q_.pop_front();
+            throw;
+        }
+        if (revision != revision_) return;
+        if (result == Served::Done) {
             q_.pop_front();
         } else {
+            q_.front() = std::move(*head);
             bucket_.Refund(b);
         }
     }
@@ -58,6 +103,8 @@ public:
 private:
     std::deque<T> q_;
     IntentBucket  bucket_;
+    uint64_t revision_ = 0;
+    bool serving_ = false;
 };
 
 // The queue's arithmetic: the cap's refusal, no token serving nothing, Done and Wait, and a value-initialised

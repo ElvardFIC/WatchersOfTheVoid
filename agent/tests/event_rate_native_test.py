@@ -34,6 +34,29 @@ def graph(asset, function):
     assert not any('!! ' in row for row in result.values()), (asset, function)
     return result
 
+# BP7 is a personal camera event. Scaling its roll wait must leave the native
+# navigation/distance/integer roll, creature chase and local run-end intact.
+bp7 = graph('tickers__ticker_bp7Spawner', 'ExecuteUbergraph_ticker_bp7Spawner')
+assert graph('tickers__ticker_bp7Spawner', 'ReceiveTick')[18] == 'ExecuteUbergraph_ticker_bp7Spawner(10)'
+assert 'gamemode), byte:0)' in bp7[56] and 'gamemode), byte:1)' in bp7[109]
+assert bp7[214] == 'Actor.SetActorTickInterval(10)'
+assert 'GetPlayerCameraManager(self, 0)' in bp7[229]
+assert 'K2_GetRandomPointInNavigableRadius(' in bp7[305] and ', 50000,' in bp7[305]
+assert 'Greater_FloatFloat(' in bp7[500] and ', 10000)' in bp7[500]
+assert 'RandomIntegerInRange(-2147483648, 2147483647)' in bp7[548]
+assert 'EqualEqual_IntInt(' in bp7[586] and ', 0)' in bp7[586]
+assert 'NewBlueprint7.NewBlueprint7_C' in bp7[747]
+assert 'name:NewVar_6, true)' in bp7[789]
+personal = graph('NewBlueprint7', 'ExecuteUbergraph_NewBlueprint7')
+assert 'GetPlayerCameraManager(self, 0)' in personal[476]
+assert 'CreateMoveToProxyObject(' in personal[502]
+assert 'Delay(self, Inst(d),' in personal[27]
+assert personal[86].endswith('SetGamePaused(self, true)')
+assert 'QuitGame(self, noobj, byte:0, false)' in personal[108]
+assert 'Inst(NewVar_6)' in personal[1496]
+assert 'QuitGame(self, noobj, byte:0, true)' in personal[1608]
+print('PASS native bp7 owner camera/eligibility, ten-second roll wait, full-int probability, creature chase/delay and personal pause/quit branches')
+
 # Only the eligible-roll wait is scaled. Generator condition, native probability
 # and the root's separate .02-.1 s visual delays must stay in the native graphs.
 flicker_asset = 'tickers__ticker_flickerer'

@@ -10,15 +10,21 @@ bool WatchName(const facts::Function& row,int tag,PreFn pre,PostFn post){
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <functional>
 #define CHECK(x) do { if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);} } while(0)
 
 namespace test {
 using Array = coop::event_schedule_authority::NameArray;
-struct Obj { int id; int serial=1; bool live=true; void* cls=nullptr; Array rows{}; };
+struct Obj { int id; int serial=1; bool live=true; void* cls=nullptr; Array rows{},otherRows{}; };
 Obj cls{0}, slot{1}, otherClass{2};
 Obj* objects[]={&cls,&slot,&otherClass};
 void* world=reinterpret_cast<void*>(1);
 bool propertyAvailable=true;
+uint32_t sessionSerial=1;
+uint32_t worldGeneration=1;
+bool worldlessSlot=false;
+int fieldOffset=offsetof(Obj,rows);
+std::function<void()> onOffset;
 struct Watch { std::wstring cls,fn; int tag; ue_wrap::script_gate::PreFn pre; };
 std::vector<Watch> watches;
 ue_wrap::script_gate::Verdict Dispatch(const wchar_t* c,const wchar_t* fn,void* object,bool ours=false) {
@@ -37,11 +43,14 @@ int32_t SlotSerial(int32_t i){return i>=0&&i<3?test::objects[i]->serial:0;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 bool IsLiveByIndex(void* o,int32_t i){return i>=0&&i<3&&test::objects[i]==o&&test::objects[i]->live;}
 void* ClassOf(void* o){return static_cast<test::Obj*>(o)->cls;}
-int32_t FindPropertyOffset(void*,const wchar_t* name){CHECK(std::wstring(name)==L"allEvents");return test::propertyAvailable?offsetof(test::Obj,rows):-1;}
+int32_t FindPropertyOffset(void*,const wchar_t* name){CHECK(std::wstring(name)==L"allEvents");
+    auto cb=std::move(test::onOffset);test::onOffset={};if(cb)cb();return test::propertyAvailable?test::fieldOffset:-1;}
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::world_identity {
+uint32_t Generation(){return test::worldGeneration;}
 void* CurrentWorld(){return test::world;}
-void* WorldOf(void* o){return o==&test::slot?test::world:nullptr;}
+void* WorldOf(void* o){return o==&test::slot && !test::worldlessSlot?test::world:nullptr;}
 }
 namespace ue_wrap::log { void Write(Level,const char*,...){} }
 namespace ue_wrap::script_gate {
@@ -97,5 +106,14 @@ int main(){
     s.active=true;s.mode=coop::net::Role::Host;CHECK(Dispatch(L"prop_impostor_C",L"ReceiveTick",&slot)==V::Run);
     CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot)==V::Run);
     E::OnDisconnect();s.mode=coop::net::Role::Client;Tick();CHECK(slot.rows.num==3);
+    reset();Tick();slot.cls=&otherClass;E::OnDisconnect();CHECK(slot.rows.num==0);slot.cls=&cls;
+    reset();Tick();slot.otherRows={rows,0,4};fieldOffset=offsetof(Obj,otherRows);
+    E::OnDisconnect();CHECK(slot.rows.num==0 && slot.otherRows.num==0);fieldOffset=offsetof(Obj,rows);
+    reset();onOffset=[]{E::OnDisconnect();};Tick();CHECK(slot.rows.num==3 && E::g_held.empty());
+    reset();onOffset=[]{++slot.serial;};Tick();CHECK(slot.rows.num==3 && E::g_held.empty());
+    reset();Tick();++sessionSerial;E::Install(&s);CHECK(slot.rows.num==3);Tick();CHECK(slot.rows.num==0);
+    E::OnDisconnect();CHECK(slot.rows.num==3);
+    worldlessSlot=true;reset();Tick();++worldGeneration;E::OnDisconnect();CHECK(slot.rows.num==0);worldlessSlot=false;
+    puts("PASS calendar schedule exact class/field, callback retirement, recycled metadata and session replacement");
     puts("PASS authority2165: schedule suppression/restore, loading/reflected calls, array/object lifetime, mimic generator/cull roles and host-only flickerer with native initialization/solo recovery");
 }

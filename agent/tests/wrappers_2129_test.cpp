@@ -40,7 +40,7 @@ const FName& NameOf(void* p) { return static_cast<test::Obj*>(p)->name; }
 std::wstring ToString(const FName& n) { for(auto& o:test::objs) if(o.name.ComparisonIndex==n.ComparisonIndex)return o.text;return L"other"; }
 bool NameEquals(const FName& n,const wchar_t* s) { return !_wcsicmp(ToString(n).c_str(),s); }
 void* OuterOf(void* p) { return p ? static_cast<test::Obj*>(p)->owner : nullptr; }
-void* ClassOf(void* p) { return p==&test::sw && test::cookingSource?&test::objs[23]:p; }
+void* ClassOf(void* p) { if(p==&test::sw && test::cookingSource)return &test::objs[23];return p==&test::sw || p==&test::other?&test::objs[9]:p; }
 void* SuperStructOf(void* p) {
     for(int i=24;i<38;++i)if(i!=27 && p==&test::objs[i])return &test::objs[23];
     return nullptr;
@@ -51,10 +51,10 @@ int32_t InternalIndexOf(void* p) { return p ? NameOf(p).ComparisonIndex : -1; }
 int32_t SlotSerial(int32_t) { return 1; }
 int32_t AllocateSlotSerial(int32_t) { return 1; }
 void* ObjectAt(int32_t i) { for(auto& o:test::objs) if(o.name.ComparisonIndex==i) return &o;return nullptr; }
-void* FindClass(const wchar_t* s) { for(auto& o:test::objs) if(!_wcsicmp(o.text,s))return &o;return nullptr; }
+void* FindClass(const wchar_t* s) { if(!_wcsicmp(s,L"lightswitch_C"))return &test::objs[9];for(auto& o:test::objs) if(!_wcsicmp(o.text,s))return &o;return nullptr; }
 void* FindFunction(void*,const wchar_t* s) { return FindClass(s); }
-int32_t FindPropertyOffset(void*,const wchar_t*) { return -1; }
-bool FindBoolProperty(void*,const wchar_t*,int32_t&,uint8_t&) { return false; }
+int32_t FindPropertyOffset(void* cls,const wchar_t* n) { return cls==&test::objs[9] && (!_wcsicmp(n,L"Key") || !_wcsicmp(n,L"objects"))?0:-1; }
+bool FindBoolProperty(void* cls,const wchar_t* n,int32_t& off,uint8_t& mask) { off=0;mask=1;return cls==&test::objs[9] && !_wcsicmp(n,L"A"); }
 int32_t InstanceOffset::Of(void*) { std::abort(); }
 std::wstring ClassNameOf(void*) { std::abort(); }
 void* FindDispatchFunctionCached(void*,const wchar_t*) { return nullptr; }
@@ -64,7 +64,7 @@ int32_t FindParamOffset(void*,const wchar_t* n) {
     if(!std::wcscmp(n,L"PitchMultiplier"))return 12;
     return -1;
 }
-int32_t FunctionFrameSize(void*) { return 0; }
+int32_t FunctionFrameSize(void* fn) { return fn==&test::objs[8]?sizeof(test::Sound):0; }
 std::vector<ParamInfo> FunctionParams(void*) { return {}; }
 bool IsDescendantOfAny(void* p,void* const* b,size_t n,int) { for(size_t i=0;i<n;++i)if(p==b[i])return true;return false; }
 bool CallFunction(void* obj,void*,void*) {
@@ -89,6 +89,7 @@ void PlaySoundAtLocation(void* obj,void* cue,const FVector& p,void* att,float vo
 }
 }
 namespace ue_wrap::ufunction_hook {
+void* CurrentNativeFunction(){return &test::objs[8];}
 bool InstallPreHook(void*,PreNativeCallback cb,bool armed) { CHECK(armed);test::hook=cb;return true; }
 bool InstallPreHook(const facts::Resolved&,PreNativeCallback cb,bool armed) { CHECK(armed);test::hook=cb;return true; }
 CallerFrame CurrentCallerFrame() { return {test::caller,nullptr}; }
@@ -162,7 +163,7 @@ int main() {
     coop::prop_spawn_authoring::g_toolUberName=objs[6].name;
     caller=&objs[6];CHECK(BirthIsPlayerAuthored());
     coop::prop_spawn_authoring::g_menuSpawnFn=&objs[4];body=true;caller=nullptr;CHECK(BirthIsPlayerAuthored());body=false;
-    lightswitch::g_useFn=&objs[9];
+    cookingSource=false;CHECK(lightswitch::EnsureSwitchResolved());
     CHECK(lightswitch::CallUse(&sw));CHECK(uses==1 && clicks==0); // transient attenuation failure
     attenuationOk=true;nested=true;
     CHECK(lightswitch::CallUse(&sw));CHECK(uses==3 && clicks==2 && !lightswitch::g_replayedSwitch);

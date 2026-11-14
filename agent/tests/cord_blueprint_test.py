@@ -4,10 +4,10 @@ import re
 import sys
 
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / "_research"))
+sys.path.insert(0, str(root.parent / "_research"))
 from kismet_dis import Package, Dis, find_script
 
-pkg = Package(str(root / "_research/assets/VotV__Content__objects__cord.uasset"))
+pkg = Package(str(root.parent / "_research/assets/VotV__Content__objects__cord.uasset"))
 def body(name):
     export = next(e for e in pkg.exports if e["name"] == name and pkg.class_of_export(e) == "Function")
     code, _ = find_script(pkg.export_data(export))

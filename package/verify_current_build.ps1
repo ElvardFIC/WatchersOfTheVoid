@@ -33,7 +33,11 @@ $imports | Set-Content (Join-Path $evidence 'imports.txt')
 $exports | Set-Content (Join-Path $evidence 'exports.txt')
 if(($imports -join "`n") -notmatch 'KERNEL32.dll' -or ($imports -join "`n") -match '(?im)^\s+(UE4SS|VCRUNTIME\d+|MSVCP\d+).*\.dll\s*$'){throw 'Unexpected DLL imports'}
 if(($exports -join "`n") -notmatch '\bstart_mod\b' -or ($exports -join "`n") -notmatch '\buninstall_mod\b'){throw 'Loader exports missing'}
-$entries=@([regex]::Matches((Get-Content (Join-Path $source 'sources.cmake') -Raw),'(?m)^\s*(src/[^\s]+\.cpp)\s*$'))
+$sourceLists=@('sources.cmake','sources_ue_wrap.cmake','sources_dev.cmake')
+$sourceText=($sourceLists | ForEach-Object {Get-Content -LiteralPath (Join-Path $source $_) -Raw}) -join "`n"
+$entries=@([regex]::Matches($sourceText,'(?m)^\s*(src/[^\s]+\.cpp)\s*$'))
+$unique=@($entries | ForEach-Object {$_.Groups[1].Value} | Sort-Object -Unique)
+if($unique.Count -ne $entries.Count){throw 'Duplicate build translation units'}
 if(-not $entries.Count){throw 'Build source list is empty'}
 foreach($entry in $entries){if(-not(Test-Path -LiteralPath (Join-Path $source $entry.Groups[1].Value))){throw "Missing build source: $($entry.Value)"}}
 $report=[pscustomobject]@{

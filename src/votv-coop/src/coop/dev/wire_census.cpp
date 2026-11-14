@@ -1,6 +1,7 @@
 // coop/dev/wire_census.cpp -- see header. NET-THREAD only; no locks needed.
 
 #include "coop/dev/wire_census.h"
+#include "coop/net/peer_limits.h"
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
@@ -13,7 +14,7 @@
 namespace coop::dev::wire_census {
 namespace {
 
-constexpr int kSlots = 8;    // >= kMaxPeers; out-of-range slots are dropped
+constexpr int kSlots = coop::net::kPeerCapacity;    // >= kMaxPeers; out-of-range slots are dropped
 constexpr int kTypes = 256;  // full uint8_t MsgType space
 
 int g_enabled = -1;  // -1 = the row not resolved yet (latched on first Enabled())

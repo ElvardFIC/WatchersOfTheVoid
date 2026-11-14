@@ -1,8 +1,9 @@
 #pragma once
 #include <cstdint>
+#include "coop/net/peer_limits.h"
 #include "coop/player/remote_player.h"
 namespace coop::players {
-inline constexpr uint8_t kMaxPeers=4;
+inline constexpr uint8_t kMaxPeers=coop::net::kPeerCapacity;
 class Registry {
 public:
     uint8_t peer=1;

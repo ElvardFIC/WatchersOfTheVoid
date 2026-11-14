@@ -111,6 +111,9 @@ int main() {
     auto p=Pull(); Receive(p,1); CHECK(test::spawns==1 && test::desk.state[0]==14);
     Receive(p,1); CHECK(test::spawns==1); // duplicate must never make a second cover
     Receive(Pull(1),2); CHECK(test::spawns==1); // two players pulling the same cover
+    Reset(s); Receive(Pull(),31); CHECK(test::spawns==1 && g_ack[31]==1 && g_ack[1]==0);
+    Receive(Pull(),31); CHECK(test::spawns==1); // final supported peer retains its own receipt
+    Reset(s); Receive(Pull(),net::kPeerCapacity); CHECK(test::spawns==0);
     Reset(s); test::spawnOk=false; Receive(Pull(),1); CHECK(test::desk.state[0]==15);
     Reset(s); test::writeOk=false; Receive(Pull(),1); CHECK(test::spawns==0 && test::desk.state[0]==15);
     Reset(s); test::body=false; Receive(Pull(),1); CHECK(g_ack[1]==0);

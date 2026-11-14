@@ -32,7 +32,13 @@ SG::Verdict OnDestroy(const SG::Call& call) {
 void Install(net::Session* session) {
     g_session.store(session, std::memory_order_release);
 
-    // Block native destruction on clients.
-    SG::WatchClassName(L"deer_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
+    // Block native destruction on clients. The class declares no script body for this verb (its
+    // destruction is native), so the gate settles this watch dead; re-registering it on every pump
+    // tick used to take a fresh dead slot each time and fill the name table. One registration is
+    // final for the process -- a dead answer stays dead, a live one stays live.
+    static bool s_watchDone = false;
+    if (s_watchDone) return;
+    const bool watched = SG::WatchClassName(L"deer_C", L"K2_DestroyActor", 0, &OnDestroy, nullptr);
+    s_watchDone = watched || SG::ClassNameWatchSettled(L"deer_C", L"K2_DestroyActor", 0);
 }
 }

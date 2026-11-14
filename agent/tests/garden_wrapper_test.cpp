@@ -6,6 +6,7 @@
 #undef Name
 #include "../../src/votv-coop/src/ue_wrap/actors/wall_drying.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+#include "llama_marker_boundary_stubs.h"
 #include <cstdio>
 #include <cstdlib>
 #include <map>

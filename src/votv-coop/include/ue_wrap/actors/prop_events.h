@@ -1,7 +1,7 @@
-// ue_wrap/actors/prop_events.h -- the base prop class's own Blueprint events, run on a prop the way
-// the game runs them on the machine where they happen: a grab's prelude and a throw. Each call runs
-// prop_C's own function, never a subclass's override of it, so a receiver replays what the base does
-// and nothing a subclass adds. Engine-wrapper layer (principle 7): no network or coop state.
+// ue_wrap/actors/prop_events.h -- exact-owner prop events. Base calls use prop_C's
+// own body; the remote grab adapter also handles the native glowstick replacement.
+// Arbitrary subclass overrides are not dispatched. Engine-wrapper layer
+// (principle 7): no network or coop state.
 // Implementation: src/ue_wrap/actors/prop_events.cpp.
 
 #pragma once
@@ -13,6 +13,14 @@ namespace ue_wrap::prop {
 // player, so none is passed. False for a null prop or when the class or the event did not resolve.
 // Game thread.
 bool CallBaseGrabPrelude(void* prop);
+
+// The receiver's native prelude: glowsticks release their constraint through
+// prop_glowstick_C.releaseGlowstick instead of running prop_C's prelude. Other
+// non-wall-attachable props retain the base event; arbitrary overrides never run.
+// NotReady means no native call was admitted and readiness may be retried.
+// Failed means dispatch was attempted; its effects must not be replayed blindly.
+enum class GrabPreludeResult { NotReady, Applied, Failed };
+GrabPreludeResult ReplayRemoteGrabPrelude(void* prop);
 
 // prop_C's own setPropProps(static, frozen, active, sleeping): the flags written and init() run. The
 // base body never reads `active`, where a subclass's override does, as its own state -- a spotlight's
@@ -26,5 +34,8 @@ bool CallBaseSetPropProps(void* prop, bool isStatic, bool frozen, bool sleeping)
 // sound. False for a null prop or player, or when the class or the event did not resolve. Game
 // thread.
 bool CallPropThrown(void* prop, void* player);
+
+bool ReadIgnoreSave(void* prop, bool& out);
+bool ReadCanPickup(void* prop, bool& out);
 
 }  // namespace ue_wrap::prop

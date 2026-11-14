@@ -1,0 +1,118 @@
+// coop/props/prop_throw.h -- the game's own throw, seen at the call and numbered.
+//
+// Every throw of the player pawn (the hand throw, the grabbed prop's fire press, the host's own) ends in the
+// pawn's throwShit(component, velocity), which sets the launch velocity and is called by no other verb. A script-gate
+// POST watch on it, filtered to the LOCAL pawn by identity (a puppet is a mainPlayer_C too), mints a throw sequence
+// for the thrown actor: a uint16 that is never 0 and travels in the drop intent and the release (0 = not a throw).
+// A peer's records of its own recent throws are what the host's grant matches, what the adoption of the thrower's
+// own actor yields to, and what the release and the drop intent read their sequence from. The host's side: the
+// bounds a client's release and drop intent meet, the release's relay to the other clients, and the mark a thrown
+// drop intent leaves for the election, which waits for the spawned prop to have its element id.
+//
+// Game thread only. See docs/props.md (a thrown prop's flight).
+
+#pragma once
+
+#include "ue_wrap/core/cached_obj_ref.h"
+
+#include <cstdint>
+#include <string>
+
+namespace coop::net {
+class Session;
+struct PropReleasePayload;
+struct PropDropIntentPayload;
+}  // namespace coop::net
+
+namespace coop::prop_throw {
+
+// The arguments of a comp_physicsImpact_C::impactDamage call held for the grant, all values: the component and the
+// hitting actor are re-resolved at the replay, and a dead actor replays as null.
+inline constexpr int kMaxHitBytes = 192;
+struct DeferredBreak {
+    ue_wrap::CachedObjRef comp;
+    ue_wrap::CachedObjRef causer;
+    float                 damage = 0.f;
+    float                 impact[3] = {};
+    int32_t               hitSize = 0;
+    uint8_t               hit[kMaxHitBytes] = {};
+};
+
+// Per tick, both roles: asks the gate to take and resolve the throwShit watch until it is live, and drops the
+// records whose grant never came and the marks that waited kGrantTimeoutMs.
+void Tick();
+
+// The sequence of the live record of `actor`, 0 when none. A record lives from the throw until its grant times out
+// unmatched (kGrantTimeoutMs) or, once granted, until its row ends on this peer (Ended): the adoption of the thrower's
+// own actor yields while a record exists, which is a state and not a clock.
+uint16_t SeqFor(void* actor);
+
+// The sequence a record of `actor` takes when it is the game's throw, 0 for none or for a swing's record: the readers
+// that tell the host a prop was thrown (the release, the drop intent) use this one.
+uint16_t ThrowSeqFor(void* actor);
+
+// A new record for `actor` (a record it already has is replaced): the sequence, never 0. The throwShit watch mints the
+// game's throw. A swing at a prop this client does not author (coop/props/hit_target_prop) takes a sequence from the
+// same table with `swing` set, so the host's election of the swinger is matched by the grant exactly as a throw's is.
+// While a record awaits its grant it holds one lethal impactDamage of the prop (coop/props/prop_damage_gate): it
+// replays once at the grant, and dies with the record when the grant never comes.
+uint16_t MintFor(void* actor, bool swing);
+
+// True while `actor`'s record exists and its grant has not come.
+bool IsPending(void* actor);
+
+// Hold `b` as the one break of `actor`'s pending record. False when the record is not pending or already holds one.
+bool HoldBreak(void* actor, const DeferredBreak& b);
+
+// The break held by `actor`'s granted record, handed out once. False when none.
+bool TakeBreak(void* actor, DeferredBreak* out);
+
+// The host's grant of the throw numbered seq arrived: its record, matched once. The thrown actor and the thrower's
+// clock at the throw (active_drive::NowMs) come out through the pointers.
+bool TakeForGrant(uint16_t seq, void** actor, uint64_t* startMs);
+
+// The granted row of `actor` ended on this peer (its rest End, or the host took it back): the record goes.
+void Ended(void* actor);
+
+// The request that minted `actor`'s record never left this peer: the record, not yet granted, goes at once, so the
+// prop reads as not authored and the next swing mints again.
+void Abandon(void* actor);
+
+// HOST: a client's release arrived (the finite check passed). Its velocity meets the throw bounds
+// (coop/net/throw_bounds.h): clamped in magnitude, direction kept, and counted. The release then goes to every
+// world-ready client but its sender, with the sender's slot kept as the origin, so each mirror clears the holder's
+// drive: the relay a client's release had on the net thread, here after the clamp. A no-op for the host's own
+// release and on a client. Clamps `p` in place.
+void JudgeRelease(coop::net::Session& session, int senderSlot, coop::net::PropReleasePayload& p);
+
+// HOST: a client's drop intent. False when a velocity is not finite (the intent is refused); a finite velocity is
+// clamped in place, as a release's. Counted.
+bool JudgeDropIntent(coop::net::PropDropIntentPayload& p, uint8_t senderSlot);
+
+// HOST: the spawn of a thrown drop intent leaves a mark under the prop's key (the thrower's slot, the sequence, the
+// pose it left from), cleared at its first use or after kGrantTimeoutMs; the election takes it where the spawn watcher
+// would open the birth coast, because the spawned prop has no element id before that.
+struct Mark {
+    uint8_t  slot = 0;
+    uint16_t seq = 0;
+    float    loc[3] = {};
+    uint64_t ms = 0;
+};
+void NoteMark(const std::wstring& key, uint8_t slot, uint16_t seq, const float loc[3]);
+bool HasMarks();   // any mark waiting: the spawn watcher reads a birth's key only then
+bool TakeMark(const std::wstring& key, Mark* out);
+
+namespace dev {   // read by the throw arms of the container intent drill
+uint32_t Minted();          // throw sequences minted this session
+uint32_t PuppetIgnored();   // throwShit calls on a pawn that is not the local one (expected 0)
+// HOST: the client releases and drop intents received, and how many of them carried a throw sequence.
+uint32_t ReleasesSeen();
+uint32_t ReleasesThrown();
+uint32_t IntentsSeen();
+uint32_t IntentsThrown();
+}  // namespace dev
+
+// A session ended: the records, the marks and the counters go.
+void OnDisconnect();
+
+}  // namespace coop::prop_throw

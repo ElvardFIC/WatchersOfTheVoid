@@ -403,6 +403,9 @@ void AfterGrillAction(const sg::Call& c) {
 }
 sg::Verdict OnAction(const sg::Call& c) {
     if (!Client() || c.fromOurCode || !IsMachine(c.object)) return sg::Verdict::Run;
+    // The dedicated coffee lane validates and queues these presses once.
+    if (K::Type(c.object)==K::Kind::CoffeeMaker || K::Type(c.object)==K::Kind::CoffeeVending)
+        return sg::Verdict::Run;
     if (K::Type(c.object)==K::Kind::Cremator) return sg::Verdict::Run;
     if(hand_item::IsHandAxisActor(c.object))return hand_item::IsMirrorActor(c.object)?sg::Verdict::Cancel:sg::Verdict::Run;
     if (!net_pump::IsInAnnouncedWorld(c.object)) return sg::Verdict::Run;

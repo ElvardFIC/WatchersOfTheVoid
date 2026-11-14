@@ -18,9 +18,9 @@ ancestors of current `main`. The merge retained local reliable kinds 202/203, as
 work. The sync branch's laptop, garden, world-sound and placed-hose modules remain in the build and
 session integration. The continued executable audit found 38 missing authorship rows: the
 receiving host rejected 27 kinds of legitimate client intents/owner samples as unknown. All 38
-rows now follow their actual send/receive paths (27 Client, 11 Host). The router gate and its 18
-injected failure controls pass for all 213 kinds. Current source is protocol 2159 under parallel work; the last complete audit was
-2158 with39 passing groups. The 21 October audit is
+rows now follow their actual send/receive paths (27 Client, 11 Host). The historical router gate and its 18
+injected failure controls passed for 213 kinds. Active development is 0.9.2161 / b2217;
+current verification is in TESTLOG. The earlier complete audit was 2158 with 39 passing groups. The 21 October audit is
 recorded in TODO/WORK/TESTLOG and build/todo-audit/verification.json. The mapping
 review does not close the class-specific behavior adapters below.
 
@@ -37,6 +37,7 @@ review does not close the class-specific behavior adapters below.
 | Antibreather | `antibreather_C`, spawner `antibreatherSPawner_C` | pose; per-viewer event count stays local | Cave/player-dependent birth and cross-peer attack results |
 | Fossilhound | `fossilhound_C`, ticker `ticker_fossilhoundSpawner_C` | pose; per-viewer event count stays local | Live attack acceptance. The executed EX-spawn source gate now contains the ticker |
 | Ariral follower/shooter/pig beater | `npc_arirFollower_C`, `npc_ariral_shooter_C`, `npc_ariral_pigBeater_C` | pose | held/thrown object ownership, shots/hits and phase state |
+| Ariral chest slapper | `arirSlapper_C` (native follower child), spawned by `slapperSummoner_C` | late NPC pose; exact summoner output admission | Attacks, stolen chest/item ownership, audio/effects and shared lifetime acceptance |
 | Ariral gun stealer | `npc_arirGunStealer_C` | late NPC pose; client mirror's real `punching` timer refused | Gun acquisition/attachment, montage and stolen-prop ownership. Native exports contain no `StealGun` or `TakeWeapon` |
 | Grey | `grayTest_C` | pose; client native brain/camera bodies refused | target/action/effect state |
 | Flamethrower Tank | `firetank_C` (`Pawn`), deployment actor `firetankDeploy_C` | pose | turret aim, fire, fuel, damage and destruction |
@@ -66,6 +67,7 @@ review does not close the class-specific behavior adapters below.
 | Flesh Slug | `npc_goreSlither_C` | pose | Attack, water conversion, damage/death and effects |
 | Zombie Deer | `npc_zombie_deer_C`, descendant of `npc_zombie_C`; corpse item is separate | pose by zombie ancestry | Night condition, attacks/fade and corpse dependency |
 | Ghost | `ghostcar_C`/`ghostcarSpawner_C` is one native ghost event family | prop/unrouted spawner | Confirm requested display name and camera/visibility phases |
+| Killer Wisp (grab/tear boundary) | `killerwisp_C` | dedicated NPC pose and victim grab/tear; queued effects/holds bind observed bodies/world, mesh readiness precedes playback, native capture/release callbacks retain request ownership | Limb/blood presentation and live socket/animation/attack acceptance; this does not identify Ghost or Ghost Log |
 | Ghost Log | no class-name match in the package; it is a save-load shapeshifter, so class must be captured live | unrouted | Exact runtime class, teleport/deafen and local/global ownership |
 | Fireflies | `ticker_fireflySpawner_C` plus emitter relay | dedicated cosmetic relay | Live local spawn and rejoin acceptance |
 | Walking Mannequin | `wMannequinSpawn_C` and mannequin prop family | dedicated `mannequin_sync` | Two-peer lifecycle/held-object acceptance |
@@ -80,7 +82,8 @@ review does not close the class-specific behavior adapters below.
 | Rune Sphere | rune prop family `prop_rune_C`/`prop_rune_0..3_C`, with `airRuneBox_C`, `earthRuneZone_C`, `waterRuneTrigger_C` | prop plus unrouted ritual actors | Activation and ritual phase ownership |
 | Black Sphere / Red Void Orb | `npc_orborb_C`; producer candidate `blackballSpawner_C` (`actor_save_C`) | pose for orb; spawner unrouted | Charge/crash visual, local Meta Paranoia and timed lifetime |
 | Living Erie | `eriePlushLive_C` plus `_good_C`/`_evil_C` | unrouted | Interaction, grow/fire/damage/steal and ownership |
-| Rufus | `rufus_C`; corpse `rufusCorpse_C` | unrouted | Interaction, animation, damage and lifetime |
+| Rufus / thiccfus | `rufus_C` (`Character`); `thiccfus_C` inherits it; separate plush `prop_thiccfus_C`; corpse `rufusCorpse_C` | NPC birth/pose, exact console EX catches and parked mirror graph; native mesh/AnimBP setup plus streamed body yaw | Live birth/join/animation/destruction acceptance; cross-player targeting/grab, sound/HUD/event state, damage/explosion feedback and corpse mesh/loot transport. Marking does not reverse earlier native effects. Girufus remains unmapped |
+| Llama event | `prop_llama_C` (`prop_C`), singleton marker `llamaSoul_C` (`actor_save_C`) | Ordinary prop motion plus host-owned h/light state and expiring sound edge; quiet join seeds and client jump-graph authority | Rendered jump/motion/light/audio and join/reload acceptance; remote-player trigger selection (native host camera/player zero remains), marker/save/event-count lifetime, hand transitions and pre-session timer restoration; local cue expiry does not establish synchronized audio timing |
 | Gnomes / Nisse | `tomtenisse_C`; death/soul actor `nisse_soul_C` (`actor_save_C`) | unrouted | Group spawn, presents, revenge, damage/death and shared lifetime |
 | Krampus | `npc_krampus_C` | pose plus creature-event count | stab/fireball/jump/target/despawn actions and event acceptance |
 

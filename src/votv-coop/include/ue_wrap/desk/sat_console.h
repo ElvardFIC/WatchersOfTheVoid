@@ -20,8 +20,8 @@ inline constexpr const wchar_t* kInit          = L"init";
 inline constexpr const wchar_t* kUbergraph     = L"ExecuteUbergraph_ui_console";
 
 // Resolve the terminal's members and verbs, the atlas's terminal slot, the desk's panel list and the
-// widget library's Create; a throttled lazy retry that latches off after a few passes with the classes
-// loaded. Game thread.
+// widget library's Create; a throttled lazy retry that continues while metadata is incomplete.
+// Live class/function/CDO bindings are checked before cached layout use. Game thread.
 bool EnsureResolved();
 
 // This machine's terminal: the desk atlas's umg_console. Null while the desk is not live.
@@ -56,6 +56,8 @@ bool  ReadLog(void* term, std::wstring& out);  // the printed lines, the last 30
 // The terminal's verbs, as the game calls them. RunCommand runs a line as the input's commit does:
 // the input `command` holds the line, then enterCommand(line), which echoes `command`.
 // ConsumeInput empties the input as enterCommand's own tail does: `command` and the text box.
+// Preparation owns terminal/function/world identity; retirement stops further native work.
+// A false result after a native attempt does not imply that no side effect occurred.
 bool CallInit(void* term, const std::wstring& name, bool hide, void* dish);
 bool RunCommand(void* term, const std::wstring& line);
 bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType);

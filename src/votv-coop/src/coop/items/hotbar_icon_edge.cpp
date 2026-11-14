@@ -5,6 +5,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/hotbar/icons.h"
+#include "ue_wrap/world/game_mode.h"
 
 #include <string>
 
@@ -31,7 +32,7 @@ constexpr int kPollTicks = 15;   // ~8 Hz at ~120 Hz
 bool BuiltWithoutIcons(const HB::State& s) {
     if (!s.IconsReady() || s.carried <= 0 || s.slots <= 0) return false;
     const std::wstring tex = HB::SlotTexture(s, 0);
-    return tex == L"Black" || tex == L"null" || tex == L"no-parameter" || tex == L"no-material";
+    return tex.empty() || tex == L"Black" || tex == L"null" || tex == L"no-parameter" || tex == L"no-material";
 }
 
 // Shape: MTA re-expresses what depends on an asset when the asset situation changes rather than
@@ -52,11 +53,12 @@ void Tick() {
     static int s_ticks = 0;
     if (++s_ticks < kPollTicks) return;
     s_ticks = 0;
+    if (ue_wrap::game_mode::ReadLocal() == ue_wrap::game_mode::kTutorial) return;
 
     // The latch is tested first, on the renderer this world is running, and only then is the full
     // state read: an edge that fires once per world must cost nothing for the rest of it.
     HB::State s;
-    if (!HB::Read(s) || !s.renderer) return;
+    if (!HB::Read(s) || !s.renderer || !s.ui || s.slots <= 0 || s.carried < 0) return;
     if (g_settled.Alive() && g_settled.Get() == s.renderer) return;
 
     if (!BuiltWithoutIcons(s)) {
@@ -74,11 +76,15 @@ void Tick() {
         return;
     }
 
-    g_settled.Set(s.renderer);
+    ue_wrap::CachedObjRef renderer;
+    renderer.Set(s.renderer);
     const std::wstring before = HB::SlotTexture(s, 0);
     const bool ok = HB::Rebuild(s);
     HB::State after;
-    HB::Read(after);
+    const bool read = HB::Read(after);
+    if (ok && read && renderer.Get() == s.renderer && after.renderer == s.renderer &&
+        after.ui == s.ui && after.IconsReady() && !BuiltWithoutIcons(after))
+        g_settled.Set(s.renderer);
     UE_LOGI("hotbar: the icon tables arrived after the bar was built (names=%d texs=%d phases=%d "
             "carried=%d) -- rebuilt through updateSlotInv: called=%d, slot0 %ls -> %ls",
             s.iconNames, s.iconTextures, s.rendererPhases, s.carried, ok ? 1 : 0, before.c_str(),

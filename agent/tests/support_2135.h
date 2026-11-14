@@ -31,11 +31,13 @@ inline int32_t FindPropertyOffset(void*,const wchar_t*){return offsetof(test::Ob
 inline bool FindBoolProperty(void*,const wchar_t* n,int32_t& off,uint8_t& mask){off=offsetof(test::Obj,flags);mask=std::wstring(n)==L"skipTextSave"?2:1;return test::fields;}
 inline int32_t ParamOffset::Of(void*){return std::wstring(param_)==L"action"?0:8;}
 }
+#ifndef TEST_CUSTOM_WORLD_REFS
 namespace ue_wrap::world_identity {
 inline uint32_t Generation(){return test::world;}
 inline void* CurrentWorld(){return test::worldUnavailable?nullptr:reinterpret_cast<void*>(uintptr_t(test::world));}
 inline void* WorldOf(void*){return CurrentWorld();}
 }
+#endif
 namespace coop::active_drive {inline uint64_t NowMs(){return test::now;}}
 namespace ue_wrap::log {inline void Write(Level,const char*,...) {}}
 namespace coop::net_pump {inline bool IsInAnnouncedWorld(void*){return test::announced;}}

@@ -96,7 +96,8 @@ bool IsDriven(void* atv);
 bool Dismount(void* atv);
 
 // Nearby supported, unobstructed position for a second identical rig. Never
-// searches through a wall or more than 3.5 m from the source. False -> retry later.
+// searches through a wall or more than 3.5 m from the source. Retired/moved source
+// or failed queries leave location unchanged. False -> retry later.
 bool FindCompanionLocation(void* atv, FVector& location);
 
 // Display state (cheap field reads, resolved by name). 0 or false on failure.
@@ -146,7 +147,8 @@ bool ReadTpLocation(void* atv, FVector& out);
 // [V, disasm ATV.teleportVehicle @0..393]. This is the WARP primitive and the only transform the
 // sync layer ever writes: a bare SetActorLocation moves the ROOT only
 // (engine_attach.cpp:74-82) and leaves the constrained wheel bodies behind -- which is exactly
-// why the game ships two teleport forms. False on unresolved/null. Game thread.
+// why the game ships two teleport forms. False on invalid pose, unresolved/retired
+// actor/class/function/world or a refused native call. Game thread.
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 
 // The step at which SpawnMirror failed. SpawnMirror reports it and logs nothing for it: the caller
@@ -161,7 +163,10 @@ enum class SpawnFail : uint8_t {
     NameNone,        // the key did not convert to a name
     BeginFailed,     // BeginDeferredActorSpawnFromClass did not dispatch or returned null
     FinishFailed,    // FinishSpawningActor could not be built or did not dispatch
-    KeyMismatch,     // the finished actor stands under another key; it was destroyed
+    KeyMismatch,     // the finished actor stands under another key; clean up while still owned
+    InvalidPose,     // non-finite location/rotation; nothing was spawned
+    Retired,         // captured world/context/class/function/actor was replaced
+    PlacementFailed, // teleportVehicle failed; the captured body was retired when still owned
 };
 
 // The failed step as a short phrase for a log line.
@@ -177,7 +182,8 @@ const char* SpawnFailText(SpawnFail why);
 // when `key` is empty, the class has no key property, or the key does not convert to a name (the
 // string library not yet resolved included: ask fname_utils::Resolved() first to tell "not yet"). The
 // key is read back after the finish, exactly (the index and the prune file key case-sensitively): a
-// mirror born under another key is destroyed and nullptr returned. `why` (optional) names the failed
+// mismatch returns nullptr and destroys only the still-owned captured incarnation.
+// Failed whole-rig placement also returns nullptr. `why` (optional) names the failed
 // step; `bornKey` (optional) receives the key the read-back found on a KeyMismatch. Game thread only.
 // Host companion: reserves an unused persisted key and includes the new rig in its save.
 void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot);

@@ -1,4 +1,7 @@
-#include "../../src/votv-coop/src/coop/interactables/cord_sync.cpp"
+#ifndef CORD_SYNC_SOURCE
+#define CORD_SYNC_SOURCE "../../src/votv-coop/src/coop/interactables/cord_sync.cpp"
+#endif
+#include CORD_SYNC_SOURCE
 #include <cstring>
 #include <cwchar>
 #include <cstdio>
@@ -8,8 +11,8 @@
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace S=coop::cord_sync;
 namespace test {
-struct Obj {int id=0,serial=1,type=0;bool live=true,drag=false,power=false;void* socket=nullptr;void* occupant=nullptr;void* parent=nullptr;std::wstring key;};
-Obj objects[512];uint32_t world=1;int identities=0,connects=0,disconnects=0,powers=0;uint64_t now=1000;int writes=0;bool cableOk=true,connectOk=true;std::function<void()> cableCallback;std::function<void()> callback;
+struct Obj {int id=0,serial=1,type=0;bool live=true,drag=false,power=false;void* socket=nullptr;void* occupant=nullptr;void* parent=nullptr;void* cls=nullptr;void* attached=nullptr;std::wstring key;};
+Obj objects[512];uint32_t world=1,sessionSerial=1;int identities=0,connects=0,disconnects=0,powers=0;uint64_t now=1000;int writes=0;bool cableOk=true,connectOk=true;std::function<void()> cableCallback;std::function<void()> callback;
 int socketOffset=sizeof(void*),loadOffset=0,entryOffset=0,frameSize=16;bool graphFunction=false;
 void Callback(){auto f=std::move(callback);callback={};if(f)f();}
 }
@@ -19,6 +22,7 @@ int32_t SlotSerial(int32_t i){return i>=0&&i<512?test::objects[i].serial:0;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 bool IsLiveByIndex(void* a,int32_t i){return i>=0&&i<512&&a==&test::objects[i]&&test::objects[i].live;}
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
+void* ClassOf(void* a){return a?static_cast<test::Obj*>(a)->cls:nullptr;}
 const FName& NameOf(void*){static FName n{};return n;}
 bool NameStartsWith(const FName&,const wchar_t*){return false;}
 bool NameEquals(const FName&,const wchar_t* name){return test::graphFunction&&!wcscmp(name,L"ExecuteUbergraph_cord");}
@@ -32,31 +36,35 @@ int32_t ParamOffset::Of(void*){
 int32_t FunctionFrameSize(void*){return test::frameSize;}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return (void*)(uintptr_t)test::world;}void* WorldOf(void*){return CurrentWorld();}}
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return 1;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::script_gate {
 bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn){return true;}
 bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return true;}void ResolvePendingNames(){}
 }
-namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}}
-namespace ue_wrap::engine {void* ParentActorOf(void*,std::wstring*){return nullptr;}}
+namespace ue_wrap::prop {
+std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}
+std::wstring GetActorSaveKeyString(void* a){return GetInteractableKeyString(a);}
+}
+namespace ue_wrap::engine {void* ParentActorOf(void* a,std::wstring* component){auto* parent=a?static_cast<test::Obj*>(a)->attached:nullptr;if(component)*component=parent?L"cord":L"";return parent;}}
 namespace ue_wrap::cord {
 bool IsCord(void* a){return a&&static_cast<test::Obj*>(a)->type==1;}
 bool IsSocket(void* a){return a&&static_cast<test::Obj*>(a)->type==2;}
-void* Parent(void* a){return static_cast<test::Obj*>(a)->parent;}bool InCableReach(void*,void*){auto f=std::move(test::cableCallback);test::cableCallback={};if(f)f();return test::cableOk;}
+void* Parent(void* a){return static_cast<test::Obj*>(a)->parent;}bool InCableReach(void*,void*,const std::function<bool()>&){auto f=std::move(test::cableCallback);test::cableCallback={};if(f)f();return test::cableOk;}
 void* Socket(void* a){return a?static_cast<test::Obj*>(a)->socket:nullptr;}
 void* Occupant(void* a){return a?static_cast<test::Obj*>(a)->occupant:nullptr;}
 bool Dragging(void* a){return a&&static_cast<test::Obj*>(a)->drag;}
 bool Powered(void* a,bool& out){out=static_cast<test::Obj*>(a)->power;return true;}
 bool SetPower(void* a,bool on){auto& v=*static_cast<test::Obj*>(a);if(v.power!=on){v.power=on;++test::powers;test::Callback();}return true;}
 bool Disconnect(void* a){auto& v=*static_cast<test::Obj*>(a);if(v.socket)static_cast<test::Obj*>(v.socket)->occupant=nullptr;v.socket=nullptr;++test::disconnects;test::Callback();return true;}
-bool Connect(void* a,void* b){auto& v=*static_cast<test::Obj*>(a);auto& s=*static_cast<test::Obj*>(b);
+bool Connect(void* a,void* b,const std::function<bool()>&){auto& v=*static_cast<test::Obj*>(a);auto& s=*static_cast<test::Obj*>(b);
  if(v.socket==b&&s.occupant==a)return true;if(!test::connectOk||(s.occupant&&s.occupant!=a))return false;
  ++test::connects;v.socket=b;s.occupant=a;test::Callback();return true;}
 }
 namespace ue_wrap::cord {
-bool ReadHeadPose(void*,FVector& p,FRotator& r){p={1,2,3};r={};return true;}
-bool WriteHeadPose(void*,const FVector&,const FRotator&){++test::writes;return true;}
+bool ReadHeadPose(void*,FVector& p,FRotator& r,const std::function<bool()>& current){if(current&&!current())return false;p={1,2,3};r={};test::Callback();return !current||current();}
+bool WriteHeadPose(void*,const FVector&,const FRotator&,const std::function<bool()>& current){if(current&&!current())return false;++test::writes;test::Callback();return !current||current();}
 }
 namespace coop::active_drive {uint64_t NowMs(){return test::now;}}
 namespace coop::element {std::wstring PortableWireKey(void* a){return static_cast<test::Obj*>(a)->key;}}
@@ -65,9 +73,9 @@ namespace coop::net_pump {bool IsInAnnouncedWorld(void*){return true;}}
 namespace coop::prop_element_tracker {element::ElementId GetPropElementIdForActor(void* a){return static_cast<test::Obj*>(a)->id+1;}}
 namespace coop::remote_prop {element::ElementId ResolveMirrorEidByActor(void*,bool){return element::kInvalidId;}}
 using namespace test;coop::net::Session session;
-void Reset(int n=1){S::OnDisconnect();++world;session={};session.mode=coop::net::Role::Client;S::Install(&session);S::ResetWorld();
- for(int i=0;i<512;++i){objects[i]={};objects[i].id=i;objects[i].serial=int(world);objects[i].key=L"k"+std::to_wstring(i);}
- for(int i=0;i<n;++i){objects[i].type=1;objects[n+i].type=2;objects[i].socket=&objects[n+i];objects[n+i].occupant=&objects[i];
+void Reset(int n=1){S::OnDisconnect();++world;++sessionSerial;session={};session.mode=coop::net::Role::Client;S::Install(&session);S::ResetWorld();
+ for(int i=0;i<512;++i){objects[i]={};objects[i].id=i;objects[i].serial=int(world);objects[i].key=L"k"+std::to_wstring(i);objects[i].cls=&objects[511];}
+ for(int i=0;i<n;++i){objects[i].type=1;objects[n+i].type=2;objects[n+i].cls=&objects[510];objects[i].socket=&objects[n+i];objects[n+i].occupant=&objects[i];
   ue_wrap::CachedObjRef a,b;a.Set(&objects[i]);b.Set(&objects[n+i]);S::g_actors.push_back(a);S::g_actors.push_back(b);}
  identities=connects=disconnects=powers=writes=0;now=1000;callback={};connectOk=cableOk=true;cableCallback={};coop::element::authorize={};coop::element::checked.clear();
  socketOffset=sizeof(void*);loadOffset=0;entryOffset=0;frameSize=16;graphFunction=false;}
@@ -115,7 +123,7 @@ int ExistingRegressions(){
 return 0;
 }
 
-void Host(){Reset();session.mode=coop::net::Role::Host;objects[0].socket=nullptr;objects[1].occupant=nullptr;objects[0].parent=&objects[2];}
+void Host(){Reset();const auto actors=S::g_actors;session.mode=coop::net::Role::Host;S::Install(&session);S::ResetWorld();if(S::g_actors.empty())S::g_actors=actors;objects[0].socket=nullptr;objects[1].occupant=nullptr;objects[0].parent=&objects[2];}
 void HookFrameBounds(){
  Reset();uint8_t locals[32]{};void* socket=&objects[1];
  std::memcpy(locals+socketOffset,&socket,sizeof(socket));
@@ -135,7 +143,23 @@ void HookFrameBounds(){
  CHECK(S::GraphEntry(&objects[20],locals)==-1);
  puts("PASS cord hook parameter frames: reject truncated offsets before reading connect/disconnect arguments");
 }
+void RepaintOwnership(){
+ Reset();auto p=Packet();objects[0].socket=nullptr;objects[1].occupant=&objects[3];objects[3].socket=&objects[1];
+ S::g_remoteDrags[coop::net::kMaxPeers-1].actor.Set(&objects[3]);S::g_remoteDrags[coop::net::kMaxPeers-1].at=now;
+ S::Apply(p);S::Tick();CHECK(!disconnects&&!connects&&objects[1].occupant==&objects[3]);
+ puts("PASS CI01 remote socket occupant retains its drag");
+ for(int change=0;change<3;++change){
+  Reset();p=Packet();objects[0].socket=nullptr;objects[1].occupant=nullptr;p.powered=1;
+  callback=[change]{if(change==0)objects[0].drag=true;else if(change==1){S::g_remoteDrags[coop::net::kMaxPeers-1].actor.Set(&objects[0]);S::g_remoteDrags[coop::net::kMaxPeers-1].at=now;}else objects[1].occupant=&objects[3];};
+  S::Apply(p);S::Tick();CHECK(powers==1&&!connects);
+ }
+ Reset();p=Packet();objects[0].socket=nullptr;objects[1].occupant=&objects[3];objects[3].socket=&objects[1];
+ callback=[]{objects[0].drag=true;};S::Apply(p);S::Tick();CHECK(disconnects==1&&!connects);
+ puts("PASS CI02 native callbacks cannot steal the new drag or socket occupant");
+}
+#ifndef CORD_CONTINUATION_NO_MAIN
 int main(){
+ RepaintOwnership();
  HookFrameBounds();
  ExistingRegressions();
  // A plug at a reachable socket is valid even if its appliance is beyond hand reach.
@@ -148,7 +172,7 @@ int main(){
  Host();p=Packet();cableOk=false;S::OnIntent(p,1);CHECK(!connects&&!session.sent.empty());
  Host();p=Packet();objects[1].occupant=&objects[3];S::OnIntent(p,1);CHECK(!connects);
  Host();p=Packet();objects[0].drag=true;S::OnIntent(p,1);CHECK(!connects);
- Host();p=Packet();S::OnIntent(p,0);S::OnIntent(p,4);CHECK(!connects&&session.sent.empty());
+ Host();p=Packet();S::OnIntent(p,0);S::OnIntent(p,coop::net::kMaxPeers);CHECK(!connects&&session.sent.empty());
  session.mode=coop::net::Role::Client;S::OnIntent(p,1);CHECK(!connects);
  Host();p=Packet();S::OnIntent(p,1);S::OnIntent(p,1);CHECK(connects==1); // duplicate connect has no native side effect
  // Reflective reach checks may destroy, rekey, travel, disconnect or replace the sender.
@@ -175,3 +199,4 @@ int main(){
  S::OnIntent(p,1);CHECK(!disconnects&&!connects&&objects[0].socket==&objects[3]);
  puts("PASS host cord intents: socket reach, cable limit, occupancy, refusal correction, duplicates and callback lifetime");
 }
+#endif

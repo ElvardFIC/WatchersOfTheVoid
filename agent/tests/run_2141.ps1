@@ -18,7 +18,7 @@ try {
  $cases=@(
  @{Name='quadratic';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='pass.Find(';After='Resolve('},
  @{Name='invalidate';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='pass.Invalidate();';After=''},
- @{Name='serial';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='!cordRef.Get()';After='!cordRef.Raw()'},
+ @{Name='serial';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='cordRef.Get()';After='cordRef.Raw()'},
  @{Name='string_free';Suite='media';File='ue_wrap/world/media_player.cpp';Before='if(p) R::EngineFree(p);';After=''},
  @{Name='indexed';Suite='media';File='ue_wrap/world/media_player.cpp';Before='return actors;';After='R::FindObjectsByClass(L"MediaPlayer"); return actors;'}
  )

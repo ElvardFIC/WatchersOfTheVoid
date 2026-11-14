@@ -11,6 +11,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"       // SetAnimTickAlways (force-mesh-tick)
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/fname_utils.h"  // StringToFName (the 'fatality' montage section)
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -151,25 +152,40 @@ bool ReadState(void* wisp, State& out) {
     return true;
 }
 
+namespace {
+struct Positions {
+    CachedObjRef source,target;
+    uint32_t world=0;
+    ue_wrap::FVector from{},to{};
+    bool Current() const {
+        return world==world_identity::Generation() && source.Get() && target.Get();
+    }
+    bool Read(void* wisp,void* victim) {
+        if (!wisp || !victim || !R::IsLive(wisp) || !R::IsLive(victim)) return false;
+        source.Set(wisp);target.Set(victim);world=world_identity::Generation();
+        return Current() && engine::TryGetActorLocation(wisp,from) && Current() &&
+            engine::TryGetActorLocation(victim,to) && Current() &&
+            std::isfinite(from.X) && std::isfinite(from.Y) && std::isfinite(from.Z) &&
+            std::isfinite(to.X) && std::isfinite(to.Y) && std::isfinite(to.Z);
+    }
+};
+}
+
 bool InGrabRange(void* wisp, void* target) {
-    if (!wisp || !target) return false;
     // The BP grab-arm overlap radius (killerwisp.json @5702: SphereOverlapActors radius 550).
     constexpr float kGrabRadius   = 550.0f;
     constexpr float kGrabRadiusSq = kGrabRadius * kGrabRadius;
     // Never in range on an unknown position: this gates the kill's grab.
-    ue_wrap::FVector w{}, t{};
-    if (!ue_wrap::engine::TryGetActorLocation(wisp, w) || !ue_wrap::engine::TryGetActorLocation(target, t))
-        return false;
-    const float dx = w.X - t.X, dy = w.Y - t.Y, dz = w.Z - t.Z;
+    Positions p;
+    if (!p.Read(wisp,target)) return false;
+    const float dx = p.from.X - p.to.X, dy = p.from.Y - p.to.Y, dz = p.from.Z - p.to.Z;
     return (dx * dx + dy * dy + dz * dz) <= kGrabRadiusSq;
 }
 
 float DistanceTo(void* wisp, void* target) {
-    if (!wisp || !target) return 3.4e38f;
-    ue_wrap::FVector w{}, t{};   // unread: as far as no target
-    if (!ue_wrap::engine::TryGetActorLocation(wisp, w) || !ue_wrap::engine::TryGetActorLocation(target, t))
-        return 3.4e38f;
-    const float dx = w.X - t.X, dy = w.Y - t.Y, dz = w.Z - t.Z;
+    Positions p;
+    if (!p.Read(wisp,target)) return 3.4e38f;
+    const float dx = p.from.X - p.to.X, dy = p.from.Y - p.to.Y, dz = p.from.Z - p.to.Z;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
@@ -180,14 +196,13 @@ bool WriteTarget(void* wisp, void* pawnOrNull) {
 }
 
 bool CanReach(void* wisp, void* target) {
-    if (!wisp || !target) return false;
     // canReach parity: the native gate traces lib_obj.obj_statDyn = {WorldStatic, WorldDynamic} --
     // exactly trace::LineBlockedStatDyn's set, the primitive this shares with nameplate occlusion.
     // Unresolvable (-1) -> blocked, the native default.
-    ue_wrap::FVector start{}, end{};   // unread: blocked, as unresolvable is
-    if (!ue_wrap::engine::TryGetActorLocation(wisp, start) || !ue_wrap::engine::TryGetActorLocation(target, end))
-        return false;
-    return ue_wrap::trace::LineBlockedStatDyn(wisp, start, end) == 0;
+    Positions p;
+    if (!p.Read(wisp,target)) return false;
+    const bool clear=trace::LineBlockedStatDyn(wisp,p.from,p.to)==0;
+    return p.Current() && clear;
 }
 
 bool GrabSocketWorldLocation(void* wisp, ue_wrap::FVector& out) {
@@ -260,36 +275,49 @@ void WriteBit(void* obj, int32_t byteOff, uint8_t mask, bool value) {
     if (value) *b |= mask; else *b &= static_cast<uint8_t>(~mask);
 }
 
-bool CallSetMovementMode(void* localPlayer, uint8_t mode) {
+bool CallSetMovementMode(void* localPlayer, uint8_t mode, const std::function<bool()>& current = {}) {
     void* cmc = *reinterpret_cast<void**>(
         reinterpret_cast<uint8_t*>(localPlayer) + P::off::ACharacter_CharacterMovement);
     if (!cmc || !R::IsLive(cmc) || !g_setMoveModeFn) return false;
     ParamFrame f(g_setMoveModeFn);
     if (!f.valid()) return false;
-    f.Set<uint8_t>(L"NewMovementMode", mode);
-    f.Set<uint8_t>(L"NewCustomMode", uint8_t{0});
+    if (!f.Set<uint8_t>(L"NewMovementMode", mode) || !f.Set<uint8_t>(L"NewCustomMode", uint8_t{0}) ||
+        (current && !current())) return false;
     return ue_wrap::Call(cmc, f);
 }
 }  // namespace
 
 bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer) {
+    return ApplyGrabToLocalPlayerWhile(wispActor, localPlayer, {});
+}
+
+bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::function<bool()>& current) {
     if (!wispActor || !localPlayer || !R::IsLive(wispActor) || !R::IsLive(localPlayer)) return false;
     void* wispMesh = BodyMesh(wispActor);
     if (!wispMesh) { UE_LOGW("wisp: ApplyGrab -- no live wisp body mesh"); return false; }
     if (!EnsureGrabStateResolved(localPlayer)) return false;
+    CachedObjRef victim, source, parent;
+    victim.Set(localPlayer);source.Set(wispActor);parent.Set(wispMesh);
+    const auto valid=[&]{return victim.Get() && source.Get() && parent.Get() && (!current || current());};
+    if (!valid()) return false;
     // The Capture template, in the bytecode's own order.
-    if (!CallSetMovementMode(localPlayer, kMOVE_None))
-        UE_LOGW("wisp: ApplyGrab -- SetMovementMode(None) failed (continuing)");
+    if (!CallSetMovementMode(localPlayer, kMOVE_None, valid)) {
+        UE_LOGW("wisp: ApplyGrab -- SetMovementMode(None) refused; waiting before attachment");
+        return false;
+    }
+    if (!valid()) return false;
     if (!ue_wrap::engine::AttachActorToComponentSocket(localPlayer, wispMesh, L"playerGrab")) {
         // Attach is the load-bearing step: without it there is no ride -- restore movement.
-        CallSetMovementMode(localPlayer, kMOVE_Walking);
+        if (valid()) CallSetMovementMode(localPlayer, kMOVE_Walking, valid);
         UE_LOGW("wisp: ApplyGrab -- socket attach FAILED, movement restored (flat death remains)");
         return false;
     }
+    if (!valid()) return false;
     void* playerMesh = *reinterpret_cast<void**>(
         reinterpret_cast<uint8_t*>(localPlayer) + P::off::ACharacter_Mesh);
     if (playerMesh && R::IsLive(playerMesh))
         ue_wrap::engine::SetSceneComponentVisibility(playerMesh, true, false);
+    if (!valid()) return false;
     WriteBit(localPlayer, g_heldByte, g_heldMask, true);
     WriteBit(localPlayer, g_ctrlYawByte, g_ctrlYawMask, false);
     void* lagComp = *reinterpret_cast<void**>(
@@ -302,10 +330,19 @@ bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer) {
 }
 
 bool ReleaseGrabOnLocalPlayer(void* localPlayer) {
+    return ReleaseGrabOnLocalPlayerWhile(localPlayer, {});
+}
+
+bool ReleaseGrabOnLocalPlayerWhile(void* localPlayer, const std::function<bool()>& current) {
     if (!localPlayer || !R::IsLive(localPlayer)) return false;
     if (g_grabStateResolve.load(std::memory_order_acquire) != 1) return false;  // never grabbed
+    CachedObjRef victim;victim.Set(localPlayer);
+    const auto valid=[&]{return victim.Get() && (!current || current());};
+    if (!valid()) return false;
     ue_wrap::engine::DetachActorFromParent(localPlayer);
-    CallSetMovementMode(localPlayer, kMOVE_Walking);
+    if (!valid()) return false;
+    CallSetMovementMode(localPlayer, kMOVE_Walking, valid);
+    if (!valid()) return false;
     WriteBit(localPlayer, g_heldByte, g_heldMask, false);
     WriteBit(localPlayer, g_ctrlYawByte, g_ctrlYawMask, true);
     void* lagComp = *reinterpret_cast<void**>(

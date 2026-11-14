@@ -5,6 +5,9 @@
 // topology-blind.
 
 #include "coop/net/session.h"
+#include "session_lanes.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 
 #include "coop/config/config.h"           // Resolve* for the rows below
 #include "coop/config/config_registry.h"  // rows: the fake-link knobs, the connect cap
@@ -113,6 +116,7 @@ void Session::OnConnStatusChanged(void* info) {
 }
 
 bool Session::Start(const Config& cfg, Refusal* why) {
+    g_loadFillerOnDefault.store(coop::config::ResolveEnum(coop::config_registry::rows::prop_syncer_load_lane)=="default",std::memory_order_relaxed);
     std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
     if (why) *why = Refusal{EndReason::CouldNotStart, {}};
     if (running_.load()) {

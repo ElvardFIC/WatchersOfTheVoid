@@ -7,7 +7,10 @@
 // so existing diagnostics keep matching.
 
 #include "coop/creatures/npc_world_enum.h"
+#include "npc_spawn_lifetime.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/element_deleter.h"
 #include "coop/element/mirror_manager.h"
 #include "coop/element/mirror_managers.h"  // PropMirrors/NpcMirrors/WaMirrors
@@ -15,6 +18,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/creatures/kerfur_entity.h"  // reserve the stable kerfur id when a kerfur NPC is registered
+#include "coop/creatures/geom_octa_sync.h"  // OnNpcSpawnSent: the Octa's events follow its spawn's send
 #include "coop/creatures/npc_sync.h"
 #include "coop/world/world_actor_sync.h"  // HostEnrollExSpawn -- the WA branch of the EX-catch drain
 #include "ue_wrap/engine/engine.h"   // TryGetActorLocation / TryGetActorRotation
@@ -26,6 +30,8 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -57,6 +63,8 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
                                                  ue_wrap::FVector* outLoc = nullptr) {
     auto* s = coop::npc_sync::GetSession();
     if (!s) return coop::element::kInvalidId;
+    const lifetime::Pending source(s,obj);
+    if(!source.Current(coop::npc_sync::GetSession()))return coop::element::kInvalidId;
     // An NPC whose location or rotation cannot be read is not enrolled, before any element is made
     // for it: the read failing is a dispatch that faulted, so no broadcast or snapshot row could
     // ever place it, and the pose stream would fault on it every tick.
@@ -68,6 +76,10 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
         return coop::element::kInvalidId;
     }
     if (outLoc) *outLoc = loc;
+    const auto scl=ue_wrap::engine::GetActorScale3D(obj);
+    const float values[]={loc.X,loc.Y,loc.Z,rot.Pitch,rot.Yaw,rot.Roll,scl.X,scl.Y,scl.Z};
+    for(float value:values)if(!std::isfinite(value))return coop::element::kInvalidId;
+    if(!source.Current(coop::npc_sync::GetSession()))return coop::element::kInvalidId;
     auto npc = std::make_unique<coop::element::Npc>();
     std::string typeName8;
     for (size_t k = 0; k < clsName.size() && k < 63; ++k)
@@ -108,14 +120,14 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     // fan-out's own gate first, where MTA filters inside its fan-out (CPlayerManager.cpp:162-170).
     // MTA registers an element at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39);
     // a creature that loaded with the level, or that no watched spawn source made, is enrolled here.
-    if (s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
+    bool spawnSent = false;
+    if (source.Current(coop::npc_sync::GetSession()) && s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
         coop::net::EntitySpawnPayload p{};
         const std::string& tn = el->GetTypeName();
         p.className.len = 0;
         for (size_t k = 0; k < tn.size() && k < 63; ++k)
             p.className.data[p.className.len++] = tn[k];
         p.elementId = static_cast<uint32_t>(eid);
-        const auto scl = ue_wrap::engine::GetActorScale3D(obj);  // mirror at true size
         p.locX = loc.X; p.locY = loc.Y; p.locZ = loc.Z;
         p.rotPitch = rot.Pitch; p.rotYaw = rot.Yaw; p.rotRoll = rot.Roll;
         p.scaleX = scl.X; p.scaleY = scl.Y; p.scaleZ = scl.Z;
@@ -125,11 +137,16 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
         // that eid, since the eid-keyed sweep finds nothing.
         const coop::element::ElementId offEid = coop::kerfur_entity::GetOriginOffEidForEid(eid);
         p.retireOffEid = (offEid == coop::element::kInvalidId) ? 0u : static_cast<uint32_t>(offEid);
-        if (!s->SendEntitySpawn(p, skipSlot)) {
+        spawnSent = s->SendEntitySpawn(p, skipSlot);
+        if (!spawnSent) {
             UE_LOGW("npc-sync[%s]: SendEntitySpawn failed for newly-registered eid=%u",
                     logTag, p.elementId);
         }
     }
+    // The Geom Octa's lane sends none of its events before the spawn's send. When no peer was world-ready nothing was
+    // sent, and the join's snapshot carries the spawn instead.
+    if (source.Current(coop::npc_sync::GetSession())) coop::geom_octa_sync::OnNpcSpawnSent(static_cast<uint32_t>(eid), obj, el->GetTypeName().data(),
+                                         el->GetTypeName().size(), spawnSent, -1);
     return eid;
 }
 
@@ -137,7 +154,12 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // bypass ProcessEvent: event swarms/controllers, ambient tickers, the sell-gun
 // coin mint and jellyfish route need this native seam. Output is still filtered
 // by the NPC/world-actor allowlists; unrelated births remain host-local.
+constexpr const wchar_t* kConsoleNpcOutputs[]={L"rufus_C",L"thiccfus_C",nullptr};
+constexpr const wchar_t* kSlapperOutputs[]={L"arirSlapper_C",nullptr};
+constexpr const wchar_t* kGeomOctaNpcOutputs[]={L"geomOcta_C",L"eg_C",nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
+    {L"slapperSummoner_C",kSlapperOutputs},        // chest component's native deferred spawn
+    {L"ui_console_C",kConsoleNpcOutputs},          // funny console's exact Character outputs
     {L"trigger_wispSwarm_C",     nullptr},          // the wisps event swarm
     {L"piramidSpawner_C",        nullptr},          // the piramid event chain
     {L"ticker_wispSpawner_C",    nullptr},          // the ambient sky wisps
@@ -152,6 +174,7 @@ constexpr ExSpawnSource kExSpawnSources[] = {
     {L"ufoDropper_tank_C",       nullptr},          // tank drop's firetankDeploy_C
     {L"firetankDeploy_C",        nullptr},          // deployed firetank_C
     {L"kavotiaPatrolController_C", nullptr},        // patrol set: kavotia_C and igetis_C
+    {L"mainGamemode_C", kGeomOctaNpcOutputs},
     {L"grayEventController_C",   nullptr},          // graysforest: spawn() mints the grayTest_C pack
     {L"superEgger_C",            nullptr},          // eggvasion: spwn() mints the eg_C children
     {L"tentacleBallsFollower_C", nullptr},          // tentacleBalls: runTrigger() mints the pack
@@ -173,7 +196,7 @@ bool IsWaAllowlistedClass(void* cls) {
 // Queue entries carry the internal index captured at catch time, so the drain validates with
 // the index-paired liveness check; a raw pointer cached across a tick boundary is the recycle
 // hazard. Cleared on disconnect.
-struct PendingExSpawn { void* actor; int32_t internalIdx; };
+using PendingExSpawn=lifetime::Pending;
 std::mutex g_pendingMx;
 std::vector<PendingExSpawn> g_pendingExSpawns;        // queued actors awaiting the GT drain
 constexpr size_t kMaxPendingExSpawns = 256;           // sanity cap (a swarm is 32)
@@ -191,7 +214,9 @@ constexpr size_t kMaxPendingExSpawns = 256;           // sanity cap (a swarm is 
 void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     if (!spawned || !srcObj) return;
     auto* s = coop::npc_sync::GetSession();
-    if (!s || s->role() != coop::net::Role::Host) return;
+    if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
+    const lifetime::Pending candidate(s,spawned);
+    if(!candidate.Current(coop::npc_sync::GetSession()))return;
     // IsInstalled is the lifecycle-armed proxy for both lanes (they install together at session
     // start). The NPC-specific disabled gate lives in the drain's NPC branch, so a degraded NPC
     // lifecycle cannot silently drop world-actor catches.
@@ -204,12 +229,19 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     for (const ExSpawnSource& e : kExSpawnSources)
         if (_wcsicmp(srcName.c_str(), e.cls) == 0) { source = &e; break; }
     if (!source) return;
+    // [dev] octa_red=no_source, the Octa drill's red arm: the gamemode's row is left out of the catch.
+    static const bool s_noGamemodeSource =
+        coop::config::ResolveEnum(::coop::config_registry::rows::octa_red) == "no_source";
+    if (s_noGamemodeSource && _wcsicmp(srcName.c_str(), L"mainGamemode_C") == 0) return;
     void* cls = R::ClassOf(spawned);
     if (!cls) return;
+    if(!lifetime::OutputAllowed(source->outputs,R::ToString(R::NameOf(cls))))return;
     coop::npc_sync::RefreshLateAllowlist();  // an event creature's class may have just loaded
     if (!coop::npc_sync::IsAllowlistedClass(cls) && !IsWaAllowlistedClass(cls)) return;
-    const int32_t idx = R::InternalIndexOf(spawned);
+    if(!candidate.Current(coop::npc_sync::GetSession()))return;
     std::lock_guard<std::mutex> lk(g_pendingMx);
+    std::erase_if(g_pendingExSpawns,[s](const PendingExSpawn& row){return !row.Current(s);});
+    for(const auto& row:g_pendingExSpawns)if(row.actor.Is(spawned))return;
     if (g_pendingExSpawns.size() >= kMaxPendingExSpawns) {
         // The cap exists so a stalled drain cannot grow the queue unbounded; a full queue then
         // drops every later catch quietly. Said once: the drop is per-catch, the evidence once.
@@ -222,7 +254,7 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
         }
         return;
     }
-    g_pendingExSpawns.push_back({spawned, idx});
+    g_pendingExSpawns.push_back(candidate);
 }
 
 }  // namespace
@@ -254,10 +286,10 @@ void DrainPendingExSpawns() {
         pending.swap(g_pendingExSpawns);
     }
     for (const PendingExSpawn& e : pending) {
-        void* obj = e.actor;
+        void* obj = e.actor.Get();
         // Index-paired liveness: the catch-time internal index makes a recycled slot read dead
         // instead of validating a different object at the same address.
-        if (!obj || !R::IsLiveByIndex(obj, e.internalIdx)) continue;  // died before Finish / recycled
+        if (!e.Current(coop::npc_sync::GetSession())) continue;
         void* cls = R::ClassOf(obj);
         if (!cls) continue;
         if (!coop::npc_sync::IsAllowlistedClass(cls)) {

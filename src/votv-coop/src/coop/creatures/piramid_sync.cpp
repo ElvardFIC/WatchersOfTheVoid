@@ -14,6 +14,7 @@
 #include "coop/net/session.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
@@ -43,15 +44,9 @@ UE_FACT_FN(kRowRandLoc, "piramid_sync", L"piramid2_C", L"randLoc", Declared);
 UE_FACT_FN(kRowChangeLook, "piramid_sync", L"piramid2_C", L"changeLook", Declared);
 constexpr const char*    kPyramidTypeName  = "piramid2_C";
 
-// The native reached-check commits at a 2D distance of 10000 or less. Both actors freeze at
-// the host's commit (gathering latches, and the wisp's gather holds it), so the mirrors
-// converge to the host's frozen distance, under the threshold by construction but often only
-// just, since the 1 Hz check trips right under it. The pre-gate therefore sits above the
-// native radius (it only avoids dispatching while the interpolation is still far out); the
-// native re-check inside the replayed call is the real arbiter, and a branch-not-taken attempt
-// is retried until the deadline. A pre-gate below the native radius starved the replay: the
-// frozen distance landed between the two.
-constexpr float kReplayAttemptRadius = 10500.0f;
+// Match the native planar-distance threshold and float arithmetic before
+// admitting the one-shot native gather call.
+constexpr float kReplayAttemptRadius = 10000.0f;
 // A gather relay that cannot converge (the mirror missing, the interpolation never closing) is
 // dropped loudly after this window; the wisp's death still arrives through the NPC lane's
 // destroy.
@@ -59,6 +54,13 @@ constexpr long long kReplayDeadlineMs = 5000;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 inline coop::net::Session* LoadSession() { return g_session.load(std::memory_order_acquire); }
+uint64_t g_epoch=0,g_pendingRevision=0;
+uint32_t g_world=0;
+bool g_ticking=false;
+bool Current(coop::net::Session* session) {
+    return session&&session==LoadSession()&&session->running()&&session->connected()&&
+        g_world==ue_wrap::world_identity::Generation();
+}
 
 // Lazy hook arming, one-shot and latched. The pyramid class loads only when the event chain
 // spawns it, so resolution is gated on a pyramid world-actor Element existing (host: allocated
@@ -88,13 +90,20 @@ int32_t g_offRelLook = -1;  // the head axis: the look-at's idle target vector
 // The thread-local allow slot for the client gather replay: our own re-dispatch of the
 // reached-check must pass the brain-suppress interceptor; thread-local because the whole
 // stage-and-call sequence is one inline game-thread block.
-thread_local bool t_allowCheckIfReached = false;
+struct AllowCheck {
+    ue_wrap::CachedObjRef actor,function;
+    void* params=nullptr;
+    uint64_t epoch=0;
+    bool used=false;
+};
+thread_local AllowCheck t_allowCheck;
 
 // The host gather edge detector: pyramid actor to its last-seen gathering flag (game thread
 // only; the reached-check dispatch is timer-fired). Swept at 1 Hz against the live world-actor
 // set, so a recycled heap address cannot inherit a stale true and eat a fresh pyramid's first
 // relay.
-std::unordered_map<void*, bool> g_lastGathering;
+struct GatherEdge {ue_wrap::CachedObjRef actor;bool gathering=false;};
+std::unordered_map<void*, GatherEdge> g_lastGathering;
 
 // The client's pending gather, a single slot: the host serialises gathers behind its own
 // gathering latch, so a newer relay legitimately supersedes an unconverged older one.
@@ -105,13 +114,16 @@ struct PendingGather {
     bool active = false;
     float lastDist = -1.0f;  // last measured mirror 2D dist (deadline diagnostics)
     int attempts = 0;        // dispatch attempts (branch-not-taken retries)
+    ue_wrap::CachedObjRef pyramid,wisp;
+    uint64_t revision=0;
 };
 PendingGather g_pending;
+PendingGather g_wispTick;
 
 // Client: pyramid mirror eids whose actor tick we restored. The world-actor sync parks generic
 // mirrors tick-off, but the pyramid's tick carries the beam params, the look-at and the hover
 // smoothing.
-std::unordered_set<uint32_t> g_tickRestored;
+std::unordered_map<uint32_t,ue_wrap::CachedObjRef> g_tickRestored;
 
 // The facing axis streams as the pose snapshot's auxiliary yaw, the host's true component
 // heading at pose cadence. Deriving it from position deltas was refuted live: the native
@@ -142,26 +154,49 @@ void WriteBoolAt(void* obj, int32_t off, uint8_t mask, bool v) {
 // the per-self gate for this class.
 bool BrainSuppress_Interceptor(void* /*self*/, void* /*params*/) {
     auto* s = LoadSession();
-    if (!s || !s->connected()) return false;                 // solo/pre-connect: native runs
+    if (!GT::IsGameThread() || !Current(s)) return false;
     if (s->role() != coop::net::Role::Client) return false;  // host brain is authoritative
-    if (t_allowCheckIfReached) return false;                 // our own gather replay dispatch
     return true;  // cancel the mirror's brain step
+}
+
+bool CheckSuppress_Interceptor(void* self,void* params) {
+    if(!BrainSuppress_Interceptor(self,params))return false;
+    if(!t_allowCheck.used&&t_allowCheck.epoch==g_epoch&&t_allowCheck.actor.Get()==self&&
+        t_allowCheck.function.Get()==g_fnCheckIfReached&&t_allowCheck.params==params) {
+        t_allowCheck.used=true;return false;
+    }
+    return true;
+}
+
+void* PyramidOf(uint32_t eid,bool mirror) {
+    if(!coop::element::Registry::IsAllowedHostAllocatedEid(eid))return nullptr;
+    auto* el=coop::element::WaMirrors().Get(eid);
+    return el&&el->IsMirror()==mirror&&el->GetTypeName()==kPyramidTypeName?el->LiveActor():nullptr;
+}
+void* WispOf(uint32_t eid,bool mirror) {
+    if(!coop::element::Registry::IsAllowedHostAllocatedEid(eid))return nullptr;
+    auto* el=coop::element::NpcMirrors().Get(eid);
+    return el&&el->IsMirror()==mirror&&el->GetTypeName()=="killerwisp_C"?el->LiveActor():nullptr;
 }
 
 // Host actor to lane identity: linear snapshots over the live elements, called only on a
 // gather commit edge, once per consumed wisp.
 uint32_t FindWaEidForActor(void* actor) {
+    if(!actor)return 0;
     std::vector<coop::element::WorldActor*> snap;
     coop::element::WaMirrors().Snapshot(snap);
     for (auto* el : snap)
-        if (el && el->GetActor() == actor) return static_cast<uint32_t>(el->GetId());
+        if (el && !el->IsMirror() && el->GetTypeName()==kPyramidTypeName && el->LiveActor() == actor)
+            return static_cast<uint32_t>(el->GetId());
     return 0;
 }
 uint32_t FindNpcEidForActor(void* actor) {
+    if(!actor)return 0;
     std::vector<coop::element::Npc*> snap;
     coop::element::NpcMirrors().Snapshot(snap);
     for (auto* el : snap)
-        if (el && el->GetActor() == actor) return static_cast<uint32_t>(el->GetId());
+        if (el && !el->IsMirror() && el->GetTypeName()=="killerwisp_C" && el->LiveActor() == actor &&
+            coop::element::Registry::IsAllowedHostAllocatedEid(el->GetId()))return static_cast<uint32_t>(el->GetId());
     return 0;
 }
 
@@ -173,12 +208,13 @@ uint32_t FindNpcEidForActor(void* actor) {
 void CheckIfReached_POST(void* self, void* /*function*/, void* /*params*/) {
     if (!self) return;
     auto* s = LoadSession();
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
+    if (!GT::IsGameThread() || !Current(s) || s->role() != coop::net::Role::Host || !R::IsLive(self)) return;
     if (g_gatheringOff < 0 || g_offWispTarget < 0) return;
     const bool gathering = ReadBoolAt(self, g_gatheringOff, g_gatheringMask);
-    bool& last = g_lastGathering[self];
-    if (gathering == last) return;
-    last = gathering;
+    auto& edge = g_lastGathering[self];
+    if(!edge.actor.Is(self)){edge={};edge.actor.Set(self);}
+    if (gathering == edge.gathering) return;
+    edge.gathering = gathering;
     if (!gathering) return;  // falling edge: gather finished -- nothing to relay
     void* wisp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(self) + g_offWispTarget);
     if (!wisp) {
@@ -195,7 +231,10 @@ void CheckIfReached_POST(void* self, void* /*function*/, void* /*params*/) {
     coop::net::PyramidGatherPayload p{};
     p.pyramidEid = pyramidEid;
     p.wispEid = wispEid;
-    if (s->SendReliable(coop::net::ReliableKind::PyramidGather, &p, sizeof(p))) {
+    const auto epoch=g_epoch;
+    const bool sent=s->SendReliable(coop::net::ReliableKind::PyramidGather, &p, sizeof(p));
+    if(epoch!=g_epoch||!Current(s)||s->role()!=coop::net::Role::Host)return;
+    if (sent) {
         g_relayCount.fetch_add(1, std::memory_order_relaxed);
         UE_LOGI("piramid-gather[host]: relayed gather pyramidEid=%u wispEid=%u", pyramidEid, wispEid);
     } else {
@@ -257,7 +296,7 @@ void TryArmHooks() {
     // Register all or disable: a partial set would half-suppress the mirror brain, worse than
     // none; seeWisps alive with the reached-check dead latches walking forever.
     const bool i1 = GT::RegisterInterceptor(seeWisps, &BrainSuppress_Interceptor);
-    const bool i2 = i1 && GT::RegisterInterceptor(checkIfReached, &BrainSuppress_Interceptor);
+    const bool i2 = i1 && GT::RegisterInterceptor(checkIfReached, &CheckSuppress_Interceptor);
     const bool i3 = i2 && GT::RegisterInterceptor(randLoc, &BrainSuppress_Interceptor);
     // changeLook joins the suppressed set: its 1 Hz random look re-roll is the head divergence,
     // and the streamed host vector is the one writer on a mirror.
@@ -265,7 +304,7 @@ void TryArmHooks() {
     const bool o1 = i4 && GT::RegisterPostObserver(checkIfReached, &CheckIfReached_POST);
     if (!o1) {
         if (i1) GT::UnregisterInterceptor(g_fnSeeWisps, &BrainSuppress_Interceptor);
-        if (i2) GT::UnregisterInterceptor(g_fnCheckIfReached, &BrainSuppress_Interceptor);
+        if (i2) GT::UnregisterInterceptor(g_fnCheckIfReached, &CheckSuppress_Interceptor);
         if (i3) GT::UnregisterInterceptor(g_fnRandLoc, &BrainSuppress_Interceptor);
         if (i4) GT::UnregisterInterceptor(g_fnChangeLook, &BrainSuppress_Interceptor);
         g_armFailedLatched = true;
@@ -287,90 +326,112 @@ void TryArmHooks() {
 // interceptors existed), then restore its actor tick (beams, look-at, hover; the march stays
 // zero with walking cleared).
 void RestoreNewClientMirrors() {
-    std::vector<coop::element::WorldActor*> snap;
-    coop::element::WaMirrors().Snapshot(snap);
-    for (auto* el : snap) {
-        if (!el || !el->IsMirror() || el->GetTypeName() != kPyramidTypeName) continue;
-        const uint32_t eid = static_cast<uint32_t>(el->GetId());
-        if (g_tickRestored.count(eid)) continue;
-        void* actor = el->GetActor();
-        if (!actor || !R::IsLiveByIndex(actor, el->GetInternalIdx())) continue;
-        WriteBoolAt(actor, g_isWalkingOff, g_isWalkingMask, false);
-        *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(actor) + g_offWispTarget) = nullptr;
-        E::SetActorTickEnabled(actor, true);
-        g_tickRestored.insert(eid);
-        UE_LOGI("piramid-brain[client]: mirror eid=%u unstaged + actor tick restored (beam/look-at "
-                "drive live; brain suppressed)", eid);
+    auto* session=LoadSession();const auto epoch=g_epoch;
+    std::vector<coop::element::Registry::ActorIdPair> snap;
+    coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::WorldActor,snap);
+    for(const auto pair:snap) {
+        void* actor=PyramidOf(pair.id,true);if(!actor||actor!=pair.actor)continue;
+        auto found=g_tickRestored.find(pair.id);
+        if(found!=g_tickRestored.end()&&found->second.Get()==actor)continue;
+        ue_wrap::CachedObjRef ref;ref.Set(actor);
+        if(!ReadBoolAt(actor,g_gatheringOff,g_gatheringMask)) {
+            WriteBoolAt(actor,g_isWalkingOff,g_isWalkingMask,false);
+            *reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offWispTarget)=nullptr;
+        }
+        const bool restored=E::SetActorTickEnabled(actor,true);
+        if(epoch!=g_epoch||!Current(session)||session->role()!=coop::net::Role::Client)return;
+        if(restored&&ref.Get()&&PyramidOf(pair.id,true)==actor)g_tickRestored[pair.id]=ref;
     }
+    std::erase_if(g_tickRestored,[](const auto& row){return !row.second.Get()||PyramidOf(row.first,true)!=row.second.Raw();});
 }
 
 // Attempt the queued gather replay; retried every tick until converged or the deadline.
+void TryWispTick() {
+    if(!g_wispTick.active)return;
+    const auto row=g_wispTick;const auto epoch=g_epoch;auto* session=LoadSession();
+    void* wisp=row.wisp.Get();
+    if(!Current(session)||session->role()!=coop::net::Role::Client||!row.pyramid.Get()||!wisp||
+        PyramidOf(row.pyramidEid,true)!=row.pyramid.Raw()||WispOf(row.wispEid,true)!=wisp) {
+        g_wispTick.active=false;return;
+    }
+    int32_t off=-1;uint8_t mask=0;
+    if(!R::FindBoolProperty(R::ClassOf(wisp),L"gathered",off,mask)||off<0||!mask)return;
+    if(!ReadBoolAt(wisp,off,mask)){g_wispTick.active=false;return;}
+    const bool applied=E::SetActorTickEnabled(wisp,true);
+    if(epoch==g_epoch&&Current(session)&&g_wispTick.revision==row.revision&&applied)g_wispTick.active=false;
+}
+
 void TryReplayPendingGather() {
-    if (!g_pending.active) return;
-    if (NowMs() > g_pending.deadlineMs) {
-        UE_LOGW("piramid-gather[client]: replay DEADLINE (pyramidEid=%u wispEid=%u lastDist=%.0f "
-                "attempts=%d) -- dropped; wisp death still arrives via npc EntityDestroy",
-                g_pending.pyramidEid, g_pending.wispEid, g_pending.lastDist, g_pending.attempts);
-        g_pending.active = false;
-        return;
+    const auto entryEpoch=g_epoch;
+    TryWispTick();
+    if(entryEpoch!=g_epoch)return;
+    if(!g_pending.active)return;
+    if(NowMs()>g_pending.deadlineMs){g_pending.active=false;return;}
+    auto row=g_pending;auto* session=LoadSession();const auto epoch=g_epoch;
+    void* pyr=PyramidOf(row.pyramidEid,true);void* wisp=WispOf(row.wispEid,true);
+    if((row.pyramid.Raw()&&row.pyramid.Get()!=pyr)||(row.wisp.Raw()&&row.wisp.Get()!=wisp)) {
+        g_pending.active=false;return;
     }
-    coop::element::WorldActor* pel = coop::element::WaMirrors().Get(g_pending.pyramidEid);
-    if (!pel || !pel->IsMirror()) return;
-    void* pyr = pel->GetActor();
-    if (!pyr || !R::IsLiveByIndex(pyr, pel->GetInternalIdx())) return;
-    coop::element::Npc* wel = coop::element::NpcMirrors().Get(g_pending.wispEid);
-    if (!wel) return;
-    void* wisp = wel->GetActor();
-    if (!wisp || !R::IsLiveByIndex(wisp, wel->GetInternalIdx())) return;
-    if (ReadBoolAt(pyr, g_gatheringOff, g_gatheringMask)) {
-        // Already mid-gather (a duplicate relay, or a prior replay landed): nothing to stage.
-        g_pending.active = false;
-        return;
-    }
-    ue_wrap::FVector pl{}, wl{};
-    if (!E::TryGetActorLocation(pyr, pl) || !E::TryGetActorLocation(wisp, wl)) return;  // unread: wait a tick, as while converging
-    const float dx = pl.X - wl.X, dy = pl.Y - wl.Y;
-    g_pending.lastDist = std::sqrt(dx * dx + dy * dy);
-    if (g_pending.lastDist > kReplayAttemptRadius) return;  // interp still converging
-    // Stage the native inputs the host had at its own commit, then run the game's own branch. The
-    // whole block is one inline game-thread sequence, so the tick cannot interleave: the staged
-    // walking flag is only ever observed by the reached-check call below, which resets it in its
-    // stop path before any tick could march on it.
-    *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(pyr) + g_offWispTarget) = wisp;
-    WriteBoolAt(pyr, g_isWalkingOff, g_isWalkingMask, true);
-    bool called = false;
-    {
-        ue_wrap::ParamFrame frame(g_fnCheckIfReached);
-        if (frame.valid()) {
-            t_allowCheckIfReached = true;
-            called = ue_wrap::Call(pyr, frame);
-            t_allowCheckIfReached = false;
+    if(!pyr||!wisp)return;
+    if(!row.pyramid.Raw()){g_pending.pyramid.Set(pyr);row.pyramid=g_pending.pyramid;}
+    if(!row.wisp.Raw()){g_pending.wisp.Set(wisp);row.wisp=g_pending.wisp;}
+    auto bound=[&] {
+        return epoch==g_epoch&&Current(session)&&session->role()==coop::net::Role::Client&&
+            row.pyramid.Get()&&row.wisp.Get()&&PyramidOf(row.pyramidEid,true)==pyr&&WispOf(row.wispEid,true)==wisp;
+    };
+    auto current=[&]{return bound()&&g_pending.revision==row.revision&&g_pending.active;};
+    if(ReadBoolAt(pyr,g_gatheringOff,g_gatheringMask)){g_pending.active=false;return;}
+    ue_wrap::FVector pl{},wl{};
+    if(!E::TryGetActorLocation(pyr,pl)||!current())return;
+    if(!E::TryGetActorLocation(wisp,wl)||!current())return;
+    auto finite=[](const ue_wrap::FVector& v){return std::isfinite(v.X)&&std::isfinite(v.Y)&&std::isfinite(v.Z);};
+    if(!finite(pl)||!finite(wl))return;
+    const float dx=pl.X-wl.X,dy=pl.Y-wl.Y;
+    const float distance=std::sqrt(dx*dx+dy*dy);
+    if(!std::isfinite(distance)||distance>kReplayAttemptRadius)return;
+    g_pending.lastDist=static_cast<float>(distance);
+    ue_wrap::CachedObjRef function;function.Set(g_fnCheckIfReached);
+    ue_wrap::ParamFrame frame(function.Get());if(!frame.valid()||!current())return;
+    void** target=reinterpret_cast<void**>(static_cast<uint8_t*>(pyr)+g_offWispTarget);
+    void* oldTarget=*target;const bool oldWalking=ReadBoolAt(pyr,g_isWalkingOff,g_isWalkingMask);
+    ue_wrap::CachedObjRef previousTarget;
+    if(oldTarget&&R::IsLive(oldTarget))previousTarget.Set(oldTarget);
+    *target=wisp;WriteBoolAt(pyr,g_isWalkingOff,g_isWalkingMask,true);
+    auto cleanup=[&] {
+        if(epoch!=g_epoch||!Current(session)||!row.pyramid.Get()||PyramidOf(row.pyramidEid,true)!=pyr)return;
+        if(!ReadBoolAt(pyr,g_gatheringOff,g_gatheringMask)&&*target==wisp) {
+            *target=previousTarget.Get();WriteBoolAt(pyr,g_isWalkingOff,g_isWalkingMask,oldWalking);
         }
+    };
+    struct Cleanup {decltype(cleanup)& run;~Cleanup(){run();}} cleanupGuard{cleanup};
+    struct AllowScope {
+        AllowCheck previous=t_allowCheck;
+        AllowScope(void* actor,void* function,void* params) {
+            t_allowCheck={};t_allowCheck.actor.Set(actor);t_allowCheck.function.Set(function);
+            t_allowCheck.params=params;t_allowCheck.epoch=g_epoch;
+        }
+        ~AllowScope(){t_allowCheck=previous;}
+    };
+    bool admitted=false;
+    g_pending.active=false;
+    {
+        AllowScope allow(pyr,function.Get(),frame.data());
+        ue_wrap::Call(pyr,frame);
+        admitted=t_allowCheck.used;
     }
-    const bool gathering = ReadBoolAt(pyr, g_gatheringOff, g_gatheringMask);
-    ++g_pending.attempts;
-    if (!called || !gathering) {
-        // Branch not taken (the distance read over the native radius inside the re-check, or the
-        // frame failed): unstage, so the alive tick can never march on a stale latch, and retry
-        // next tick; the mirrors are still converging toward the host's frozen truth.
-        WriteBoolAt(pyr, g_isWalkingOff, g_isWalkingMask, false);
-        *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(pyr) + g_offWispTarget) = nullptr;
-        return;
+    if(bound()&&g_pending.revision==row.revision) {
+        ++g_pending.attempts;
+        g_pending.active=!admitted;
     }
-    // The suck is the wisp's own tick code: the wisp's gather, which the re-dispatched native
-    // branch called on this mirror wisp, latches gathered and no movement and snapshots the mesh
-    // start point; the rise itself is the wisp tick's gathered branch, which lerps the mesh toward
-    // the pyramid's centre and shrinks it. The NPC mirror parks every non-swarm NPC tick off, so
-    // without this the client wisp stays grounded and the pyramid's beams, tied to its centre,
-    // stay long. Re-enabling the actor tick is safe: with gathered set the hunt AI is unreachable,
-    // movement is off, and every reachable branch is a pure derivation of mirrored state, the same
-    // principle as the pyramid mirror's own live tick. The wisp dies seconds later at the
-    // montage's notify.
-    E::SetActorTickEnabled(wisp, true);
-    UE_LOGI("piramid-gather[client]: replay OK -- native gather running on mirror; wisp mirror "
-            "tick ENABLED for the gathered rise (pyramidEid=%u wispEid=%u dist=%.0f attempts=%d)",
-            g_pending.pyramidEid, g_pending.wispEid, g_pending.lastDist, g_pending.attempts);
-    g_pending.active = false;
+    if(!bound()||!function.Get())return;
+    const bool gathering=ReadBoolAt(pyr,g_gatheringOff,g_gatheringMask);
+    if(!gathering)return;
+    if(!admitted)return;
+    int32_t off=-1;uint8_t mask=0;
+    if(!R::FindBoolProperty(R::ClassOf(wisp),L"gathered",off,mask)||off<0||!mask||!bound()||
+        !ReadBoolAt(wisp,off,mask))return;
+    g_wispTick=row;g_wispTick.active=true;
+    TryWispTick();
 }
 
 // Host, 1 Hz: drop edge-map entries whose actor is no longer a tracked pyramid (the event
@@ -382,7 +443,7 @@ void SweepStaleEdgeEntries() {
     for (auto it = g_lastGathering.begin(); it != g_lastGathering.end();) {
         bool live = false;
         for (auto* el : snap)
-            if (el && el->GetActor() == it->first) { live = true; break; }
+            if (el && el->LiveActor() == it->first && it->second.actor.Get()==it->first) { live = true; break; }
         if (live) ++it; else it = g_lastGathering.erase(it);
     }
 }
@@ -390,12 +451,18 @@ void SweepStaleEdgeEntries() {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    const auto world=ue_wrap::world_identity::Generation();
+    if(session!=LoadSession()||g_world!=world){OnDisconnect();g_world=world;}
     g_session.store(session, std::memory_order_release);
 }
 
 void Tick() {
+    if(!GT::IsGameThread()||g_ticking)return;
     auto* s = LoadSession();
-    if (!s || !s->connected()) return;
+    if(s&&g_world!=ue_wrap::world_identity::Generation())Install(s);
+    if (!Current(s)) return;
+    struct Guard {Guard(){g_ticking=true;}~Guard(){g_ticking=false;}} guard;
+    const auto epoch=g_epoch;
     const long long now = NowMs();
 
     if (!g_armed) {
@@ -419,43 +486,53 @@ void Tick() {
         g_lastProbeMs = now;
         RestoreNewClientMirrors();
     }
+    if(epoch!=g_epoch||!Current(s)||s->role()!=coop::net::Role::Client)return;
     TryReplayPendingGather();
 }
 
-bool ReadHostHeadingYaw(void* actor, float& outYaw) {
-    // Pre-arm (the first 250 ms after enrol) or an offset miss: the caller falls back to the actor
-    // yaw. No live check here; the caller just checked the actor.
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) || g_offMovementVector < 0)
-        return false;
-    void* mv = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(actor) + g_offMovementVector);
-    if (!mv) return false;
-    outYaw = E::GetComponentWorldRotation(mv).Yaw;
-    return true;
+bool ReadHostHeadingYaw(void* actor,float& outYaw) {
+    if(!actor||!R::IsLive(actor)||!g_armedAtomic.load()||g_offMovementVector<0)return false;
+    void* component=*reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offMovementVector);
+    if(!component||!R::IsLive(component))return false;
+    ue_wrap::CachedObjRef owner,axis;owner.Set(actor);axis.Set(component);
+    const auto epoch=g_epoch;const auto world=ue_wrap::world_identity::Generation();
+    const float value=E::GetComponentWorldRotation(component).Yaw;
+    if(epoch!=g_epoch||world!=ue_wrap::world_identity::Generation()||!owner.Get()||!axis.Get()||
+        *reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offMovementVector)!=component||!std::isfinite(value))return false;
+    outYaw=value;return true;
 }
 
-void ApplyMirrorHeadingYaw(void* actor, float yaw) {
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) || g_offMovementVector < 0)
-        return;
-    const ue_wrap::FRotator rot{0.f, yaw, 0.f};
-    void* mv = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(actor) + g_offMovementVector);
-    if (mv) E::SetComponentWorldRotation(mv, rot);
-    if (g_offArrow >= 0) {
-        void* ar = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(actor) + g_offArrow);
-        if (ar) E::SetComponentWorldRotation(ar, rot);
+void ApplyMirrorHeadingYaw(void* actor,float yaw) {
+    if(!actor||!R::IsLive(actor)||!std::isfinite(yaw)||!g_armedAtomic.load()||g_offMovementVector<0)return;
+    ue_wrap::CachedObjRef owner;owner.Set(actor);
+    const auto epoch=g_epoch;const auto world=ue_wrap::world_identity::Generation();
+    const ue_wrap::FRotator rot{0.f,yaw,0.f};
+    void* mv=*reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offMovementVector);
+    if(mv&&R::IsLive(mv)) {
+        ue_wrap::CachedObjRef component;component.Set(mv);
+        const bool applied=E::SetComponentWorldRotation(mv,rot);
+        if(epoch!=g_epoch||world!=ue_wrap::world_identity::Generation()||!owner.Get()||!component.Get()||
+            *reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offMovementVector)!=mv||!applied)return;
+    }
+    if(g_offArrow>=0) {
+        void* arrow=*reinterpret_cast<void**>(static_cast<uint8_t*>(actor)+g_offArrow);
+        if(arrow&&R::IsLive(arrow))E::SetComponentWorldRotation(arrow,rot);
     }
 }
 
 bool ReadHostRelLook(void* actor, float& outX, float& outY, float& outZ) {
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) || g_offRelLook < 0)
+    if (!actor || !R::IsLive(actor) || !g_armedAtomic.load(std::memory_order_acquire) || g_offRelLook < 0)
         return false;
     const float* v = reinterpret_cast<const float*>(
         reinterpret_cast<const uint8_t*>(actor) + g_offRelLook);
+    if(!std::isfinite(v[0])||!std::isfinite(v[1])||!std::isfinite(v[2]))return false;
     outX = v[0]; outY = v[1]; outZ = v[2];
     return true;
 }
 
 void ApplyMirrorRelLook(void* actor, float x, float y, float z) {
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) || g_offRelLook < 0)
+    if (!actor || !R::IsLive(actor) || !std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z)||
+        !g_armedAtomic.load(std::memory_order_acquire) || g_offRelLook < 0)
         return;
     // All zero means the host stream had no value (pre-arm, or an offset miss on the host side):
     // keep the mirror's current target rather than yanking the head to the origin.
@@ -471,6 +548,7 @@ namespace {
 // cost to one pointer compare. Game thread only. One entry suffices: the event spawns one
 // pyramid (two alternating pyramids would degrade to a per-tick resolve, not break).
 void*    g_lastHostWisp = nullptr;
+ue_wrap::CachedObjRef g_lastHostWispRef;
 uint32_t g_lastHostWispEid = 0;
 }  // namespace
 
@@ -480,19 +558,21 @@ uint32_t ReadHostWispTargetEid(void* actor) {
     // idled on a look wander the host itself was ignoring. So the target identity is streamed and
     // the mirror runs the same native branch. 0 means no target (pre-arm, a miss, or genuinely
     // idle).
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) || g_offWispTarget < 0)
+    if (!actor || !R::IsLive(actor) || !g_armedAtomic.load(std::memory_order_acquire) || g_offWispTarget < 0)
         return 0;
     void* wisp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(actor) + g_offWispTarget);
     if (!wisp) { g_lastHostWisp = nullptr; g_lastHostWispEid = 0; return 0; }
-    if (wisp == g_lastHostWisp && g_lastHostWispEid != 0) return g_lastHostWispEid;
+    if (wisp == g_lastHostWisp && g_lastHostWispRef.Get()==wisp && g_lastHostWispEid != 0 &&
+        WispOf(g_lastHostWispEid,false)==wisp)return g_lastHostWispEid;
     const uint32_t eid = FindNpcEidForActor(wisp);  // once per target CHANGE (1 Hz seeWisps cadence)
     g_lastHostWisp = wisp;
+    g_lastHostWispRef.Set(eid?wisp:nullptr);
     g_lastHostWispEid = eid;
     return eid;
 }
 
 void ApplyMirrorWispTarget(void* actor, uint32_t wispEid) {
-    if (!actor || !g_armedAtomic.load(std::memory_order_acquire) ||
+    if (!actor || !R::IsLive(actor) || !g_armedAtomic.load(std::memory_order_acquire) ||
         g_offWispTarget < 0 || g_gatheringOff < 0)
         return;
     // While the mirror is mid-gather the field belongs to the gather choreography (the replay
@@ -508,10 +588,8 @@ void ApplyMirrorWispTarget(void* actor, uint32_t wispEid) {
         }
         return;
     }
-    coop::element::Npc* wel = coop::element::NpcMirrors().Get(wispEid);
-    if (!wel) return;  // wisp mirror not materialized yet -- the next batch retries naturally
-    void* wisp = wel->GetActor();
-    if (!wisp || !R::IsLiveByIndex(wisp, wel->GetInternalIdx())) return;
+    void* wisp=WispOf(wispEid,true);
+    if(!wisp)return;
     if (*slot != wisp) {
         *slot = wisp;
         UE_LOGI("piramid-brain[client]: mirror wispTarget -> npc eid=%u (native chase branch "
@@ -520,48 +598,39 @@ void ApplyMirrorWispTarget(void* actor, uint32_t wispEid) {
 }
 
 void QueueConnectBroadcastForSlot(int slot) {
-    auto* s = LoadSession();
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if (!g_armed) return;  // no pyramid ever seen this process -> nothing can be mid-gather
-    // Read the current truth off the live actors, not the edge map, which can lag the 1 Hz sweep:
-    // a pyramid whose gathering flag is latched right now is mid-choreography, so the commit is
-    // re-sent to this joiner and its mirror replays it (the original relay fired before this peer
-    // connected). The wisp may already be consumed (the NPC lane retired it); then the joiner only
-    // misses the beam tail, and there is nothing valid to stage, so skip.
-    std::vector<coop::element::WorldActor*> snap;
-    coop::element::WaMirrors().Snapshot(snap);
-    for (auto* el : snap) {
-        if (!el || el->GetTypeName() != kPyramidTypeName) continue;
-        void* pyr = el->GetActor();
-        if (!pyr || !R::IsLiveByIndex(pyr, el->GetInternalIdx())) continue;
-        if (!ReadBoolAt(pyr, g_gatheringOff, g_gatheringMask)) continue;
-        void* wisp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(pyr) + g_offWispTarget);
-        const uint32_t wispEid = wisp ? FindNpcEidForActor(wisp) : 0;  // ptr compare only -- no deref
-        if (wispEid == 0) {
-            UE_LOGI("piramid-gather[host]: join-edge slot=%d -- gather in flight but the wisp is "
-                    "already retired; not re-sending (joiner misses only the beam tail)", slot);
-            continue;
-        }
-        coop::net::PyramidGatherPayload p{};
-        p.pyramidEid = static_cast<uint32_t>(el->GetId());
-        p.wispEid = wispEid;
-        if (s->SendReliableToSlot(slot, coop::net::ReliableKind::PyramidGather, &p, sizeof(p))) {
-            UE_LOGI("piramid-gather[host]: join-edge slot=%d re-sent in-flight gather "
-                    "pyramidEid=%u wispEid=%u", slot, p.pyramidEid, p.wispEid);
-        } else {
-            UE_LOGW("piramid-gather[host]: join-edge slot=%d PyramidGather re-send FAILED "
-                    "(pyramidEid=%u wispEid=%u)", slot, p.pyramidEid, p.wispEid);
-        }
+    auto* session=LoadSession();
+    if(!GT::IsGameThread()||!Current(session)||session->role()!=coop::net::Role::Host||
+        slot<=0||slot>=coop::net::kMaxPeers||!session->IsSlotWorldReady(slot)||!g_armed)return;
+    const auto generation=session->peerGenerationForSlot(slot);
+    const auto epoch=g_epoch;
+    if(!generation)return;
+    std::vector<coop::element::Registry::ActorIdPair> snap;
+    coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::WorldActor,snap);
+    for(const auto pair:snap) {
+        if(epoch!=g_epoch||!Current(session)||session->role()!=coop::net::Role::Host||
+            session->peerGenerationForSlot(slot)!=generation||!session->IsSlotWorldReady(slot))return;
+        void* pyr=PyramidOf(pair.id,false);
+        if(!pyr||pyr!=pair.actor||!ReadBoolAt(pyr,g_gatheringOff,g_gatheringMask))continue;
+        void* wisp=*reinterpret_cast<void**>(static_cast<uint8_t*>(pyr)+g_offWispTarget);
+        const auto eid=FindNpcEidForActor(wisp);if(!eid)continue;
+        coop::net::PyramidGatherPayload payload{};payload.pyramidEid=pair.id;payload.wispEid=eid;
+        session->SendReliableToSlot(slot,coop::net::ReliableKind::PyramidGather,&payload,sizeof(payload));
     }
 }
 
 void OnDisconnect() {
+    ++g_epoch;
+    g_session.store(nullptr,std::memory_order_release);
+    g_world=0;
+    g_lastProbeMs=g_lastSweepMs=0;
     g_pending = PendingGather{};
+    g_wispTick = PendingGather{};
     g_lastGathering.clear();
     g_tickRestored.clear();
     // The host target memo: a recycled actor address in a new session must not alias the old
     // session's eid.
     g_lastHostWisp = nullptr;
+    g_lastHostWispRef.Reset();
     g_lastHostWispEid = 0;
     // The probe counters are per session: a forced re-run in the same process after a reconnect
     // must not see the previous session's relays.
@@ -571,19 +640,27 @@ void OnDisconnect() {
 }
 
 void OnPyramidGather(const coop::net::PyramidGatherPayload& payload) {
-    if (!LoadSession()) return;
+    auto* session=LoadSession();
+    if(!GT::IsGameThread()||!Current(session)||session->role()!=coop::net::Role::Client)return;
     if (!coop::element::Registry::IsAllowedHostAllocatedEid(payload.pyramidEid) ||
         !coop::element::Registry::IsAllowedHostAllocatedEid(payload.wispEid)) {
         UE_LOGW("piramid-gather[client]: eid out of host range (pyramid=%u wisp=%u) -- dropping",
                 payload.pyramidEid, payload.wispEid);
         return;
     }
+    if(g_pending.pyramidEid==payload.pyramidEid&&g_pending.wispEid==payload.wispEid&&
+        (!g_pending.pyramid.Raw()||g_pending.pyramid.Get()==PyramidOf(payload.pyramidEid,true))&&
+        (!g_pending.wisp.Raw()||g_pending.wisp.Get()==WispOf(payload.wispEid,true)))return;
+    g_pending={};
     g_pending.pyramidEid = payload.pyramidEid;
     g_pending.wispEid = payload.wispEid;
     g_pending.deadlineMs = NowMs() + kReplayDeadlineMs;
     g_pending.lastDist = -1.0f;
     g_pending.attempts = 0;
     g_pending.active = true;
+    g_pending.revision=++g_pendingRevision;
+    g_pending.pyramid.Set(PyramidOf(payload.pyramidEid,true));
+    g_pending.wisp.Set(WispOf(payload.wispEid,true));
     UE_LOGI("piramid-gather[client]: queued replay pyramidEid=%u wispEid=%u (deadline %lld ms)",
             payload.pyramidEid, payload.wispEid, kReplayDeadlineMs);
 }

@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 namespace coop::net {
+struct Config;
 enum class Role : uint8_t { Host, Client };
 class Session {
 public:

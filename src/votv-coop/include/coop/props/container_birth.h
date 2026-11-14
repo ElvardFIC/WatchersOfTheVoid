@@ -2,11 +2,12 @@
 // the container and the game's loadData rebinds it to its slot in the thrower's own GObjStack, firing
 // neither addObject nor takeObj, and the drop intent carries no contents: the thrower's slice is the
 // only copy of them, so it has to travel, and the host must not publish over it meanwhile. This
-// module holds that transfer on both sides; coop/props/container_contents_sync ships, judges and
-// applies the slices, and docs/devices.md carries the model.
+// module holds that transfer on both sides, and the host's bound on a client's arrivals;
+// coop/props/container_contents_sync ships, refuses what is not a birth, and
+// applies the births, and docs/devices.md carries the model.
 //
 // CLIENT: a container this peer threw is held until the host's echo binds it to an element; its
-// slice is then owed to the host as a birth (container_slice_wire::kBirthBase).
+// slice is then owed to the host as a birth.
 // HOST: the copy built from a client's intent is a transfer in progress until that author's slice
 // lands: not published, not seeded to a joiner, and every slice of that author for it is the newest
 // version. It ends when the slice lands, when the author leaves, or at its deadline.
@@ -15,8 +16,12 @@
 
 #pragma once
 
+#include "coop/net/connect_history.h"
+
 #include <cstdint>
 #include <set>
+
+namespace coop::net { class Session; }
 
 namespace coop::props::container_birth {
 
@@ -64,12 +69,46 @@ void FirstSent(uint32_t eid);
 // `eid` no longer resolves: whatever was owed for it goes.
 void Forget(uint32_t eid);
 
+// ---- The host's bound on a client's arrivals ------------------------------------------------------------------
+// Where a slice is coming from. A slice the host parked and is now replaying was already admitted once: it costs the
+// host no second arrival, and what bounds the cost of holding it is the park's own per-author cap, not this window.
+enum class Source : uint8_t { Arrival = 0, Replay };
+
+// The answer of the arrival bound: Ok, or TooFast, when this author has spent its window's worth of the host's work.
+enum class Arrival : uint8_t { Ok, TooFast };
+
+// How many slices one author may have arrived inside a window, and how long the refusal lasts. An author's own sweep
+// ships at most one slice per container per 250 ms, so sixteen in a second is four times the rate this build can
+// produce and still bounds a sender that ignores its own sweep.
+inline constexpr int      kRateMax      = 16;
+inline constexpr uint64_t kRateWindowMs = 1000;
+
+// The bound's state: one instance of the tree's per-source limit (connect_history), the class the accept edge and the
+// lobby password use. `key` is the author the next ArrivalAllows counts; `verdict` is that call's answer, for the log.
+struct ArrivalState {
+    coop::net::connect_history::History writes{
+        coop::net::connect_history::Policy{kRateMax, kRateWindowMs, kRateWindowMs}, "container writes"};
+    coop::net::connect_history::Key     key;
+    coop::net::connect_history::Verdict verdict;
+};
+
+// The PURE half, which a selftest drives with no engine and no session: counts one arrival of `st.key` at `nowMs`,
+// false when the author is past the bound.
+bool ArrivalAllows(ArrivalState& st, uint64_t nowMs);
+
+// Host. An arrival spends one of its author's window, a replay nothing; an author with no proved identity is not
+// counted, and says so once. `held` says what the caller does with a TooFast slice, for the log: refuses it, or holds
+// it in the pen. Game thread.
+Arrival SpendArrival(uint32_t eid, uint8_t authorSlot, uint64_t nowMs, coop::net::Session& session, Source src,
+                     bool held = false);
+
 void Reset();
 
 // The transfer's arithmetic, un-gated at session start before any transfer exists: the per-author cap
 // that evicts that author's own oldest and nobody else's, a departing author's transfers, a gone
 // container's at the sweep, and a first publication pending, then given up once. No engine object is
-// touched. Leaves the tables empty.
+// touched. The arrival bound's arm: the count that refuses, the author the refusal does not reach, and the window
+// that slides. Leaves the tables empty.
 bool RunSelftest();
 
 }  // namespace coop::props::container_birth

@@ -17,11 +17,14 @@ void OnSaveObjectReady(void* saveSlotObject) {
         world==ue_wrap::world_identity::Generation() && serial==coop::net::session_serial::Current() &&
         target.Get()==saveSlotObject && s->running() && s->connected() && s->role()==coop::net::Role::Client;};
     if(!current())return;
-    g_profileApplied=false;g_joinPose={};g_joinPlacement=JoinPlacement::StartPoint;
+    const bool nativeMap = ((armed >> 1) & 7) == ue_wrap::game_mode::kTutorial;
+    g_profileApplied=false;g_joinPose={};
+    g_joinPlacement=nativeMap?JoinPlacement::NativeMap:JoinPlacement::StartPoint;
     bool gamemodeSet=false;
     const int effectsReset=ue_wrap::effects::ResetOnSaveObject(saveSlotObject,&gamemodeSet);
     if(!current())return;
-    const auto initialPlacement=JoinStaysAtHost()?JoinPlacement::AtHost:JoinPlacement::StartPoint;
+    const auto initialPlacement=nativeMap?JoinPlacement::NativeMap:
+        (JoinStaysAtHost()?JoinPlacement::AtHost:JoinPlacement::StartPoint);
     const bool itemsApplied=ue_wrap::inventory::ApplyToSaveObjectWhile(saveSlotObject,profile.items,current);
     if(!current())return;
     if(!itemsApplied){UE_LOGW("player_inventory[client]: inventory restore refused on %p; profile reporting stays closed",saveSlotObject);return;}
@@ -35,7 +38,7 @@ void OnSaveObjectReady(void* saveSlotObject) {
     auto placement=initialPlacement;coop::player_profile::Pose pose{};
     const auto inWorld=[](float n){return std::isfinite(n) && std::fabs(n)<=coop::net::kMaxCoord;};
     if(alive && profile.pose.valid && inWorld(profile.pose.x) && inWorld(profile.pose.y) && inWorld(profile.pose.z) && std::isfinite(profile.pose.yaw))pose=profile.pose;
-    if(placement!=JoinPlacement::AtHost && pose.valid)placement=JoinPlacement::ProfilePose;
+    if(placement==JoinPlacement::StartPoint && pose.valid)placement=JoinPlacement::ProfilePose;
     bool placed=true;
     namespace N=ue_wrap::profile::name;
     if(placement==JoinPlacement::ProfilePose)placed=ue_wrap::vitals::WritePlayerTransform(saveSlotObject,pose.x,pose.y,pose.z,pose.yaw);

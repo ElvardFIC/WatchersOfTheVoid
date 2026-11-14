@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace coop::dev::drill_chat {
 
@@ -28,6 +29,20 @@ bool ChatHasLive(const std::string& needle);
 // True with the text after `prefix` (trailing spaces cut, never empty) from the LAST live row that starts with `prefix`.
 // A retained row never counts, as in ChatHasLive.
 bool LiveRestOf(const std::string& prefix, std::string* rest);
+
+// The rows SEEN this session: from the first Seen* read on, the 4 Hz poll (Pump) records every live row it reads into a
+// history of at most 512 rows, the oldest dropped, emptied by Reset. A row seeded at the join is retained, never live,
+// and is never recorded. These answer from the history, so a row the feed retired since is still found; a drill that
+// must not miss a row the host said reads these, not ChatHasLive / LiveRestOf.
+// True when a seen row holds `needle`.
+bool SeenHas(const std::string& needle);
+
+// True with the text after `prefix` (trailing spaces cut, never empty) of the LAST seen row that starts with `prefix`.
+bool SeenRestOf(const std::string& prefix, std::string* rest);
+
+// Appends the text after `prefix` (cut as above) of EVERY seen row that starts with it, in the order they were seen. For a
+// line said in parts.
+void SeenRestsOf(const std::string& prefix, std::vector<std::string>* rests);
 
 // A feed walk is a few times a second: true on every fifteenth call.
 bool PollDue();

@@ -27,6 +27,39 @@ inline bool SameLiteral(const wchar_t* a, const wchar_t* b) {
     return a == b || (a && b && std::wcscmp(a, b) == 0);
 }
 
+// The Install fanout re-ensures every lane's watches on every pump tick, so the literal search below
+// is the gate's hottest path: with ~500 watches living in a 3072-slot table, each ensure used to walk
+// the whole table (millions of string compares a second on a client), and the deer/centipede/mannequin
+// dead watches added a fresh slot every tick on top. This direct-mapped cache remembers which slot a
+// watch's identity last resolved to, so a re-ensure is one compare. The table stays the truth: a miss,
+// or an entry the resolve re-keyed/moved, falls back to the scan and re-caches.
+constexpr int kWatchLookupSlots = 16384;  // power of two; ~500 watches, so a collision is rare
+struct WatchLookup {
+    std::uint64_t hash = 0;
+    int slot = -1;
+};
+WatchLookup g_watchLookup[kWatchLookupSlots];
+
+inline std::uint64_t HashWatchText(std::uint64_t h, const wchar_t* s) {
+    if (!s) return h ^ 0x9E3779B97F4A7C15ull;
+    for (; *s; ++s) {
+        h ^= static_cast<std::uint64_t>(static_cast<std::uint16_t>(*s));
+        h *= 1099511628211ull;
+    }
+    return h ^ 0x9E3779B97F4A7C15ull;
+}
+
+inline std::uint64_t WatchLookupHash(const wchar_t* className, const wchar_t* name, int tag, PreFn pre,
+                                     PostFn post) {
+    std::uint64_t h = 1469598103934665603ull;
+    h = HashWatchText(h, className);
+    h = HashWatchText(h, name);
+    h ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(tag)) * 0x9E3779B97F4A7C15ull;
+    h ^= reinterpret_cast<std::uint64_t>(pre) >> 4;
+    h ^= reinterpret_cast<std::uint64_t>(post) >> 3;
+    return h;
+}
+
 // A name watch, class-scoped when `className` is set. A name's key is its FName, unknown until the
 // game thread converts it; until then the entry is keyed on the literal's address and marked
 // unresolved, and the resolve re-keys it.
@@ -34,14 +67,37 @@ bool WatchNameScoped(const wchar_t* className, const wchar_t* name, int tag, Pre
     if (!name || !*name || (className && !*className) || (!pre && !post)) return false;
     if (RefusedUninstalled("WatchName")) return false;
     std::lock_guard<std::mutex> lk(g_regMutex);
-    for (int i = 0; i < kSlots; ++i) {
-        Entry& e = g_nameTable[i];
+    const std::uint64_t hash = WatchLookupHash(className, name, tag, pre, post);
+    WatchLookup& cached = g_watchLookup[hash & (kWatchLookupSlots - 1)];
+    if (cached.hash == hash && cached.slot >= 0) {
+        Entry& e = g_nameTable[cached.slot];
         if (e.key.load(std::memory_order_relaxed) != 0 && e.name && e.tag == tag && e.pre == pre &&
-            e.post == post && std::wcscmp(e.name, name) == 0 && SameLiteral(e.className, className) &&
-            !e.dead.load(std::memory_order_relaxed)) {
+            e.post == post && std::wcscmp(e.name, name) == 0 && SameLiteral(e.className, className)) {
+            // A dead watch is settled for good: its class declares no such body (or the table had no
+            // room when it resolved). Re-registering the same question would allocate a fresh slot,
+            // die the same way, fill the table and keep the resolver awake -- the field leak that
+            // stalled clients. Answer as the settled watch does.
+            if (e.dead.load(std::memory_order_acquire)) return false;
             if (!e.enabled.exchange(true, std::memory_order_release)) g_nameWatches.fetch_add(1, std::memory_order_release);
             return true;
         }
+        cached.hash = 0;
+        cached.slot = -1;  // moved by the resolve or retired in place: re-scan
+    }
+    for (int i = 0; i < kSlots; ++i) {
+        Entry& e = g_nameTable[i];
+        if (e.key.load(std::memory_order_relaxed) == 0 || !e.name || e.tag != tag || e.pre != pre ||
+            e.post != post || std::wcscmp(e.name, name) != 0 || !SameLiteral(e.className, className))
+            continue;
+        if (e.dead.load(std::memory_order_acquire)) {
+            cached.hash = hash;
+            cached.slot = i;
+            return false;
+        }
+        if (!e.enabled.exchange(true, std::memory_order_release)) g_nameWatches.fetch_add(1, std::memory_order_release);
+        cached.hash = hash;
+        cached.slot = i;
+        return true;
     }
     const bool ok = Register(g_nameTable, g_nameWatches, g_nameKeyed, reinterpret_cast<std::uintptr_t>(name) | 1u,
                              tag, pre, post, name, className, 0, /*resolved=*/false);

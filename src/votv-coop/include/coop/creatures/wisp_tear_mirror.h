@@ -45,6 +45,9 @@ bool PlayTearOnWisp(void* wispActor, uint32_t victimSlot);
 // elapses. No-op until armed. Game thread (ragdollMode is a UFunction call).
 void Tick();
 
+// Retire pending presentation for the departing occupancy before slot reuse.
+void OnPeerLeft(uint8_t slot);
+
 // Clear armed state on disconnect.
 void OnDisconnect();
 

@@ -91,3 +91,16 @@ int main() {
     held=true;CHECK(S::OnCanChanging(c)==ue_wrap::script_gate::Verdict::Run);
     std::puts("PASS canned-food world open/eat publication, rapid changes and replay/lifecycle guards");
 }
+
+namespace coop::config_registry::detail {struct RegistryDef {
+static EnumRow Enum(){return {nullptr,RegistryCtorKey{}};}
+static IntRow Int(){return {nullptr,RegistryCtorKey{}};}
+};}
+namespace coop::config_registry::rows {
+const EnumRow pr64_drill=detail::RegistryDef::Enum();
+const IntRow pr64_record_window_red_ms=detail::RegistryDef::Int();
+}
+namespace coop::config {
+std::string ResolveEnum(const config_registry::EnumRow&){return "off";}
+long ResolveInt(const config_registry::IntRow&){std::abort();}
+}
