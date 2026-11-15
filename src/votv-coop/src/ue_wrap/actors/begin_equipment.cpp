@@ -2,6 +2,8 @@
 
 #include "ue_wrap/actors/begin_equipment.h"
 
+#include "ue_wrap/actors/prop.h"        // PropFamily
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/engine/engine.h"      // SpawnActor, FVector
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -46,17 +48,21 @@ int GiveFromClassRaw(void* cls, void* gm, void* getDataFn, void* addFn, void* de
 }  // namespace
 
 bool GiveFromClass(const std::wstring& className) {
-    void* cls   = R::FindClass(className.c_str());
+    // Immediate: the starter kit equips in place and answers at once; the class loads if this peer has not loaded it.
+    void* cls   = ue_wrap::class_resolve::ResolveClass(className.c_str(), ue_wrap::prop::PropFamily(),
+                                                       ue_wrap::class_resolve::Load::Immediate).cls;
     void* gm    = world_singleton::Gamemode();
     void* gmCls = gm ? R::ClassOf(gm) : nullptr;
     void* addFn     = gmCls ? R::FindFunction(gmCls, L"AddEquipment") : nullptr;
-    void* getDataFn = cls   ? R::FindFunction(cls,   L"getData")      : nullptr;
+    // getData and K2_DestroyActor by dispatch: most wearables inherit getData from prop_equipment_C, and an exact-owner
+    // lookup found it only on the few that declare their own.
+    void* getDataFn = cls   ? R::FindDispatchFunctionCached(cls, L"getData") : nullptr;
     if (!cls || !gm || !addFn || !getDataFn) {
         UE_LOGW("begin_equipment: '%ls' -- cls=%p gm=%p AddEquipment=%p getData=%p (cannot equip)",
                 className.c_str(), cls, gm, addFn, getDataFn);
         return false;
     }
-    void* destroyFn = R::FindFunction(cls, L"K2_DestroyActor");
+    void* destroyFn = R::FindDispatchFunctionCached(cls, L"K2_DestroyActor");
     const int r = GiveFromClassRaw(cls, gm, getDataFn, addFn, destroyFn);
     if (r < 0) {
         UE_LOGW("begin_equipment: equip '%ls' FAULTED (SEH) -- skipped (no crash)", className.c_str());

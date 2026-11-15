@@ -5,12 +5,12 @@ import json
 import sys
 
 root = Path(__file__).resolve().parents[2]
-research = root.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = root.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-asset = research / 'current-assets/VotV__Content__objects__d_window.uasset'
+asset = evidence_root / 'current-assets/VotV__Content__objects__d_window.uasset'
 package = Package(str(asset))
 
 def function(name):
@@ -40,7 +40,7 @@ assert 'Multiply_IntFloat(2, Local(CallFunc_wash_size))' in graph[575]
 assert 'Inst(a)' in graph[2038] and '0.5, 0.5' in graph[2038]
 assert 'Inst(analogPanels)->Inst(isPlayingSignal)' in graph[2960]
 
-sponge_asset = research / 'current-assets/VotV__Content__objects__prop_sponge.uasset'
+sponge_asset = evidence_root / 'current-assets/VotV__Content__objects__prop_sponge.uasset'
 package = Package(str(sponge_asset))
 bubbles = '\n'.join(function('cleanBubbles').values())
 strength = '\n'.join(function('getStrength').values())

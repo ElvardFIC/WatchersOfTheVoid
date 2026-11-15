@@ -43,7 +43,7 @@ UE_FACT_FN(kRowRadioRoll, "fuse_tower_kind", L"radiotower_C", L"scramble", Decla
 UE_FACT_FN(kRowRadioJudge, "fuse_tower_kind", L"radiotower_C", L"TL_lever__FinishedFunc", Declared);
 UE_FACT_FN(kRowRadioUse, "fuse_tower_kind", L"radiotower_C", L"actionOptionIndex", Declared);
 UE_FACT_FN(kRowRadioInsert, "fuse_tower_kind", L"radiotower_C", L"playerUsedOn", Declared);
-// The radio tower generates its puzzle and its fuses at construction and at BeginPlay (radiotower.cpp:1061,
+// The radio tower generates its puzzle and its fuses at construction and at BeginPlay (CXXHeaderDump/radiotower.cpp:1061,
 // :488-493); a client follows each with the host's kept row.
 UE_FACT_FN(kRowRadioGenPuzzle, "fuse_tower_kind", L"radiotower_C", L"genPuzzle", Declared);
 UE_FACT_FN(kRowRadioGenFuses, "fuse_tower_kind", L"radiotower_C", L"genFuses", Declared);

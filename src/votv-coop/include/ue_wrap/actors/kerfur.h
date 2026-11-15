@@ -76,13 +76,18 @@ bool RunActionNameWhile(void* kerfurActor, void* playerActor, const wchar_t* nam
 // other getMainPlayer reads -- murder mode, the petting, loadHoldItem (nothing calls it) -- write others.
 // False until the class loads, and while this build's class lacks the variable (said once per class
 // object). Game thread.
-bool IsInsertPlayerRead(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out);
 bool IsInsertPlayerReadWhile(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out,
                             const std::function<bool()>& current);
 
 // Whether the Omega holds a disc it took for its reports (`hasFloppy`). False when it is not an Omega or
 // the field did not resolve. Game thread.
 bool ReadHasFloppy(void* actor, bool& has);
+bool ReadAnimation(void* actor, bool& active);
+bool ReadRemoteControl(void* actor, bool& active);
+bool ReadServerValid(void* actor, bool& active);
+bool ReadAnimation(void* actor, bool& active);
+bool ReadRemoteControl(void* actor, bool& active);
+bool ReadServerValid(void* actor, bool& active);
 
 // The reports disc for the pose stream: `hasFloppy` and `floppyType` (0..6). `has` is false when the
 // robot holds none, including a type outside the seven the game indexes. False when it is not an Omega
@@ -105,4 +110,6 @@ void* ReadHoldObject(void* actor);
 // when it is not an Omega, the field did not resolve, or it is unset. Game thread.
 void* ReadTargetActor(void* actor);
 
+
+bool IsInsertPlayerRead(void* callerFunction, const uint8_t* callerLocals, const uint8_t* out);
 }  // namespace ue_wrap::kerfur

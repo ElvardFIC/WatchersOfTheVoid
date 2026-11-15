@@ -8,6 +8,8 @@
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
 #include "coop/interactables/atv_sync.h"
+#include "coop/interactables/atv_host_judge.h"
+#include "coop/interactables/atv_host_sync.h"
 #include "coop/props/prop_food_sync.h"
 #include "coop/props/prop_action_sync.h"
 #include "coop/world/credit_intent.h"
@@ -118,7 +120,7 @@ bool HandleStateEvent(net::Session& session,
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
-        coop::interactable_sync::OnReliable(static_cast<uint8_t>(msg.kind), p, senderSlot);
+        coop::interactable_sync::OnReliable(static_cast<uint16_t>(msg.kind), p, senderSlot);
         break;
     }
     case net::ReliableKind::KeypadState: {
@@ -163,6 +165,20 @@ bool HandleStateEvent(net::Session& session,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::power_panel::OnReliable(pp, senderSlot);
+        break;
+    }
+    case net::ReliableKind::CordLinkState: {
+        if (msg.payloadLen != sizeof(net::CordStatePayload)) {
+            UE_LOGW("event_feed: CordLinkState payload size %zu, not %zu",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::CordStatePayload));
+            break;
+        }
+        net::CordStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (session.role() == net::Role::Host && msg.senderPeerSlot > 0 && msg.senderPeerSlot < net::kMaxPeers)
+            coop::cord_sync::OnIntent(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        else if (session.role() == net::Role::Client && msg.senderPeerSlot == 0)
+            coop::cord_sync::Apply(p);
         break;
     }
     case net::ReliableKind::AtvState: {

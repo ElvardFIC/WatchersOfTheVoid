@@ -20,12 +20,12 @@ try {
  $support=$driver.Substring($supportStart,$supportEnd-$supportStart)
  $rows=(Extract 'Driven* Find(void* actor)')+"`n"+$support+(@('Driven* Open(','Driven* FindByEid(','uint64_t NewRowRevision()','uint8_t BumpGen(','Driven* OpenClientRow(','Driven* ElectClientRow(','void EraseRow(') | ForEach-Object {Extract $_}) -join "`n"
  [IO.File]::WriteAllText((Join-Path $output 'prop_syncer_host_rows.inc'),$rows)
- $includes=@('/I','agent/tests/prop_syncer_host_stubs','/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props',"/I$output")
+ $includes=@('/I',(Join-Path $PSScriptRoot 'prop_syncer_host_stubs'),'/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props',"/I$output")
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c /I src/votv-coop/include "/Fo$output/registry.obj" src/votv-coop/src/coop/config/config_registry.cpp
  if($LASTEXITCODE){throw 'Host syncer registry compile failed'}
  function Compile([string]$name,[string]$header=''){
   $forced=@();if($header){$forced=@("/FI$header")}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/prop_syncer_host_test.cpp "$output/registry.obj" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/prop_syncer_host_test.cpp" "$output/registry.obj" /link /OPT:REF
   if($LASTEXITCODE){throw "Host syncer compile failed: $name"}
  }
  Compile 'test'

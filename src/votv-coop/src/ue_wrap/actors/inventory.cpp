@@ -6,6 +6,7 @@
 
 #include "ue_wrap/actors/inventory.h"
 
+#include "ue_wrap/actors/prop.h"            // PropFamily
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/actors/building_material.h"
 #include "ue_wrap/actors/container_inventory.h"
@@ -13,10 +14,12 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <cstdint>
 #include <cstring>
+#include <unordered_map>
 
 namespace ue_wrap::inventory {
 namespace {
@@ -194,12 +197,12 @@ std::wstring ReadHeldItemName() {
     return name;
 }
 
-bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf) {
-    return WriteHeldItemWhile(name,classLeaf,{});
+bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf, const float* fuel) {
+    return WriteHeldItemWhile(name,classLeaf,{},fuel);
 }
 
 bool WriteHeldItemWhile(const std::wstring& name, const wchar_t* classLeaf,
-                        const std::function<bool()>& owner) {
+                        const std::function<bool()>& owner, const float* fuel) {
     if(owner&&!owner())return false;
     void* save = ResolveSaveSlot();
     if (!save || (owner&&!owner())) return false;
@@ -228,6 +231,10 @@ bool WriteHeldItemWhile(const std::wstring& name, const wchar_t* classLeaf,
     record.propName=itemName;record.data.className=cls;
     if(classLeaf)record.data.names.assign(1,std::vector<std::wstring>{itemName});
     else record.data.names.clear();
+    if(fuel) {
+        if(record.data.floats.size()<2)record.data.floats.resize(2);
+        record.data.floats[1].assign(1,*fuel);
+    }
     std::array<uint8_t,kEquipStride> staged{};
     if(!WriteEquipRecord(staged.data(),record) || !current())return false;
     std::memcpy(const_cast<uint8_t*>(hd.data),staged.data(),staged.size());
@@ -380,5 +387,21 @@ bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std
 }
 
 bool ApplyToSaveObject(void* saveSlot,const PlayerInventory& inv) {return ApplyToSaveObjectWhile(saveSlot,inv,{});}
+
+bool ZeroEmptyEquipment(void* saveSlot) {
+    if (!saveSlot || !R::IsLive(saveSlot)) return false;
+    SR::Arr equipment{};
+    if (!SR::TryReadArr(saveSlot, kOff_equipment, equipment)) return false;
+    if (equipment.num == 0) return true;
+    for (int32_t i = 0; i < equipment.num; ++i) {
+        auto* row = const_cast<uint8_t*>(equipment.data) + static_cast<size_t>(i) * kEquipStride;
+        EquipRecord record;
+        ReadEquipRecord(row, record);
+        if (!record.propName.empty() || !record.propKey.empty() || !record.tag.empty() ||
+            !record.data.className.empty() || !record.data.key.empty()) continue;
+        if (!WriteEquipRecord(row, record)) return false;
+    }
+    return true;
+}
 
 }  // namespace ue_wrap::inventory

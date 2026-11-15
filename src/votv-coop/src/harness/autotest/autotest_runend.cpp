@@ -19,6 +19,7 @@
 
 #include "coop/player/death_revive.h"
 #include "coop/player/run_end_travel.h"
+#include "ui/multiplayer_menu.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/game_thread.h"
@@ -106,10 +107,10 @@ void RunRunEndDrill() {
     // The ALLOW direction, by judgement: the pause menu's own quit must stay allowed. Asserting it
     // by dispatch would end the run and take the rest of the drill with it.
     RunOnGameThread([] {
-        void* menu = R::FindObjectByClass(L"ui_menu_C");
+        void* menu = coop::multiplayer_menu::PauseMenu();
         if (!menu) {
-            Check(false, "B1 quit-allowed", "no live ui_menu_C to judge -- the pause menu widget "
-                                            "is created at gamemode init, so this is a finding");
+            Check(false, "B1 quit-allowed", "no live pause menu to judge -- the gamemode makes the pause "
+                                            "menu widget at init, so this is a finding");
             return;
         }
         const RET::Judgement j = RET::JudgeMenuTravel(menu);
@@ -132,7 +133,7 @@ void RunRunEndDrill() {
     auto worldAfter  = std::make_shared<std::wstring>();
     auto pausedAfter = std::make_shared<bool>(true);
     auto aliveAfter  = std::make_shared<bool>(false);
-    auto atKppAfter  = std::make_shared<bool>(false);
+    auto landingAfter = std::make_shared<LandingJudgement>();
 
     RunOnGameThread([worldBefore] {
         if (void* w = R::FindObjectByClass(P::name::WorldClass)) *worldBefore = R::ToString(R::NameOf(w));
@@ -150,7 +151,7 @@ void RunRunEndDrill() {
     // The revive runs on the next pump task, and the screen cleanup after it; a second is plenty.
     ::Sleep(3000);
 
-    const bool readBack = RunOnGameThread([worldAfter, pausedAfter, aliveAfter, atKppAfter] {
+    const bool readBack = RunOnGameThread([worldAfter, pausedAfter, aliveAfter, landingAfter] {
         if (void* w = R::FindObjectByClass(P::name::WorldClass)) *worldAfter = R::ToString(R::NameOf(w));
         *pausedAfter = E::IsGamePaused();
         // The shared reader, not a second hand-rolled one: its pawn is the registry's LOCAL
@@ -158,10 +159,7 @@ void RunRunEndDrill() {
         // correct on a solo host with no puppets and wrong the moment one exists.
         const DeathSnapshot s = ReadDeathState();
         *aliveAfter = s.haveState && !s.dead;
-        if (s.haveLoc) {
-            const float dx = s.locX - P::name::kKPPSpawnX, dy = s.locY - P::name::kKPPSpawnY;
-            *atKppAfter = (dx * dx + dy * dy) < (600.f * 600.f);
-        }
+        *landingAfter = JudgeRevivedLanding(s, 600.f);
     });
     if (!readBack) {
         // Every C-row below reads this snapshot. Unread is not "false": an unread window satisfies
@@ -194,9 +192,7 @@ void RunRunEndDrill() {
           !*pausedAfter ? "the pause the ending set is gone: the revive disposed of it"
                        : "the world is STILL PAUSED -- the travel that used to un-pause it was "
                          "cancelled and nothing took over");
-    Check(*atKppAfter, "C6 at-kpp",
-          *atKppAfter ? "the revive repositioned the player to the KPP"
-                     : "the player is not at the KPP -- the revive's teleport did not land");
+    Check(landingAfter->pass, "C6 at-target", landingAfter->detail);
 
     UE_LOGI("[RUNEND] SEAM -- watch=%d travelsSeen=%llu menuTravels=%llu cancelled=%llu "
             "lastReviveOk=%d",

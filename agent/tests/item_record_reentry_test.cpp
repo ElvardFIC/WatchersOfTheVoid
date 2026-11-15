@@ -3,6 +3,8 @@
 #define ITEM_RECORD_SOURCE "../../src/votv-coop/src/coop/props/prop_save_data.cpp"
 #endif
 #include ITEM_RECORD_SOURCE
+#include "facts_test_support.h"
+namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return nullptr; } }
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include <cstdio>
 #include <cstdlib>

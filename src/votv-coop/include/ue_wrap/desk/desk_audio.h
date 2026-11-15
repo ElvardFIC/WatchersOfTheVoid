@@ -5,7 +5,7 @@
 // audio_coordKeyPress and audio_coordFail (one-shots with preset cues), audio_coordButtonSound and
 // audio_coord_pingSound (SetSound+Play channels behind the playButtonSound / playPingSound helpers), and corrds_loop
 // and audio_coord_pingLoop (loops driven by SetActive / Activate); a seventh, deny, is the refiner's refusal, a
-// one-shot its Activate fires (analogDScreenTest.cpp :9766, :9836, :9897). Every call site dispatches
+// one-shot its Activate fires (CXXHeaderDump/analogDScreenTest.cpp :9766, :9836, :9897). Every call site dispatches
 // EX_VirtualFunction on a NATIVE target, so the dispatch funnels through UFunction->Func and is catchable by the
 // Func-patch (docs/coop-dispatch-visibility.md; the K2_DestroyActor precedent), NEVER by the ProcessEvent detour.
 //

@@ -73,15 +73,14 @@ add_library(minhook STATIC
 target_include_directories(minhook PUBLIC ${MINHOOK_DIR}/include)
 
 # Dear ImGui (MIT, vendored as git submodule, pinned v1.92.9 since 2026-07-30 --
-# 1.92's ImFont/ImFontBaked split IS the dynamic atlas; see
-# research/findings/tooling/votv-imgui-192-upgrade-DESIGN-2026-07-30.md) -- OUR OWN copy for
+# 1.92's ImFont/ImFontBaked split IS the dynamic atlas; retain OUR OWN copy for
 # the in-game dev menu + (future) main-menu MP server browser. NEVER UE4SS's ImGui
 # (RULE 3, no UE4SS at runtime). Compiled into our own static target so it picks up
 # the same static-CRT as the mod (like minhook). Backends: DX11 + DX12 (we
 # auto-detect the RHI at the swapchain) + Win32 (input). Source in third_party/imgui.
 # Overridable so an upgrade can be PRICED by the compiler rather than by grep:
 # point it at a worktree of another tag and build (the arc-D gate did exactly this
-# for 1.92.8 -- see research/findings/join-identity/votv-arc-d-gate-measurements-2026-07-28.md).
+# for 1.92.8 during the earlier compatibility measurement).
 # Unset = the pinned submodule, which is what ships.
 if(NOT IMGUI_DIR)
     set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
@@ -154,8 +153,7 @@ target_link_libraries(imgui PUBLIC freetype)
 # --- GameNetworkingSockets (BSD-3, vendored as git submodule, pinned v1.5.1) ---
 #
 # Wire-layer substrate for the 4-PR GNS migration plan in
-# research/findings/network/votv-gns-integration-plan-2026-05-27.md +
-# research/findings/network/votv-gns-sandbox-pass-2026-05-28.md (sandbox PASS report).
+# the integration plan and sandbox pass record.
 #
 # PR-1 vendored + linked the lib behind a /WHOLEARCHIVE smoke. PR-2 wired
 # coop::net::Session (src/coop/net/session.cpp) over GNS's CreateListenSocketIP /
@@ -185,8 +183,7 @@ set(Protobuf_USE_STATIC_LIBS ON  CACHE BOOL   "" FORCE)
 # ENABLE_ICE compiles GNS's STUN/TURN/ICE client (P2P NAT-punch path);
 # USE_STEAMWEBRTC additionally builds Google's libwebrtc-lite (the ICE backend)
 # from the vendored 2020 snapshot. Enabled for the zero-open-ports P2P
-# connectivity ladder (research/findings/
-# votv-zero-ports-connectivity-ladder-design-2026-06-05.md).
+# connectivity ladder.
 #
 # Stage-0 build spike (2026-06-05) proved the webrtc-from-source build links
 # /MT clean on MSVC 14.50 (abseil, OpenSSL 3.x adapters, /EHs-c-, 138 TUs,

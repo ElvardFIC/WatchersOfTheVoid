@@ -231,7 +231,7 @@ void* Button(int leg) {
 }
 
 // The download unit's DELETE sits under the desk's own cap, its `cap` mesh. A press on the cap flips `capOpened`
-// and turns DELETE's collision on (analogDScreenTest.cpp:3339-3354), so a player presses the cap first.
+// and turns DELETE's collision on (CXXHeaderDump/analogDScreenTest.cpp:3339-3354), so a player presses the cap first.
 bool CapOpened(void*) {
     static R::InstanceOffset sOff{L"capOpened"};
     return DeskBool(sOff);
@@ -308,7 +308,7 @@ bool WriteCaught(int leg) {
 bool FormDownload() { return CD::ArmDownloadFromSignal(1.0e6f, -1); }
 
 // SAVE's photo is DL_current, which the download's play cycle draws (download_playSignall,
-// analogDScreenTest.cpp:9465), so the needle waits for it and a press cannot come first.
+// CXXHeaderDump/analogDScreenTest.cpp:9465), so the needle waits for it and a press cannot come first.
 bool Rendered() {
     void* desk = CD::Instance();
     return desk && DP::Member(desk, L"DL_current") != nullptr;
@@ -370,7 +370,7 @@ bool SetCompLevel(int32_t level) {
     return true;
 }
 
-// comp_start refuses a row at the process upgrade's level or above (analogDScreenTest.cpp :9777).
+// comp_start refuses a row at the process upgrade's level or above (CXXHeaderDump/analogDScreenTest.cpp :9777).
 bool HoldProcessLevel(int32_t atLeast) {
     int32_t now = 0;
     if (!ue_wrap::upgrades::ReadLevel(kProcessLvlRow, &now)) return false;

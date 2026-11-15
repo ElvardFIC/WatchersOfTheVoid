@@ -10,6 +10,8 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
+#include "ue_wrap/core/reflection_props.h"
+#include "ue_wrap/core/component_calls.h"
 #include <cstring>
 
 namespace ue_wrap::food {
@@ -56,6 +58,21 @@ bool Read(void* actor, Condition& out) {
     out=value;return true;
 }
 
+bool ReadPoison(void* actor, Poison& out) {
+    if (!IsFood(actor)) return false;
+    void* cls = R::ClassOf(actor);
+    const int32_t delayOff = cls ? R::FindPropertyOffset(cls, L"poison_delay") : -1;
+    const int32_t strengthOff = cls ? R::FindPropertyOffset(cls, L"poison_strength") : -1;
+    if (delayOff < 0 || strengthOff < 0) return false;
+    Poison value{};
+    const auto* bytes = static_cast<const uint8_t*>(actor);
+    std::memcpy(&value.delay, bytes + delayOff, sizeof(value.delay));
+    std::memcpy(&value.strength, bytes + strengthOff, sizeof(value.strength));
+    if (!R::IsLive(actor) || R::ClassOf(actor) != cls) return false;
+    out = value;
+    return true;
+}
+
 bool Write(void* actor, const Condition& in,const std::function<bool()>& current) {
     CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
     if (!IsFood(actor) || !live.Get() || world!=world_identity::Generation()) return false;
@@ -68,6 +85,20 @@ bool Write(void* actor, const Condition& in,const std::function<bool()>& current
     std::memcpy(b+ripe,&in.ripeness,sizeof(float));
     std::memcpy(b+uses,&in.uses,sizeof(int32_t));
     return true;
+}
+
+bool ReadLooks(void* actor,bool& steam,bool& frozen){
+    if(!IsFood(actor))return false;
+    static R::InstanceOffset steamField{L"eff_steam"};
+    const int32_t off=steamField.Of(actor);if(off<0)return false;
+    void* component=nullptr;std::memcpy(&component,static_cast<const uint8_t*>(actor)+off,sizeof(component));
+    if(!component||!R::IsLive(component))return false;
+    static int32_t frozenOff=-2;static uint8_t frozenMask=0;void* cls=R::ClassOf(actor);
+    if(frozenOff==-2 && !R::FindBoolProperty(cls,L"tempLessThan0",frozenOff,frozenMask))frozenOff=-1;
+    if(frozenOff<0||!frozenMask)return false;
+    void* fn=R::FindDispatchFunctionCached(R::ClassOf(component),L"IsActive");if(!fn)return false;
+    ParamFrame frame(fn);if(!frame.valid()||!Call(component,frame))return false;
+    steam=frame.Get<bool>(L"ReturnValue");frozen=(static_cast<const uint8_t*>(actor)[frozenOff]&frozenMask)!=0;return true;
 }
 
 }  // namespace ue_wrap::food

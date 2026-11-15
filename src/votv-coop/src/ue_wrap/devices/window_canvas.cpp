@@ -358,7 +358,7 @@ DrawResult DrawDab(void* window,const Dab& input,const Guard& current){
     Identity material(brush);
     const auto owned=[&]{return stable() && material.Current() && g_brushIdentity.Get()==brush && g_brush.Raw()==brush;};
     const auto opener=FindBinding(actor.cls.Raw(),L"canvas",owned);
-    // Only the audited base canvas entry is known to be repeatable preparation.
+    // Only the verified base canvas entry is known to be repeatable preparation.
     // Inherited subclasses use it; an unverified override may already paint or
     // spend stock and must not enter the pre-draw retry path.
     const auto opening=[&]{return owned() && opener.Live() && opener.owner.Raw()==fields.cls.Raw();};

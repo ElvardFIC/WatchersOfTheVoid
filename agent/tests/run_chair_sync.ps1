@@ -12,7 +12,7 @@ try {
  [IO.File]::WriteAllText((Join-Path $output 'chair_sitting.inc'),$predicate.Value)
  function Compile-Chair($exe,$override=''){
   $extra=@();if($override){$extra+="/FI$override"}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/chair_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/I$output" @extra "/Fo$exe.obj" "/Fe$exe" agent/tests/chair_sync_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/chair_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/I$output" @extra "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/chair_sync_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Chair fixture compile failed'}
  }
  $exe=Join-Path $output 'chair.exe';Compile-Chair $exe

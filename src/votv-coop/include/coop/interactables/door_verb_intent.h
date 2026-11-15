@@ -50,6 +50,7 @@ uint64_t SentPressCount();
 // Cremator lever state reuses the keyed ContainerState shape under a reserved
 // `/lever` identity suffix; it is separate from the hatch's opened bit.
 void OnCrematorState(const coop::net::KeyedTogglePayload& payload, uint8_t senderSlot);
+void OnCrematorFinished(void* cremator);
 void QueueCrematorSnapshot(int peerSlot);
 
 }  // namespace coop::door_verb_intent

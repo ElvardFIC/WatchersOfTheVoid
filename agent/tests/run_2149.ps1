@@ -16,15 +16,15 @@ try {
  }
  Extract 'src/votv-coop/src/coop/interactables/atv_sync.cpp' @('IsLocalGrabber','IsHeldForMount','OnMountPre','IsOccupiedByOther') 'mount.h'
  Extract 'src/votv-coop/src/ue_wrap/devices/atv.cpp' @('FindCompanionLocation') 'placement.h'
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/atv_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/atv.obj" "/Fe$output/atv.exe" agent/tests/atv_2149_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/atv_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/atv.obj" "/Fe$output/atv.exe" "$PSScriptRoot/atv_2149_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'ATV test compile failed'}
  & "$output/atv.exe"
  if($LASTEXITCODE -ne 0){throw 'ATV test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/spray.obj" "/Fe$output/spray.exe" agent/tests/extinguisher_2145_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/spray.obj" "/Fe$output/spray.exe" "$PSScriptRoot/extinguisher_2145_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Spray test compile failed'}
  & "$output/spray.exe"
  if($LASTEXITCODE -ne 0){throw 'Spray test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/washer.obj" "/Fe$output/washer.exe" agent/tests/washer_wrapper_2149_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/washer.obj" "/Fe$output/washer.exe" "$PSScriptRoot/washer_wrapper_2149_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Washer wrapper test compile failed'}
  & "$output/washer.exe"
  if($LASTEXITCODE -ne 0){throw 'Washer wrapper test failed'}

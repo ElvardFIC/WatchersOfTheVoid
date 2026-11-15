@@ -2,6 +2,8 @@
 
 #include "coop/props/prop_act_host.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/creatures/kerfur_entity.h"
 #include "coop/element/intent_authority.h"
 #include "coop/element/registry.h"
@@ -12,17 +14,24 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
+#include "coop/props/host_spawn_watcher.h"
 #include "coop/props/prop_hold.h"
+#include "coop/props/prop_sound.h"
 #include "coop/props/remote_prop.h"
+#include "coop/props/snack_act.h"
 
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/prop_gather.h"
 #include "ue_wrap/actors/prop_use.h"
+#include "ue_wrap/actors/snack.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/engine/engine.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -46,7 +55,7 @@ using coop::net::ReliableKind;
 constexpr size_t kCap = 2;
 constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};
 // The reach a take or use is allowed beyond the target's bounds and the pose-staleness ball. A lenient bound on the
-// sender's last-synced place, not its exact range: the shape of MTA's server cutoff (CGame.cpp:3113).
+// sender's last-synced place, not its exact range: the shape of MTA's server cutoff (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3113).
 constexpr float kActReachUU = 200.0f;
 
 struct Queued {
@@ -54,7 +63,7 @@ struct Queued {
 };
 
 constexpr int kWaitCauses = static_cast<int>(WaitCause::kCount);
-constexpr int kCommitSteps = 4;
+constexpr int kCommitSteps = 6;
 
 struct Slot {
     coop::net::IntentQueue<Queued> queue;
@@ -62,6 +71,7 @@ struct Slot {
     uint32_t waits[kWaitCauses] = {};
     uint32_t commits[kCommitSteps] = {};
     uint32_t maxDepth = 0;
+    uint8_t grantedFamily = 0;   // the verb the slot's reservation was granted for; 0 while it holds none
 };
 
 coop::net::Session* g_session = nullptr;
@@ -70,7 +80,10 @@ uint32_t g_tally[static_cast<int>(Tally::kCount)] = {};
 coop::net::RefusalTally g_refusals{"prop_act"};
 
 bool InRoster(int slot) { return slot >= 1 && slot < coop::net::kMaxPeers; }
-bool IsHost() { return g_session && g_session->running() && g_session->role() == coop::net::Role::Host; }
+// Role only for the departure: a stopped session (a teardown) still owes its reservations their release and their tally, as
+// container_act_host's departure does; IsHost also needs the session running.
+bool IsHostRole() { return g_session && g_session->role() == coop::net::Role::Host; }
+bool IsHost() { return IsHostRole() && g_session->running(); }
 coop::net::RefusalTally::Clock::time_point Now() { return coop::net::RefusalTally::Clock::now(); }
 
 // A class by name, re-resolved when the cached one is no longer alive: a world reload can re-create a class.
@@ -80,7 +93,8 @@ void* ResolveClass(ue_wrap::CachedObjRef& ref, const wchar_t* name) {
     return ref.Raw();
 }
 
-// The use family's classes: the ones whose eat the player is offered and whose destroy this lane carries.
+// The use family's classes: the ones whose eat the player is offered and whose use this lane carries (a snack's is
+// applied by coop/props/snack_act, the others destroyed).
 // `foodBody` marks prop_food_C's own row, the one whose `notEdible` the game tests before it eats.
 struct UseClass {
     const wchar_t* name;
@@ -88,7 +102,65 @@ struct UseClass {
     ue_wrap::CachedObjRef cls;
 };
 UseClass g_useClasses[] = {{L"prop_food_C", true, {}}, {L"prop_food_mre_C", false, {}},
-                           {L"prop_sleeppills_C", false, {}}};
+                           {L"prop_sleeppills_C", false, {}}, {L"prop_snack_C", false, {}},
+                           {L"prop_medkit_pack_C", false, {}}};
+
+// An MRE's open and a first aid kit's unpack roll their contents with the game's own `spawn`, which reads nothing of the
+// player. The host runs it on its copy before the destroy, so the contents are host-born and reach every peer; the
+// opener only removes its copy. Both play the MRE's opening.
+ue_wrap::CachedObjRef g_mreClass, g_kitClass;
+uint32_t g_unpacksRolled = 0;
+void (*g_onHeldAtDeparture)(uint8_t slot, uint32_t eid) = nullptr;   // dev seam, null by default
+
+bool IsUnpackable(void* actor) {
+    void* const mre = ResolveClass(g_mreClass, L"prop_food_mre_C");
+    void* const kit = ResolveClass(g_kitClass, L"prop_medkit_pack_C");
+    void* const cls = R::ClassOf(actor);
+    return (mre && ue_wrap::prop::WalksToBase(cls, mre)) || (kit && ue_wrap::prop::WalksToBase(cls, kit));
+}
+
+bool IsKit(void* actor) {
+    void* const kit = ResolveClass(g_kitClass, L"prop_medkit_pack_C");
+    return kit && ue_wrap::prop::WalksToBase(R::ClassOf(actor), kit);
+}
+
+// An unpack's `spawn` (an MRE's, a first aid kit's) can end in lib_C::progressAchievement (the MRE's: "jackpot",
+// "rippedOff", "robbed"), which progresses the profile of the machine that runs it: here the host's, for an unpack it did
+// not do. The watch cancels it for the span of the roll, as player_damage's watch cancels the cremator's for a peer's burn
+// (player_damage.cpp, OnAchievementPre). Named residual: the opener earns none, since its copy no longer runs `spawn` and
+// nothing carries an award to it.
+UE_FACT_FN(kRowAchievement, "prop_act_host", L"lib_C", L"progressAchievement", Declared);
+constexpr int kUnpackAchievementTag = 0x4D524541;  // 'MREA'
+bool g_rollingUnpack = false;
+uint32_t g_unpackAchievementsRefused = 0;
+
+ue_wrap::script_gate::Verdict OnUnpackAchievementPre(const ue_wrap::script_gate::Call&) {
+    if (!g_rollingUnpack) return ue_wrap::script_gate::Verdict::Run;
+    if (++g_unpackAchievementsRefused <= 3)
+        UE_LOGI("prop_act: refused an achievement of an unpack's roll for a client's open (#%u) -- it is the opener's",
+                g_unpackAchievementsRefused);
+    return ue_wrap::script_gate::Verdict::Cancel;
+}
+
+// True when the contents were rolled. A roll that cannot run still lets the destroy proceed, so it is tallied. Each
+// class (an MRE, a first aid kit) has its own `spawn`, which the thunk asks of the actor's class.
+bool RollUnpack(void* actor, uint8_t slot, uint32_t eid) {
+    g_rollingUnpack = true;
+    // The births of this call are named exactly: the act drill's unpack steps say their contents from them.
+    coop::host_spawn_watcher::dev::CaptureBirths(true);
+    const bool rolled = ue_wrap::prop_use::CallUnpackSpawn(actor);
+    coop::host_spawn_watcher::dev::CaptureBirths(false);
+    g_rollingUnpack = false;
+    if (!rolled) {
+        ++g_tally[static_cast<int>(Tally::UnpackRollFailed)];
+        UE_LOGW("prop_act: the %ls eid %u unpacked for slot %u could not roll its contents",
+                R::ToString(R::NameOf(R::ClassOf(actor))).c_str(), static_cast<unsigned>(eid),
+                static_cast<unsigned>(slot));
+        return false;
+    }
+    ++g_unpacksRolled;
+    return true;
+}
 
 // Food-body classes that are not offered the use: the plush offers no option (its getActionOptions is empty), and
 // the others own their action 4, whose destroy is carried by another request.
@@ -208,7 +280,7 @@ bool FamilyFits(void* actor, uint8_t family) {
 }
 
 // The reply goes to the sender alone: MTA broadcasts its entry confirm because every peer animates the entry
-// (CGame.cpp:3196-3197), while here nobody else shows anything before the destroy.
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3196-3197), while here nobody else shows anything before the destroy.
 bool Answer(uint8_t slot, const coop::net::PropActReplyPayload& reply) {
     const size_t i = reply.granted ? 0 : reply.reason;
     if (i < coop::net::kPropActReasons) ++g_slots[slot].answered[i];
@@ -236,8 +308,27 @@ void ReadInputs(uint8_t slot, const Queued& q, internal::ActInputs& in, void*& a
     allowed = sub.reachUU;
     if (in.reach != EL::IntentOutcome::Ok) return;
     // The act's facts are the dear reads, so they come last; MTA's entry tests its cheap conditions first too
-    // (trailer, action, occupant, then distance: CGame.cpp:3105-3113).
+    // (trailer, action, occupant, then distance: reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3105-3113).
     in.familyFits = FamilyFits(actor, q.req.family);
+}
+
+// The slot's reservation and the verb it was granted for move together: prop_hold keeps at most one reservation per
+// slot, so one grantedFamily per slot mirrors it, set at the grant and cleared at every release.
+bool ReserveFor(uint8_t slot, const coop::net::PropActRequestPayload& req, void* actor) {
+    if (!coop::prop_hold::Reserve(slot, req.id, req.eid, actor)) return false;
+    g_slots[slot].grantedFamily = req.family;
+    // The kit's roll is its `drop` list, whose contents a bare kit's dump cannot show: the grant says what this copy holds.
+    int32_t drops = 0;
+    if (req.family == static_cast<uint8_t>(PropActFamily::Use) && IsKit(actor))
+        UE_LOGI("prop_act: first aid kit eid %u granted to slot %u: its drop list holds %d entries (the property `drop`)",
+                static_cast<unsigned>(req.eid), static_cast<unsigned>(slot),
+                ue_wrap::prop_use::ReadUnpackDropCount(actor, drops) ? drops : -1);
+    return true;
+}
+
+void ReleaseFor(int slot) {
+    coop::prop_hold::Release(slot);
+    g_slots[slot].grantedFamily = 0;
 }
 
 // One queued request, judged.
@@ -249,18 +340,18 @@ coop::net::Served ServeHead(uint8_t slot, const Queued& q) {
 
     const internal::ActVerdict v = internal::Decide(in);
     if (v == internal::ActVerdict::Wait) {
-        // A request waits where MTA answers or drops at once (a sender not joined, CGame.cpp:3025; one with an action in
+        // A request waits where MTA answers or drops at once (a sender not joined, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3025; one with an action in
         // flight, FAIL_ACTION at :3350): a peer joining mid-activity is never refused for it.
         const WaitCause cause = !in.worldReady ? WaitCause::NotReady
                                 : in.holdsReservation ? WaitCause::Reservation : WaitCause::NoBody;
         ++g_slots[slot].waits[static_cast<int>(cause)];
         return coop::net::Served::Wait;
     }
-    if (v == internal::ActVerdict::Grant) coop::prop_hold::Reserve(slot, q.req.id, q.req.eid, actor);
+    if (v == internal::ActVerdict::Grant) ReserveFor(slot, q.req, actor);
     const bool sent = Answer(slot, *internal::ReplyFor(v, q.req.id));
     if (v == internal::ActVerdict::Grant) {
         if (!sent) {
-            coop::prop_hold::Release(slot);
+            ReleaseFor(slot);
             ++g_tally[static_cast<int>(Tally::GrantUnsent)];
             UE_LOGW("prop_act: the grant for slot %u id %u was not sent -- released", static_cast<unsigned>(slot),
                     static_cast<unsigned>(q.req.id));
@@ -356,12 +447,15 @@ std::optional<coop::net::PropActReplyPayload> ReplyFor(ActVerdict v, uint16_t id
     return std::nullopt;
 }
 
-CommitStep DecideCommit(bool matched, uint8_t committed, bool liveAndSame) {
+CommitStep DecideCommit(bool matched, uint8_t committed, bool liveAndSame, bool snack, uint8_t flags) {
     if (!matched) return CommitStep::BadCommit;
     if (committed == 0) return CommitStep::Abort;
-    if (committed != 1) return CommitStep::BadCommit;
+    if (committed != 1 && committed != coop::snack_act::kCommitApplied) return CommitStep::BadCommit;
     if (!liveAndSame) return CommitStep::TargetGone;
-    return CommitStep::Destroy;
+    // The flags are a snack's: a commit of the prop's other families carries none and never a 2.
+    if (!snack) return committed == 1 && flags == 0 ? CommitStep::Destroy : CommitStep::BadCommit;
+    if (!coop::snack_act::internal::WellFormedSnackCommit(committed, flags)) return CommitStep::BadCommit;
+    return committed == 1 ? CommitStep::SnackEnded : CommitStep::SnackApplied;
 }
 
 AfterStep AfterDestroy(bool destroyed) { return destroyed ? AfterStep::FanOut : AfterStep::DestroyFailed; }
@@ -384,13 +478,20 @@ const char* CommitName(CommitStep s) {
     case CommitStep::Abort:      return "abort";
     case CommitStep::TargetGone: return "target-gone";
     case CommitStep::Destroy:    return "destroy";
+    case CommitStep::SnackEnded:   return "snack-ended";
+    case CommitStep::SnackApplied: return "snack-applied";
     }
     return "";
 }
 
 }  // namespace internal
 
-void Install(coop::net::Session* session) { g_session = session; }
+void Install(coop::net::Session* session) {
+    g_session = session;
+    if (!ue_wrap::script_gate::WatchName(kRowAchievement, kUnpackAchievementTag, &OnUnpackAchievementPre, nullptr))
+        UE_LOGE("prop_act: the achievement watch did not register -- the host earns an unpack's achievements for a "
+                "client's unpack");
+}
 
 void Tick() {
     if (!IsHost()) return;
@@ -406,7 +507,7 @@ void OnRequest(const coop::net::PropActRequestPayload& p, uint8_t senderSlot) {
     if (!IsHost()) return;
     UE_ASSERT_GAME_THREAD("prop_act_host::OnRequest");
     if (!InRoster(senderSlot)) return;   // the dispatcher counted it
-    // The verb byte is judged before any world read. MTA ends the sender on an unknown action (CGame.cpp:3798-3802);
+    // The verb byte is judged before any world read. MTA ends the sender on an unknown action (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3798-3802);
     // here the byte is refused with a reply, counted and never queued, and only the edge's budget ends a peer. As on
     // a full queue, a sender whose world is not ready is counted and not answered.
     if (!internal::KnownFamily(p.family)) {
@@ -437,11 +538,14 @@ void OnCommit(const coop::net::PropActCommitPayload& p, uint8_t senderSlot) {
     if (!IsHost()) return;
     UE_ASSERT_GAME_THREAD("prop_act_host::OnCommit");
     if (!InRoster(senderSlot)) return;
-    // No act re-judge here: MTA's NOTIFY_IN re-tests only that the reservation stands (CGame.cpp:3376-3383).
+    // No act re-judge here: MTA's NOTIFY_IN re-tests only that the reservation stands (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3376-3383).
     void* actor = nullptr;
     const bool matched = coop::prop_hold::Match(senderSlot, p.id, p.eid, &actor);
     const bool liveAndSame = actor && actor == coop::element::LivePropActor(p.eid);
-    const internal::CommitStep step = internal::DecideCommit(matched, p.committed, liveAndSame);
+    // A snack's own commit words are for a USE grant alone: the pocket and the hold of a snack keep the destroy path.
+    const bool snackUse = liveAndSame && g_slots[senderSlot].grantedFamily == static_cast<uint8_t>(PropActFamily::Use) &&
+                          ue_wrap::snack::IsSnack(actor);
+    const internal::CommitStep step = internal::DecideCommit(matched, p.committed, liveAndSame, snackUse, p.flags);
     ++g_slots[senderSlot].commits[static_cast<int>(step)];
     if (step == internal::CommitStep::BadCommit) {
         // An unmatched commit owns nothing; a matched one with a bad byte keeps its reservation for the real commit.
@@ -453,17 +557,34 @@ void OnCommit(const coop::net::PropActCommitPayload& p, uint8_t senderSlot) {
     case internal::CommitStep::BadCommit:
         return;
     case internal::CommitStep::Abort:
-        coop::prop_hold::Release(senderSlot);
+        // A snack's use that aborted may have run the eater on the client's copy (an unreadable copy aborts): the host's
+        // state is published so that copy is put back.
+        if (snackUse) coop::snack_act::NoteAborted(actor);
+        ReleaseFor(senderSlot);
         LogCommit(senderSlot, p, internal::CommitName(step));
         return;
     case internal::CommitStep::TargetGone:
         ++g_tally[static_cast<int>(Tally::TargetGone)];
-        coop::prop_hold::Release(senderSlot);
+        ReleaseFor(senderSlot);
+        LogCommit(senderSlot, p, internal::CommitName(step));
+        return;
+    case internal::CommitStep::SnackEnded:
+    case internal::CommitStep::SnackApplied:
+        // The reservation is released after the apply, which may end the host's copy; the apply never reads it.
+        coop::snack_act::OnCommit(g_session, actor, p, senderSlot);
+        ReleaseFor(senderSlot);
         LogCommit(senderSlot, p, internal::CommitName(step));
         return;
     case internal::CommitStep::Destroy:
         break;
     }
+    // The act drill's red arm: the open is skipped, so the drill's unpack steps must fail.
+    static const bool unpackOff = coop::config::ResolveFlag(coop::config_registry::rows::prop_act_mre_open_off);
+    // The roll needs the live actor, so it runs before the destroy; the opening is heard after the destroy's result.
+    ue_wrap::FVector unpackAt{};
+    bool unpackRolled = false;
+    if (!unpackOff && g_slots[senderSlot].grantedFamily == static_cast<uint8_t>(PropActFamily::Use) && IsUnpackable(actor))
+        unpackRolled = RollUnpack(actor, senderSlot, p.eid) && ue_wrap::engine::TryGetActorLocation(actor, unpackAt);
     // The eid alone names the prop (no key), so the key fallback can never pick a sibling.
     ue_wrap::CachedObjRef before;
     before.Set(actor);
@@ -474,31 +595,33 @@ void OnCommit(const coop::net::PropActCommitPayload& p, uint8_t senderSlot) {
     if (internal::AfterDestroy(destroyed) == internal::AfterStep::FanOut) {
         coop::kerfur_entity::ReleaseKerfurForEid(p.eid);
         g_session->SendReliable(ReliableKind::PropDestroy, &dp, sizeof(dp), senderSlot);
+        if (unpackRolled) coop::prop_sound::PlayMreOpenAt(coop::players::Registry::Get().Local(), unpackAt);
     } else {
         ++g_tally[static_cast<int>(Tally::DestroyFailed)];
         UE_LOGE("prop_act: the host could not destroy eid %u for slot %u -- the client holds the item and the prop "
                 "stands on every peer", static_cast<unsigned>(p.eid), static_cast<unsigned>(senderSlot));
     }
-    coop::prop_hold::Release(senderSlot);
+    ReleaseFor(senderSlot);
     LogCommit(senderSlot, p, destroyed ? "destroy" : "destroy-failed");
 }
 
-// MTA releases a departed ped's vehicle in the element's destructor (CPed.cpp:92-127); the roster's departure is the
+// MTA releases a departed ped's vehicle in the element's destructor (reference/mtasa-blue/Server/mods/deathmatch/logic/CPed.cpp:92-127); the roster's departure is the
 // destructor here.
 void OnPeerGone(uint8_t slot) {
-    if (!IsHost() || !InRoster(slot)) return;
+    if (!IsHostRole() || !InRoster(slot)) return;
     if (!coop::prop_hold::ReservationCount(slot)) return;
     const uint32_t eid = coop::prop_hold::ReservedEid(slot);
     ++g_tally[static_cast<int>(Tally::HeldAtDisconnect)];
     UE_LOGI("prop_act: slot %u left holding a reservation (eid %u) -- released", static_cast<unsigned>(slot),
             static_cast<unsigned>(eid));
-    coop::prop_hold::Release(slot);
+    ReleaseFor(slot);
+    if (g_onHeldAtDeparture) g_onHeldAtDeparture(slot, eid);
 }
 
 const char* TallyName(Tally t) {
     static const char* const kNames[] = {
         "target_gone", "bad_commit", "held_at_disconnect", "destroy_failed", "queue_full_unready", "bad_sender",
-        "grant_unsent", "fit_unread", "fit_bad_family", "fit_trash", "fit_not_prop", "fit_denied", "fit_no_use_row",
+        "grant_unsent", "unpack_roll_failed", "fit_unread", "fit_bad_family", "fit_trash", "fit_not_prop", "fit_denied", "fit_no_use_row",
         "fit_collect_refused", "fit_pickup_refused", "fit_ignore_save", "fit_child", "fit_physics",
         "fit_can_collect", "fit_can_hold", "fit_heavy", "fit_mesh_root", "fit_volume", "fit_save_class",
         "fit_equip_row", "fit_not_edible"};
@@ -517,9 +640,10 @@ void OnDisconnect() {
     }
     if (!fits.empty()) UE_LOGI("prop_act: fit refusals this session:%s", fits.c_str());
     std::fill(std::begin(g_tally), std::end(g_tally), 0u);
+    g_unpacksRolled = 0;
     g_unreadSaid.clear();
     g_refusals.Clear();
-    for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) coop::prop_hold::Release(slot);
+    for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) ReleaseFor(slot);
 }
 
 void NoteBadSender() { ++g_tally[static_cast<int>(Tally::BadSender)]; }
@@ -533,7 +657,11 @@ uint32_t AnsweredFor(int slot, PropActReason reason) {
 
 uint32_t TallyOf(Tally t) { return t < Tally::kCount ? g_tally[static_cast<int>(t)] : 0; }
 
+uint32_t UnpacksRolled() { return g_unpacksRolled; }
+
 namespace dev {
+
+void SetOnHeldAtDeparture(void (*fn)(uint8_t slot, uint32_t eid)) { g_onHeldAtDeparture = fn; }
 
 bool CensusFits(void* actor, uint8_t family, Tally* first) {
     std::optional<Tally> why;

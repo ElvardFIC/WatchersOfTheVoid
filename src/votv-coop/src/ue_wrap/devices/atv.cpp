@@ -71,6 +71,20 @@ uint8_t g_skipMask = 0;
 int32_t g_trapOff     = -1;       // trap     (a bool bit: the byte, with its mask below)
 uint8_t g_trapMask    = 0;
 int32_t g_tpOff       = -1;       // tp       (a UBillboardComponent*: where `explode` places its blast)
+int32_t g_emptyOff    = -1;       // empty, brokenn, input_alt, fly: bool bits, byte and mask each
+uint8_t g_emptyMask   = 0;
+int32_t g_brokenOff   = -1;
+uint8_t g_brokenMask  = 0;
+int32_t g_inputAltOff = -1;
+uint8_t g_inputAltMask = 0;
+int32_t g_flyOff      = -1;
+uint8_t g_flyMask     = 0;
+int32_t g_modulesOff  = -1;       // Modules (TArray<byte>), upgradesNames (TArray<FName>)
+int32_t g_namesOff    = -1;
+
+constexpr const wchar_t* kHonkPress = L"InpActEvt_atv_honk_K2Node_InputActionEvent_14";
+constexpr const wchar_t* kHonkRelease = L"InpActEvt_atv_honk_K2Node_InputActionEvent_15";
+constexpr int kModulesCap = 64;   // a Modules array longer than this is unreadable garbage
 
 int32_t ResolveOff(void* cls, const wchar_t* name, int32_t fallback) {
     int32_t o = R::FindPropertyOffset(cls, name);
@@ -86,6 +100,22 @@ int32_t ResolveOff(void* cls, const wchar_t* name, int32_t fallback) {
 // a same-process rejoin, ATV_C not among them), and one still loading answers null here. The field
 // offsets above are its layout, the same in every world, so they are resolved once.
 void* AtvClass() { return object_index::ClassByName(L"ATV_C"); }
+
+// A class is an ATV when it descends from ATV_C (a skin subclass included).
+bool IsAtvClass(void* cls) {
+    void* atv = AtvClass();
+    return cls && atv && R::IsDescendantOfAny(cls, &atv, 1);
+}
+constexpr const wchar_t* kAtvBases[] = {L"ATV_C"};
+const class_resolve::Family kAtvFamily{L"ATV", kAtvBases, 1, &IsAtvClass};
+bool ReadBit(void* atv, int32_t off, uint8_t mask) {
+    return (*(reinterpret_cast<const uint8_t*>(atv) + off) & mask) != 0;
+}
+
+void WriteBit(void* atv, int32_t off, uint8_t mask, bool v) {
+    uint8_t& byte = *(reinterpret_cast<uint8_t*>(atv) + off);
+    byte = v ? static_cast<uint8_t>(byte | mask) : static_cast<uint8_t>(byte & ~mask);
+}
 
 }  // namespace
 
@@ -133,6 +163,19 @@ bool EnsureResolved() {
         g_trapOff = -1;
         UE_LOGW("atv: trap offset not found -- the story event's trap stays host-only");
     }
+    // No fallback for the vitals' marks, the horn's two flags and the module arrays: a miss leaves that write false, said
+    // once, and the caller's lane reports what it could not carry.
+    struct Bit { int32_t* off; uint8_t* mask; const wchar_t* name; };
+    const Bit bits[] = {{&g_emptyOff, &g_emptyMask, L"empty"},         {&g_brokenOff, &g_brokenMask, L"brokenn"},
+                        {&g_inputAltOff, &g_inputAltMask, L"input_alt"}, {&g_flyOff, &g_flyMask, L"fly"}};
+    for (const Bit& b : bits)
+        if (!R::FindBoolProperty(cls, b.name, *b.off, *b.mask) || *b.off < 0 || *b.mask == 0) {
+            *b.off = -1;
+            UE_LOGW("atv: %ls offset not found -- the host's copy of it is not carried", b.name);
+        }
+    g_modulesOff = R::FindPropertyOffset(cls, L"modules");
+    g_namesOff = R::FindPropertyOffset(cls, L"upgradesNames");
+    if (g_modulesOff < 0 || g_namesOff < 0) UE_LOGW("atv: modules offsets not found -- an ATV's modules are not carried");
     // No fallback: a miss leaves a client's ATV explosion unrequested, since the host has no place to put it.
     g_tpOff = R::FindPropertyOffset(cls, L"tp");
     if (g_tpOff < 0) UE_LOGW("atv: tp offset not found -- a client's ATV explosion cannot be requested");
@@ -257,6 +300,21 @@ float GetHealth(void* atv) {
     return *reinterpret_cast<const float*>(reinterpret_cast<const char*>(atv) + g_healthOff);
 }
 
+bool ReadFlag(void* atv, int32_t byte, uint8_t mask);
+void WriteFlag(void* atv, int32_t byte, uint8_t mask, bool on);
+bool GetEmpty(void* atv) { return EnsureResolved() && g_emptyOff >= 0 && ReadFlag(atv, g_emptyOff, g_emptyMask); }
+bool GetBroken(void* atv) { return EnsureResolved() && g_brokenOff >= 0 && ReadFlag(atv, g_brokenOff, g_brokenMask); }
+bool SetEmpty(void* atv, bool value) {
+    if (!atv || !EnsureResolved() || g_emptyOff < 0) return false;
+    WriteFlag(atv, g_emptyOff, g_emptyMask, value);
+    return true;
+}
+bool SetBroken(void* atv, bool value) {
+    if (!atv || !EnsureResolved() || g_brokenOff < 0) return false;
+    WriteFlag(atv, g_brokenOff, g_brokenMask, value);
+    return true;
+}
+
 bool ReadFlag(void* atv, int32_t byte, uint8_t mask) {
     if (!atv || byte < 0 || mask == 0) return false;
     const uint8_t b = *reinterpret_cast<const uint8_t*>(reinterpret_cast<const char*>(atv) + byte);
@@ -314,7 +372,6 @@ void* FindLiveIn(const std::wstring& key, void* skip) {
     return c.found;
 }
 
-void* FindLiveByKey(const std::wstring& key) { return FindLiveIn(key, nullptr); }
 
 void* FindOtherLiveByKey(const std::wstring& key, void* self) { return FindLiveIn(key, self); }
 
@@ -543,6 +600,66 @@ void SetLights(void* atv, bool on) {
     CallApply(atv, g_loadLightsFn);
 }
 void SetTurbo(void* atv, bool on) { WriteFlag(atv, g_turboByte, g_turboMask, on); }
+
+int ReadModules(void* atv, uint8_t* out, int cap) {
+    if (!atv || !EnsureResolved() || g_modulesOff < 0) return -1;
+    save_record::Arr modules{};
+    if (!save_record::TryReadArr(atv, g_modulesOff, modules) || modules.num > kModulesCap) return -1;
+    if (modules.num && (!out || cap < 0)) return -1;
+    if (out) std::memcpy(out, modules.data, static_cast<size_t>((std::min)(modules.num, cap)));
+    return modules.num;
+}
+
+bool WriteModules(void* atv, const uint8_t* modules, int count) {
+    if (!atv || !EnsureResolved() || g_modulesOff < 0 || count < 0 || count > kModulesCap || (count && !modules)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(atv), L"updUpgrades");
+    if (!fn || !save_record::ReplaceByteArray(static_cast<uint8_t*>(atv), g_modulesOff, modules, count)) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && Call(atv, frame);
+}
+
+bool ModuleByName(void* atv, const R::FName& name, uint8_t& value) {
+    if (!atv || !EnsureResolved() || g_modulesOff < 0 || g_namesOff < 0 || name.ComparisonIndex == 0) return false;
+    save_record::Arr modules{}, names{};
+    if (!save_record::TryReadArr(atv, g_modulesOff, modules) || !save_record::TryReadArr(atv, g_namesOff, names) ||
+        modules.num != names.num || modules.num > kModulesCap) return false;
+    for (int32_t i = 0; i < names.num; ++i) {
+        R::FName candidate{};
+        std::memcpy(&candidate, names.data + static_cast<size_t>(i) * sizeof(candidate), sizeof(candidate));
+        if (candidate.ComparisonIndex == name.ComparisonIndex && candidate.Number == name.Number) {
+            value = modules.data[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ReplayHorn(void* atv, bool press) {
+    if (!atv || !EnsureResolved() || g_inputAltOff < 0 || g_flyOff < 0) return false;
+    CachedObjRef actor, cls, fn;
+    actor.Set(atv); cls.Set(R::ClassOf(atv));
+    fn.Set(R::FindDispatchFunctionCached(cls.Get(), press ? kHonkPress : kHonkRelease));
+    if (!actor.Get() || !cls.Get() || !fn.Get()) return false;
+    const bool alt = ReadFlag(atv, g_inputAltOff, g_inputAltMask);
+    const bool fly = ReadFlag(atv, g_flyOff, g_flyMask);
+    ParamFrame frame(fn.Get());
+    const bool dispatched = frame.valid() && Call(atv, frame) && actor.Get() && cls.Get() && R::ClassOf(atv) == cls.Get() && fn.Get();
+    if (actor.Get() && cls.Get() && R::ClassOf(atv) == cls.Get()) {
+        WriteFlag(atv, g_inputAltOff, g_inputAltMask, alt);
+        WriteFlag(atv, g_flyOff, g_flyMask, fly);
+    }
+    return dispatched;
+}
+
+bool CheckIfRunout(void* atv) {
+    if (!atv || !EnsureResolved()) return false;
+    CachedObjRef actor, cls, fn;
+    actor.Set(atv); cls.Set(R::ClassOf(atv));
+    fn.Set(R::FindDispatchFunctionCached(cls.Get(), L"checkIfRunout"));
+    if (!actor.Get() || !cls.Get() || !fn.Get()) return false;
+    ParamFrame frame(fn.Get());
+    return frame.valid() && Call(atv, frame) && actor.Get() && cls.Get() && R::ClassOf(atv) == cls.Get() && fn.Get();
+}
 void SetRadio(void* atv, bool on) {
     void* player = RadioMedia(atv);
     if (!player) return;
@@ -662,7 +779,7 @@ const char* SpawnFailText(SpawnFail why) {
         case SpawnFail::None:          return "no failure";
         case SpawnFail::Unresolved:    return "the ATV wrapper, the spawn functions or the world are unresolved";
         case SpawnFail::NoKey:         return "the class name or the key is empty";
-        case SpawnFail::ClassNotFound: return "the class is not loaded";
+        case SpawnFail::ClassNotFound: return "the class is not resolvable on this peer";
         case SpawnFail::NotAnAtv:      return "the class is not an ATV subclass";
         case SpawnFail::NoOffset:      return "the class has no key property";
         case SpawnFail::NameNone:      return "the key did not convert to a name";
@@ -902,5 +1019,7 @@ void* SpawnMirror(const std::wstring& className,const FVector& loc,const FRotato
     if(actor)SetIncludedInSave(actor,true);
     return actor;
 }
+
+
 
 }  // namespace ue_wrap::atv

@@ -7,17 +7,17 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$SourcePath){
-  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I','agent/tests/food_stubs','/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
+  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I',(Join-Path $PSScriptRoot 'food_stubs'),'/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
   if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define FOOD_CALLBACK_SOURCE "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" agent/tests/food_callbacks_test.cpp /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/food_callbacks_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Food callbacks compile failed: $Name"}
   return $exe
  }
  $exe=Build-Fixture 'callbacks' ''
  & $exe
  if($LASTEXITCODE){throw 'Food callbacks regression failed'}
- & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') agent/tests/food_callbacks_native_test.py
+ & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') "$PSScriptRoot/food_callbacks_native_test.py"
  if($LASTEXITCODE){throw 'Cooked food output contract failed'}
  if($FaultControls){
   $controller=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/props/prop_food_sync.cpp'))

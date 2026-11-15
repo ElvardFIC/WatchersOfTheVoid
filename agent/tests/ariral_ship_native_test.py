@@ -1,11 +1,11 @@
 """Keep the precise arirShipAppear hooks tied to the fresh cooked 0.9.0n graph."""
 from pathlib import Path
 import sys
-research=Path(__file__).resolve().parents[3]/"_research"
-sys.path.insert(0,str(research))
+evidence_root=Path(__file__).resolve().parents[3]/"_research"
+sys.path.insert(0,str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
-p=Package(str(research/"current-assets/VotV__Content__objects__arirShipAppear.uasset"))
+p=Package(str(evidence_root/"current-assets/VotV__Content__objects__arirShipAppear.uasset"))
 functions={e["name"]:body(p,e) for e in p.exports if p.class_of_export(e)=="Function"}
 graph=dict(functions["ExecuteUbergraph_arirShipAppear"])
 for name,entry in {"appear":908,"runTrigger":1398,"ReceiveBeginPlay":1197,"ReceiveTick":1546,"photoTaken":2686,"a__UpdateFunc":604,"a__FinishedFunc":3075}.items():

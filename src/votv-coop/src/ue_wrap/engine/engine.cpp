@@ -241,22 +241,15 @@ static void* SpawnActorImpl(void* actorClass, const FVector& location, bool iner
     if(!owned())return nullptr;
     if(!current())return cancel();
 
-    // Before FinishSpawningActor runs BeginPlay, zero the fields that make a pawn behave as a
-    // local player: BeginPlay's native auto-possess reads AutoPossessPlayer, and clearing it
-    // keeps the orphan from grabbing a second player controller (which stole the local player's
-    // input and view). Plain data fields, so direct writes.
+    // Before FinishSpawningActor runs BeginPlay the pawn is made inert: BeginPlay's native auto-possess reads the
+    // fields MakePawnInert clears.
     if (inertPawn) {
-        auto* a = reinterpret_cast<uint8_t*>(actor);
-        a[P::off::APawn_AutoPossessPlayer] = 0;   // no PLAYER controller (no input/view hijack)
-        a[P::off::APawn_AutoPossessAI] = 0;        // we possess explicitly post-spawn
-        a[P::off::AActor_AutoReceiveInput] = 0;    // EAutoReceiveInput::Disabled
-        a[P::off::AActor_bBlockInput] = 1;         // swallow any stray input
-        // Also null the AI controller class: AutoPossessAI blocks the automatic spawn of an AI
-        // controller but not later code (other blueprint systems iterating pawns and calling
-        // SpawnDefaultController) acquiring one from the class default. Nulling the class closes
-        // that path.
-        *reinterpret_cast<void**>(a + P::off::APawn_AIControllerClass) = nullptr;
-        UE_LOGI("engine: SpawnActor inertPawn -> no player possess, AIControllerClass=null, bBlockInput=1");
+        const PawnInertResult inert = MakePawnInert(actor);
+        if (inert != PawnInertResult::Made)
+            UE_LOGE("engine: SpawnActor inertPawn requested for '%ls', which %s -- it is left as spawned",
+                    R::ClassNameOf(actor).c_str(),
+                    inert == PawnInertResult::Unresolved ? "could not be judged (the Pawn class did not resolve)"
+                                                         : "is not a pawn");
     }
     // The caller's last word on the deferred actor: what must hold from its BeginPlay on is set here.
     if (beforeFinish) beforeFinish(ctx, actor);
@@ -311,19 +304,21 @@ FTransform MakeTransform(const FVector& location, const FRotator& rotation) {
 }
 }  // namespace
 
-void* BeginDeferredSpawn(void* actorClass, const FVector& location, const FRotator& rotation) {
+void* BeginDeferredSpawn(void* actorClass, const FVector& location, const FRotator& rotation, uint8_t collision,
+                         const FVector* scale) {
     if (!actorClass) return nullptr;
     if (!ResolveSpawn()) {
         UE_LOGE("engine: BeginDeferredSpawn unresolved (cdo=%p begin=%p)",
                 g_gsCdo, g_beginSpawnFn);
         return nullptr;
     }
-    const FTransform xform = MakeTransform(location, rotation);
+    FTransform xform = MakeTransform(location, rotation);
+    if (scale) { xform.SX = scale->X; xform.SY = scale->Y; xform.SZ = scale->Z; }
     ParamFrame begin(g_beginSpawnFn);
     begin.Set<void*>(L"WorldContextObject", GetWorldContext());
     begin.Set<void*>(L"ActorClass", actorClass);
     begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
-    begin.Set<uint8_t>(L"CollisionHandlingOverride", kAlwaysSpawn);
+    begin.Set<uint8_t>(L"CollisionHandlingOverride", collision);
     begin.Set<void*>(L"Owner", nullptr);
     if (!Call(g_gsCdo, begin)) {
         UE_LOGE("engine: BeginDeferredSpawn call failed");
@@ -332,9 +327,10 @@ void* BeginDeferredSpawn(void* actorClass, const FVector& location, const FRotat
     return begin.Get<void*>(L"ReturnValue");
 }
 
-bool FinishDeferredSpawn(void* actor, const FVector& location, const FRotator& rotation) {
+bool FinishDeferredSpawn(void* actor, const FVector& location, const FRotator& rotation, const FVector* scale) {
     if (!actor || !ResolveSpawn()) return false;
-    const FTransform xform = MakeTransform(location, rotation);
+    FTransform xform = MakeTransform(location, rotation);
+    if (scale) { xform.SX = scale->X; xform.SY = scale->Y; xform.SZ = scale->Z; }
     ParamFrame finish(g_finishSpawnFn);
     finish.Set<void*>(L"Actor", actor);
     finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
@@ -507,6 +503,15 @@ float GetActorCharacterHalfHeight(void* mainPlayerPawn) {
     if (!capsule) return 0.f;
     return *reinterpret_cast<float*>(
         reinterpret_cast<uint8_t*>(capsule) + P::off::UCapsuleComponent_CapsuleHalfHeight);
+}
+
+float GetActorCharacterRadius(void* mainPlayerPawn) {
+    if (!mainPlayerPawn) return 0.f;
+    void* capsule = *reinterpret_cast<void**>(
+        reinterpret_cast<uint8_t*>(mainPlayerPawn) + P::off::ACharacter_CapsuleComponent);
+    if (!capsule) return 0.f;
+    return *reinterpret_cast<float*>(
+        reinterpret_cast<uint8_t*>(capsule) + P::off::UCapsuleComponent_CapsuleRadius);
 }
 
 

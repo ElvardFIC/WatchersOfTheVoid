@@ -32,13 +32,14 @@ bool WriteField(void* object, const wchar_t* field, void* actor, void* component
 bool WriteFieldWhile(void* object,const wchar_t* field,void* actor,void* component,
                      const FVector& location,const std::function<bool()>& current);
 
-// What an FHitResult holds, as the game reads it through BreakHitResult. `actor` and `component` are the
-// hit's weak pointers resolved to the live object: null when the pointer is empty, stale (its slot recycled)
+// What an FHitResult holds, as the game reads it through BreakHitResult. `actor`, `component` and `physMaterial` are
+// the hit's weak pointers resolved to the live object: null when the pointer is empty, stale (its slot recycled)
 // or its object is pending kill. `location` and `normal` are the impact point and impact normal.
 struct Hit {
     bool    blocking = false;
     void*   actor = nullptr;
     void*   component = nullptr;
+    void*   physMaterial = nullptr;
     FVector location{};
     FVector normal{};
 };

@@ -314,7 +314,7 @@ void OnIntent(coop::net::Session& s, const coop::net::DeskPingVerdictPayload& p,
     const bool rolls = g_live[kWatchVerdict] && (insta || g_live[kWatchProcess]);
     const bool readable = rolls && desk && DP::ReadPinging(desk, pinging);
     // A ping runs from the desk its sender holds; the cheat menu's insta-catch from anywhere, as its key has no
-    // interface gate (mainPlayer.cpp:2457-2490), on the aim of whoever holds the desk.
+    // interface gate (CXXHeaderDump/mainPlayer.cpp:2457-2490), on the aim of whoever holds the desk.
     const bool holds = coop::device_occupancy::HolderOf(L"desk") == slot;
     const bool claimed = insta || holds;
     const CP::DishAim aim = AimOf(p);

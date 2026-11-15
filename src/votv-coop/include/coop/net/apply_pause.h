@@ -9,6 +9,7 @@
 // on the net thread.
 #pragma once
 
+#include "coop/net/net_stats.h"  // NoteKindPastSpace
 #include "coop/net/protocol.h"  // ReliableKind
 
 #include <atomic>
@@ -21,6 +22,9 @@ static_assert(sizeof(ReliableKind) == 2, "ApplyPauseSet uses the complete reliab
 class ApplyPauseSet {
 public:
     // Raises or lowers `kind`'s pause; true when this call changed it. A raise is counted by Raises().
+    // Whether a kind's value has a slot in the set; Set refuses one that has not.
+    static constexpr bool InSpace(unsigned k) { return k < kReliableKindSpace; }
+
     bool Set(ReliableKind kind, bool on) {
         const unsigned k = static_cast<std::uint16_t>(kind);
         if (k >= kReliableKindCount) return false;

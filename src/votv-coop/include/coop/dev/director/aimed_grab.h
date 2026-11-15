@@ -27,7 +27,17 @@ class AimedGrab {
 public:
     AimedGrab(void* player, void* prop) { player_.Set(player); prop_.Set(prop); }
     GrabState Tick();
+    // Hold at the aim: once the trace takes the prop, Tick keeps answering Working without running the chain
+    // until Fire. A race aims both peers first and fires them at one instant.
+    void HoldAtAim() { holdAtAim_ = true; }
+    void Fire() { holdAtAim_ = false; }
+    bool Aimed() const { return aimed_; }
+    // The trace left the prop while held: aim again from the fan's first pose.
+    void Reaim() { aimed_ = false; poses_ = 0; ticks_ = 0; }
     const char* Why() const { return why_; }  // the failure, once Failed
+    // The failure was that no aim in the fan took the prop (a precondition of the grab, never reached): a drill says INVALID
+    // for it. The chain that ran and left the prop out of the hand is a failure of the grab itself.
+    bool NoAim() const { return noAim_; }
     int AimPoses() const { return poses_; }   // the fan poses tried before the trace took the prop
     // Whether each call of the grab chain ran: the prop's playerGrabbed_pre, the player's useAction, the prop's
     // playerGrabbed. All false until the aim is taken.
@@ -42,6 +52,8 @@ private:
     bool aimed_ = false;
     int grabTicks_ = 0;
     bool chainPre_ = false, chainUse_ = false, chainPost_ = false;
+    bool holdAtAim_ = false;
+    bool noAim_ = false;
     const char* why_ = "";
 };
 

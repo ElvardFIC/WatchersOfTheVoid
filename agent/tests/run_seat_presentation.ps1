@@ -25,8 +25,8 @@ try {
  }
  function Compile-Seat($fixture,$exe,$override=''){
   $extra=@();if($override){$extra+="/FI$override"}
-  if($fixture -eq 'controller'){$extra+=@('/DTEST_STATE_MAX_PEERS=32','/I','agent/tests/chair_stubs','/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/I$output" "/Fo$exe.obj" "/Fe$exe" "agent/tests/seat_${fixture}_test.cpp" /link /OPT:REF
+  if($fixture -eq 'controller'){$extra+=@('/DTEST_STATE_MAX_PEERS=32','/I',(Join-Path $PSScriptRoot 'chair_stubs'),'/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/I$output" "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/seat_${fixture}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw "Seat fixture compile failed: $fixture"}
  }
  Prepare-Extracted $view $engine

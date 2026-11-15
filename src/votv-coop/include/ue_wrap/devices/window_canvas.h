@@ -42,7 +42,7 @@ bool IsStrokeDraw(void* sourceObject);
 bool ReadStrokeCorner(void* window, float& x, float& y);
 
 // Observe the exact native draw while its Blueprint caller frame is alive.
-// Uses the audited held/thrown wash call sites and their original material;
+// Uses the verified held/thrown wash call sites and their original material;
 // at most two pure scalar queries, with incarnation checks around each call.
 bool ReadStrokeDab(void* window,Dab& out,const std::function<bool()>& current);
 

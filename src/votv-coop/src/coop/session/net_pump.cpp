@@ -31,6 +31,7 @@
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
 #include "coop/session/player_handshake.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/shelter_spot.h"     // the start point a join appears at
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_key_index.h"  // the release edge and net-side key answer
@@ -56,12 +57,14 @@
 #include "coop/items/player_inventory_sync.h"  // TakeJoinPlacement: where the join's appearance goes
 #include "coop/session/teleport_client.h"  // the checkpoint join spawn (the client pawn-Set edge)
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/world/daynightcycle.h"  // ReadSavedTime: the day that picks the start point
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -83,6 +86,27 @@ ue_wrap::CachedObjRef g_netLocalController;
 // one peer's puppet go without wiping every subsystem while another stays.
 bool g_wasConnected = false;
 std::array<bool, coop::players::kMaxPeers> g_wasConnectedBySlot{};
+// Which pieces of a slot's departure have already run for its last occupant, ahead of the roster's own transition: the
+// host's all-peers-gone branch departs every occupied slot BEFORE the session-wide reset (so each lane's OnPeerGone still
+// finds its state), and TearDownSession's loop departs every slot before the ledger clear. The ledger callback skips the
+// pieces named here and runs every other piece it owns (OnRosterOrigin always). Cleared in the callback when the slot is
+// occupied again. Game thread.
+constexpr uint8_t kPuppetGone = 1, kSubsystemsGone = 2;
+std::array<uint8_t, coop::players::kMaxPeers> g_departed{};
+
+// A slot's occupant leaves, in the order of every ordinary departure: its puppet (with the line that says so), then the
+// per-slot subsystem fan-out; each piece is skipped when `done` says it ran, and is recorded in it as it runs.
+void DepartSlot_(coop::net::Session& s, int slot, uint16_t playerNo, uint8_t& done) {
+    if (!(done & kPuppetGone)) {
+        if (coop::puppet_drive::DestroySlot(slot))
+            UE_LOGI("net: peer slot %d (#%u) left -- puppet destroyed", slot, static_cast<unsigned>(playerNo));
+        done |= kPuppetGone;
+    }
+    if (!(done & kSubsystemsGone)) {
+        coop::subsystems::DisconnectSlot(s, slot);
+        done |= kSubsystemsGone;
+    }
+}
 
 // The Session being ticked, set at Tick entry and cleared at exit. The ledger's teardown subscriber
 // carries only rows, and every site that can fire a transition runs inside a tick; a transition
@@ -97,6 +121,21 @@ uint64_t g_tickSerial = 0;
 // the deferred disconnect cleanup, leaving orphan puppets and mirrors in the dying world).
 // OnSessionStart resets it.
 bool g_localDeathHandled = false;
+
+// The last day number a world still counts as a fresh game, whose joiner appears at the KPP gate where a
+// new game's host starts; from the next day on the joiner appears beside the base's bed.
+constexpr int32_t kFreshGameLastDay = 2;
+
+// The start-point placement a client's body is owed (JoinPlacement::StartPoint). The spot is the KPP gate
+// in a fresh game (day <= kFreshGameLastDay) and beside the base's bed after, and the bed is one of the
+// save's props: at a join's first appearance the load has not
+// spawned it yet (measured on the rig: shelter_spot logs "no bed in the world" there). So the appearance only
+// owes the placement, and it is paid on the first tick the body stands in the world this connection
+// announced ready (IsInAnnouncedWorld: the gate that waits for the load to quiesce, false while a world
+// change's re-announce is owed, so a swapped world's body waits for that world's own announce), in the
+// same tick, before the pose stream opens: no peer sees the KPP pose the save left the body at. A later
+// body in a ready world (a respawn) is paid on its next tick. Game thread; cleared with the session and when the connection goes.
+bool g_startPointOwed = false;
 
 // The ceiling on the transparent bypass after a flee. The bypass covers the world teardown (the
 // detour otherwise stalls the 50k-actor untitled_1 teardown) and releases the moment
@@ -160,13 +199,17 @@ void FleeToMainMenu(coop::net::Session& session, const char* why, bool travel = 
 
 }  // namespace
 
-// The per-person world teardown, driven by the ledger row transition: the departed peer's puppet,
-// then the per-slot subsystem fan-out. It fires on a replacement and on a client too, where a
-// connection edge never could; every DisconnectSlot body is safe there (the host-authoritative ones
-// self-gate).
+// The per-person world teardown, driven by the ledger row transition: the departed peer's puppet, then the per-slot
+// subsystem fan-out. It fires on a replacement and on a client too, where a connection edge never could; every
+// DisconnectSlot body is safe there (the host-authoritative ones self-gate). The departure may already have run: the
+// host's all-peers-gone branch and TearDownSession depart a slot ahead of this transition and record it in g_departed,
+// and the callback then skips only the pieces recorded and still runs the rest (OnRosterOrigin always).
 void OnSlotReplaced_TearDownWorld(int slot, const coop::roster_ledger::Row& outgoing,
                                   const coop::roster_ledger::Row& incoming) {
-    if (slot <= 0) return;  // slot 0 is the host; its departure ends the session, not a slot
+    if (slot <= 0 || slot >= coop::players::kMaxPeers) return;  // slot 0 is the host; its departure ends the session, not a slot
+    // The pieces already run for the occupant leaving; an occupant arriving here starts the slot afresh.
+    uint8_t done = g_departed[slot];
+    if (incoming.occupied()) g_departed[slot] = 0;
     auto* s = g_tickSession;
     if (!s) return;         // no session context (nothing to tear down against)
     // The slot's relayed streams follow its occupancy: the departed one's late packets are refused,
@@ -174,10 +217,7 @@ void OnSlotReplaced_TearDownWorld(int slot, const coop::roster_ledger::Row& outg
     s->OnRosterOrigin(slot, outgoing.occupied(), outgoing.originContext, incoming.occupied(),
                       incoming.originContext);
     if (!outgoing.occupied()) return;
-    if (coop::puppet_drive::DestroySlot(slot))
-        UE_LOGI("net: peer slot %d (#%u) left -- puppet destroyed", slot,
-                static_cast<unsigned>(outgoing.playerNo));
-    coop::subsystems::DisconnectSlot(*s, slot);
+    DepartSlot_(*s, slot, outgoing.playerNo, done);
 }
 
 void OnSessionStart() {
@@ -185,6 +225,7 @@ void OnSessionStart() {
     g_wasConnected = false;
     g_wasConnectedBySlot.fill(false);
     g_localDeathHandled = false;
+    g_startPointOwed = false;
     g_fleeing = false;  // re-arm the one-shot flee for this new session
     coop::death_revive::OnSessionStart();          // the arm + per-death latches
     coop::player::run_end_travel::OnSessionStart();  // the run-ending seam's counters + one-shots
@@ -228,11 +269,14 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     g_wasConnected = false;
     g_wasConnectedBySlot.fill(false);
     ForgetWorldReadyAnnounce();
+    g_startPointOwed = false;  // owed against the announce just forgotten
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
         // DestroySlot is the puppet's Destroy plus UnregisterPuppet; its interleave with DisconnectSlot
         // is composed here only.
         coop::puppet_drive::DestroySlot(slot);
         coop::subsystems::DisconnectSlot(session, slot);
+        // The ledger clear below fires each row's callback, which must not run either piece a second time.
+        g_departed[slot] = kPuppetGone | kSubsystemsGone;
     }
     coop::subsystems::DisconnectAll();
     // The next session's `rig: READY hosting` is owed; the world's settle latch stays. Here and not in
@@ -407,7 +451,10 @@ void Tick(coop::net::Session& session) {
         return;
     }
 
-    if (!isConnected) ForgetWorldReadyAnnounce();  // re-announce next connection
+    if (!isConnected) {
+        ForgetWorldReadyAnnounce();  // re-announce next connection
+        g_startPointOwed = false;
+    }
 
     if (g_wasConnected && !isConnected) {
         // The aggregate disconnect (all peers gone): the OnDisconnect calls for session-wide state
@@ -440,6 +487,15 @@ void Tick(coop::net::Session& session) {
             // The host's last client left: the session lives on, so only what the peers' presence
             // held goes. A client's session ends instead, below or through the join's abort drain,
             // and TearDownSession takes all of it then.
+            // The last clients' own departure comes first. This edge means no peer is connected, so every row still
+            // occupied is leaving: the roster departs it from a reconcile that can run after this branch. Each departs
+            // here in the order of any other departure (puppet, then the per-slot fan-out), while the session-wide
+            // state those handlers read is still whole; the ledger's callback later runs the rest of its pieces and
+            // skips these (g_departed).
+            for (int slot = 1; slot < coop::players::kMaxPeers; ++slot) {
+                if (coop::roster_ledger::Occupied(slot))
+                    DepartSlot_(session, slot, coop::roster_ledger::Get(slot).playerNo, g_departed[slot]);
+            }
             const auto stats = coop::subsystems::DisconnectAll();
             UE_LOGI("net: all peers gone -- cleared %zu un-enumerated snapshot candidate(s) + %zu Init-processed entries",
                     stats.snapPending, stats.initProcessedDropped);
@@ -536,7 +592,10 @@ void Tick(coop::net::Session& session) {
         // body exists": once per world appearance, while the load screen still covers the swap. A
         // returning player appears once at the spot their profile says they were standing on (a
         // drill's join_at_host leaves that one appearance at the host's); every other body of the
-        // session, a respawn included, at the start point.
+        // session, a respawn included, at the start point: the KPP gate in a fresh game (day 0 to
+        // kFreshGameLastDay), after that the floor beside the base's bed (shelter_spot, the spot a
+        // revive wakes on; the KPP gate when no bed is found). The gate is a 770 m walk from the base.
+        // The start point is owed here and paid once the world is ready (g_startPointOwed).
         if (localNow && isConnected && !isHost) {
             namespace PIS = coop::player_inventory_sync;
             float x = 0, y = 0, z = 0, yaw = 0;
@@ -554,13 +613,31 @@ void Tick(coop::net::Session& session) {
                         "position (join_at_host)");
                 break;
             case PIS::JoinPlacement::StartPoint:
-                coop::teleport_client::ApplyLocally(
-                    {ue_wrap::profile::name::kKPPSpawnX, ue_wrap::profile::name::kKPPSpawnY,
-                     ue_wrap::profile::name::kKPPSpawnZ, 0.f, 0.f, 0.f});
-                UE_LOGI("net_pump: CLIENT spawn -> KPP start point (join/world appearance)");
+                g_startPointOwed = true;
+                UE_LOGI("net_pump: CLIENT spawn -> the start point, placed once the world is ready");
                 break;
             }
         }
+    }
+    if (g_startPointOwed && g_netLocal.Raw() && IsInAnnouncedWorld(g_netLocal.Raw())) {
+        g_startPointOwed = false;
+        int32_t hour = 0, minute = 0, day = 0;
+        const bool dayRead = ue_wrap::daynightcycle::ReadSavedTime(hour, minute, day);
+        const bool freshGame = dayRead && day <= kFreshGameLastDay;
+        coop::shelter_spot::Target t;
+        if (freshGame) {
+            t = {coop::shelter_spot::Kind::KppFallback, P::name::kKPPSpawnX, P::name::kKPPSpawnY,
+                 P::name::kKPPSpawnZ};
+        } else {
+            t = coop::shelter_spot::Choose(g_netLocal.Raw());
+        }
+        coop::teleport_client::ApplyLocally({t.x, t.y, t.z, 0.f, 0.f, 0.f});
+        char rule[48];
+        if (freshGame)     std::snprintf(rule, sizeof rule, "the KPP gate (day %d, a fresh game)", day);
+        else if (dayRead)  std::snprintf(rule, sizeof rule, "the base bed (day %d)", day);
+        else               std::snprintf(rule, sizeof rule, "the base bed (the day unread)");
+        UE_LOGI("net_pump: CLIENT placed at the start point, %s: %s (%.0f, %.0f, %.0f)",
+                rule, coop::shelter_spot::KindName(t.kind), t.x, t.y, t.z);
     }
     // The !g_localDeathHandled gate: once the death is handled every local send stops, or the
     // ragdoll sender would keep reading the dead player's pelvis ~100 times a second on the way to

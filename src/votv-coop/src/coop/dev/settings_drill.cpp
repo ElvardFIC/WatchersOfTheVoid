@@ -89,7 +89,7 @@ constexpr const char* kResetReply = "voice.distance_cm is back to 4800.";
 // The respell between the set and the reset: the same value in another spelling, which the
 // command's reply echoes as typed and which announces nothing. The red arm respells to a value
 // that really changes, so the client announces it. Source's string path would call back on this
-// respell (convar.cpp:845); ours compares the resolved value.
+// respell (reference/source-sdk-2013/src/tier1/convar.cpp:845); ours compares the resolved value.
 constexpr const char* kRespellLine = "set voice.distance_cm 6000.0";
 constexpr const char* kRespellReply = "voice.distance_cm is now 6000.0.";
 constexpr const char* kRespellRedLine = "set voice.distance_cm 6001";

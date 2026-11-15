@@ -75,8 +75,8 @@ bool WriteSaveRecordChecked(uint8_t*,const SaveRecord& record,ClassResolver reso
 }
 namespace ue_wrap::engine {
 FRotator QuatToRotator(float,float,float,float){return {};}
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){++test::beginCount;test::Fire(test::onBegin);return test::beginResult;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){++test::finishCount;test::Fire(test::onFinish);return test::finishOK;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&,uint8_t,const FVector*){++test::beginCount;test::Fire(test::onBegin);return test::beginResult;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){++test::finishCount;test::Fire(test::onFinish);return test::finishOK;}
 bool DestroyActor(void* p){++test::destroyCount;if(test::destroyOK)test::O(p).live=false;test::Fire(test::onDestroy);return test::destroyOK;}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}

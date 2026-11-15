@@ -1,6 +1,7 @@
 // coop/props/prop_act_request.h -- the client's half of a take or use of a shared prop: a watch on each verb cancels
-// a client's call on a shared prop and asks the host (a use row asks only for a call the client's copy predicts will
-// destroy the prop), the host's reply is taken (a refusal shows a line, a grant replays the verb under a latch and
+// a client's call on a shared prop and asks the host (a food, soap, MRE or pills row asks only for a call the client's
+// copy predicts will destroy the prop; a snack row asks for every eat, sip or open: coop/props/snack_act), the host's
+// reply is taken (a refusal shows a line, a grant replays the verb under a latch and
 // sends the commit) and the destroy seam is told which destroy is the replay's. The same watches cancel the host's own
 // take or use of a prop a client has reserved. Gameplay layer (principle 7). Game thread.
 //
@@ -24,7 +25,7 @@ namespace coop::net { class Session; }
 
 namespace coop::prop_act_request {
 
-void Install(coop::net::Session* session);      // registers the six watches on a take or use, on either role
+void Install(coop::net::Session* session);      // registers the eight watches on a take or use, on either role
 void Tick();                                     // settles the watches; sends the commits the transport refused again;
                                                  // the 10 s expiry of an open record; a parked replay (dev)
 void OnDisconnect();                             // the pending record, the next id, the unsent commits, the latch, the
@@ -41,8 +42,8 @@ ReplyAction DecideReply(bool pending, uint16_t pendingId, const coop::net::PropA
 const char* ReplyActionName(ReplyAction a);   // "stale" "refused" "bad-reason" "granted"
 }  // namespace internal
 
-// The row of the verb a record replays.
-enum Row : uint8_t { kPocket = 1, kHold, kFood, kMre, kPills, kSoap };
+// The row of the verb a record replays. kUnpack is an open whose contents the host rolls: an MRE, a first aid kit.
+enum Row : uint8_t { kPocket = 1, kHold, kFood, kUnpack, kPills, kSoap, kSnack };
 
 // The pending record: the target's element id and the call's arguments, as the replay needs them.
 struct Pending {
@@ -56,7 +57,7 @@ struct Pending {
     ue_wrap::CachedObjRef hitComponent;            // the use rows and kSoap
     ue_wrap::FVector hitLocation{};
     uint8_t action = 0;
-    ue_wrap::CachedObjRef lookAt;                  // the three action rows and kSoap
+    ue_wrap::CachedObjRef lookAt;                  // the four action rows and kSoap
     ue_wrap::reflection::FName holdPropName{};     // kSoap
     bool replayHeld = false;                       // dev: HoldReplayUntilGone parked the replay of a grant
 };
@@ -75,6 +76,7 @@ void HoldCommits(bool on);           // while on, a commit is queued in send ord
                                      // sends the queue and the hold stays on until HoldCommits(false)
 void ReleaseHeldCommits();
 void HoldReplayUntilGone(bool on);   // a grant parks the replay; Tick aborts it once the target's mirror is gone
+void SetBeforeVerb(void (*fn)(void* target));   // called with the target right before the replay's verb runs; null by default
 uint32_t RefusedCount(coop::net::PropActReason reason);   // replies this client took as refused, per reason
 uint32_t HostCancels();              // the host's own takes and uses cancelled for a client's reservation
 uint32_t LateGrantsAborted();        // grants for an expired request, answered with an abort

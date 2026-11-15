@@ -248,8 +248,8 @@ void ClientOnDisconnect() {
     // The retraction runs only while the entries' world is the running one (EndEntry's own test); on a
     // quit-to-menu the world is going and nothing is called into it. Only the relay's own registrations are retracted:
     // diverges from MTA's wholesale teardown, ~CClientGame (reference/mtasa-blue/Client/mods/deathmatch/logic/
-    // CClientGame.cpp:417), which deletes the client manager at :559 and the element managers under it
-    // (CClientManager.cpp:66), for the client keeps its own world and its peer-local events.
+    // reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:417), which deletes the client manager at :559 and the element managers under it
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientManager.cpp:66), for the client keeps its own world and its peer-local events.
     std::vector<EL::ElementId> ids;
     ids.reserve(g_entries.size());
     for (const auto& kv : g_entries) ids.push_back(kv.first);

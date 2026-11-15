@@ -36,6 +36,7 @@
 #include "coop/props/prop_act_host.h"  // CLIENT->HOST a take or use of a shared prop, and its commit
 #include "coop/props/prop_act_request.h"  // HOST->CLIENT its answer
 #include "coop/props/prop_drop_intent.h"  // CLIENT->HOST client-placed keyed prop
+#include "coop/props/prop_tool_flags.h"  // CLIENT->HOST a press of the prop-properties tool; HOST->CLIENT its answer
 #include "coop/props/remover_request.h"  // CLIENT->HOST the tool gun's remover; HOST->CLIENT its answer
 #include "coop/items/broom_stroke.h"
 #include "coop/world/explosion_request.h"  // CLIENT->HOST a shot and an explosion request, strictly checked and queued
@@ -220,28 +221,6 @@ bool HandleIntentEvent(net::Session& session,
             break;
         }
         coop::kerfur_convert_host::OnConvertRequest(p, senderSlot);
-        break;
-    }
-    case net::ReliableKind::KerfurCommand: {
-        // client->host kerfur radial-menu command (follow/idle/patrol/...). Host-authoritative; the
-        // handler waits for the sender's body, validates the element + kerfur class + the BP guards,
-        // then runs the verb with the kerfur serving the REQUESTING player (senderSlot).
-        // coop::kerfur_command.
-        if (session.role() != net::Role::Host) {
-            UE_LOGW("event_feed: KerfurCommand received on a client -- dropping");
-            break;
-        }
-        const uint8_t senderSlot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        if (msg.payloadLen < sizeof(net::KerfurCommandPayload)) {
-            coop::kerfur_command::NoteRefused(senderSlot, "payload too short");
-            break;
-        }
-        net::KerfurCommandPayload p{};
-        std::memcpy(&p, msg.payload, sizeof(p));
-        coop::kerfur_command::OnCommandRequest(p, senderSlot);
         break;
     }
     case net::ReliableKind::GrabRefused: {
@@ -645,8 +624,8 @@ bool HandleIntentEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::DeskVerb: {
-        // CLIENT->HOST a press on the desk's save family its gate refused; HOST->that CLIENT the verdict
-        // and the press's own effects for the presser's machine. The identity, the reach and the rate live
+        // CLIENT->HOST a press on the desk's save family its gate refused; HOST->that CLIENT the verdict and a
+        // decode's profile stat. The identity, the reach and the rate live
         // in the module, the format here. coop::desk_verb_intent.
         if (msg.payloadLen < sizeof(net::DeskVerbPayload)) {
             UE_LOGW("event_feed: DeskVerb payload too short (%zu < %zu)",

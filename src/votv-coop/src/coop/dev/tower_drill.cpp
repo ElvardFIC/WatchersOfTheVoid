@@ -33,6 +33,8 @@ Arm ArmOf() {
         if (v == "radioresetred") return Arm::RadioResetRed;
         if (v == "radiofuse") return Arm::RadioFuse;
         if (v == "radiofusered") return Arm::RadioFuseRed;
+        if (v == "radiofuseforge") return Arm::RadioFuseForge;
+        if (v == "radiofusesametick") return Arm::RadioFuseSameTick;
         return Arm::Off;
     }();
     return a;

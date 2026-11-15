@@ -6,7 +6,7 @@
 // on a world change (net_pump::MaybeRequestReAnnounce), unobserved in 1825 archived sessions and at most
 // once when it fires, so a cap of two is pure margin; a flood of re-announces at ANY pace -- the
 // refill-matching pace a rate bound would miss included -- is ended. MTA disconnects a repeated
-// initial-data-stream request (CRPCFunctions.cpp:110-124, InitialDataStream, IsJoined-guarded, banning
+// initial-data-stream request (reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:110-124, InitialDataStream, IsJoined-guarded, banning
 // nothing); our ClientWorldReady is that request's analogue (net_pump.cpp:453-457). The burst of two is
 // the one divergence from MTA's kick-the-first-repeat, a margin for the re-announce MTA has no counterpart
 // of. There is no deferred or owed replay: a capped miss is ended, not queued.

@@ -6,7 +6,10 @@
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/interactables/atv_drill_events.h"
+#include "coop/interactables/atv_host_sync.h"
 #include "coop/interactables/atv_sync_internal.h"
+#include "coop/net/wire_key_util.h"
 #include "coop/net/protocol.h"
 
 #include "ue_wrap/core/log.h"
@@ -16,6 +19,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace coop::atv_condition_sync {
 
@@ -27,7 +31,7 @@ namespace {
 // idle gate cannot drift from the struct silently.
 constexpr size_t kCondOff = offsetof(coop::net::AtvStatePayload, tiresDurability);
 constexpr size_t kCondBytes = sizeof(coop::net::AtvStatePayload) - kCondOff;
-static_assert(kCondBytes == 64, "the condition block must be 64 bytes (and AtvEntry::lastSentCond with it)");
+static_assert(kCondBytes == 68, "the condition block must be 68 bytes (and AtvEntry::lastSentCond with it)");
 
 // Change-edge quanta -- purely visual, not correctness bounds. Dirt domain is
 // 0..1 (a 1% step is invisible in the shader lerp); health domain 0..100 drives smoke
@@ -71,6 +75,59 @@ void PayloadToSnapshot(const coop::net::AtvStatePayload& p, AC::Snapshot& s) {
     s.mask = p.tiresMask;
     s.hasSpare = p.hasSpare != 0;
     s.spareFixes = p.spareFixes;
+}
+
+// Fuel and health are the host's copy's (atv_host_sync.h). HOST taking a client syncer's block: the lower of the host's
+// copy and the block, and only when the block acks the ATV's current state sequence, so a block sent before the syncer
+// applied the host's last state cannot undo it; any other block leaves both as the host's copy has them. CLIENT taking a
+// host block: the block's values unless the open-request gate of the ATV is shut, and the block's sequence is then the
+// newest this client applied. Returns whether the host's copy lost fuel or health to the block.
+// The gate is MTA's sync time context (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1281-1305, bumped on a server-side write as in FixVehicle,
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:5585-5589, a stale report dropped as in reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:285). It differs on two
+// counts: MTA's driver owns the vehicle's health (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CVehiclePuresyncPacket.cpp:151-171) where here the host owns the absolute,
+// since a fuel can or a toolbox is an act on an item judged by the host; and the context here is a u32 in serial arithmetic
+// that drops only the vitals of a block, not the whole packet.
+bool ApplyVitalsRule(void* actor, const std::wstring& key, bool fromHost, const coop::net::AtvStatePayload& p,
+                     AC::Snapshot& in) {
+    namespace H = coop::atv_host_sync;
+    const float curFuel = ue_wrap::atv::GetFuel(actor), curHealth = ue_wrap::atv::GetHealth(actor);
+    const float blockFuel = in.fuel;
+    namespace DE = coop::atv_drill_events;
+    if (fromHost) {
+        if (H::VitalsGated(key)) {
+            in.fuel = curFuel;
+            in.health = curHealth;
+        } else {
+            H::NoteAppliedStateSeq(key, p.ackSeq);
+        }
+        DE::Note(DE::kBlock, 1, 0, 0, curFuel, in.fuel, blockFuel);
+        return false;
+    }
+    // Red atv_ack_off: a block's vitals are taken whatever state it acknowledges.
+    static const bool s_ackOff = coop::config::ResolveEnum(::coop::config_registry::rows::atv_gate_drill) == "atv_ack_off";
+    const bool acked = s_ackOff || p.ackSeq == H::CurrentStateSeq(key);
+    if (acked) {
+        in.fuel = std::fmin(curFuel, in.fuel);
+        in.health = std::fmin(curHealth, in.health);
+    } else {
+        in.fuel = curFuel;
+        in.health = curHealth;
+    }
+    DE::Note(DE::kBlock, 0, acked ? 1 : 0, 0, curFuel, in.fuel, blockFuel);
+    return in.fuel < curFuel || in.health < curHealth;
+}
+
+// HOST, after a client's block lowered the copy's fuel or health: the game's own tick calls checkIfRunout for a copy that
+// burns, and a copy nobody drives burns nothing. Only a fuel or health at 0 can change `empty` or `brokenn`, so the call runs
+// only there, and those marks, which are the host's state and which no block carries, are published at that edge, and then
+// only: a state goes out when the marks changed, not for every burn.
+void RunoutEdge(void* actor, const std::wstring& key) {
+    namespace H = coop::atv_host_sync;
+    if (ue_wrap::atv::GetFuel(actor) > 0.f && ue_wrap::atv::GetHealth(actor) > 0.f) return;
+    H::Vitals before;
+    const bool read = H::ReadVitals(actor, before);
+    ue_wrap::atv::CheckIfRunout(actor);
+    if (read) H::PublishIfChanged(key, actor, before);
 }
 
 bool DirtGroupChanged(const AC::Snapshot& in, const AC::Snapshot& expressed) {
@@ -195,6 +252,7 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
     if (!AC::Resolved() && !AC::Resolve()) return;  // fill already warned once
     void* actor = e.actor;
     if (!actor) return;
+    const std::wstring key = coop::net::StringFromWireKey(p.key);
 
     // Seed the last-expressed baseline FROM THE ACTOR: first apply for this
     // entry, or the entry repointed to a new actor after an index rebuild. A save-loaded
@@ -212,6 +270,7 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
                         "applies until it reads (no verbs will fire)"); }
             AC::Snapshot in;
             PayloadToSnapshot(p, in);
+            const bool fell = ApplyVitalsRule(actor, key, fromHost, p, in);
             AC::WriteAccumulators(actor, in);
             NoteAuthorWrite(e, actor);
             g_applied.fetch_add(1, std::memory_order_relaxed);

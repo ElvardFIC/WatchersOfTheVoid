@@ -70,6 +70,10 @@ std::string EnforceableAddress(const coop::net::Session& s, int slot, uint32_t g
 }
 
 ModResult KickPlayer(const PlayerToken& token, const char* reason) {
+    return KickPlayerWithReason(token, reason, coop::net::EndReason::KickedByHost);
+}
+
+ModResult KickPlayerWithReason(const PlayerToken& token, const char* reason, coop::net::EndReason code) {
     UE_ASSERT_GAME_THREAD("moderation::KickPlayer");
     auto* s = HostSession("kick");
     if (!s) return ModResult::NoSession;
@@ -82,8 +86,7 @@ ModResult KickPlayer(const PlayerToken& token, const char* reason) {
         return ModResult::Gone;
     }
     const std::string why = ReasonOr(reason, kKickDefaultReason);
-    if (!s->KickWithToken(token.slot, token.generation, coop::net::EndReason::KickedByHost,
-                          why.c_str())) {
+    if (!s->KickWithToken(token.slot, token.generation, code, why.c_str())) {
         UE_LOGW("moderation: kick of #%u (slot %d) did nothing -- they are already "
                 "gone, or someone else now holds that slot",
                 static_cast<unsigned>(token.playerNo), token.slot);
@@ -135,7 +138,7 @@ ModResult BanPlayer(const PlayerToken& token, const char* reason, bool byAddress
     // Accepted window: the banned player's re-proof over a second connection, whose ban check
     // ran on the net thread just before the Add above, is seated for this session. MTA has
     // none: its join packets are queued by the sync thread and handled on the main thread
-    // that also runs its bans (CNetBuffer.cpp:1289-1294, :932-952). Ours proves on the net
+    // that also runs its bans (reference/mtasa-blue/Server/mods/deathmatch/logic/net/CNetBuffer.cpp:1289-1294, :932-952). Ours proves on the net
     // thread and runs the verbs on the game thread.
     if (!s->KickWithToken(token.slot, token.generation, coop::net::EndReason::BannedByHost,
                           why.c_str()))
@@ -166,13 +169,13 @@ ModResult BanOffline(const char* id, const char* reason, bool byAddress) {
     UE_LOGI("moderation: offline-banned '%s' (id %.8s..., address %s)", known ? e.nick : "",
             guid.c_str(), address.empty() ? "not enforced" : ue_wrap::log::Addr(address).c_str());
     // A matching player still seated goes too. MTA's AddBan also kicks every seated player
-    // matching the ban's IP (CStaticFunctionDefinitions.cpp:12157-12170); ours kicks the banned
+    // matching the ban's IP (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:12157-12170); ours kicks the banned
     // id only, so bystanders at a shared address keep their session and meet the refusal at
     // their next proof (the named cost of an address key, undone by Unban).
     // Accepted window, both conditions at once: a joiner whose ban check ran on the net
     // thread just before the Add above AND whose id is published just after this scan is
     // seated for this session. MTA has none: its join packets are queued by the sync thread
-    // and handled on the main thread that also runs its bans (CNetBuffer.cpp:1289-1294,
+    // and handled on the main thread that also runs its bans (reference/mtasa-blue/Server/mods/deathmatch/logic/net/CNetBuffer.cpp:1289-1294,
     // :932-952). Ours proves on the net thread and runs the verbs on the game thread.
     for (int k = 1; k < static_cast<int>(coop::players::kMaxPeers); ++k) {
         const uint32_t gen = s->peerGenerationForSlot(k);

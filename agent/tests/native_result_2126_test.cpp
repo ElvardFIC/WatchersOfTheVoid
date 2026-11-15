@@ -1,6 +1,7 @@
 // A guard page after a one-byte return catches the real thunk's old 8-byte read.
 #include "../../src/votv-coop/src/ue_wrap/core/ufunction_hook.cpp"
 #include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1); } } while(0)

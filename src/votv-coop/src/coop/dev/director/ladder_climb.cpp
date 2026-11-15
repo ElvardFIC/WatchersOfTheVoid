@@ -1,12 +1,12 @@
 // coop/dev/director/ladder_climb.cpp -- see coop/dev/director/ladder_climb.h.
 //
 // The BP facts (bp_cpp ladder_C, mainPlayer_C; line numbers are the pseudo-C++'s):
-// actionOptionIndex (ladder.cpp:535) takes the closest point of the segment a..b_off to the player, refuses
+// actionOptionIndex (CXXHeaderDump/ladder.cpp:535) takes the closest point of the segment a..b_off to the player, refuses
 // ("Cannot get on") when a capsule there overlaps something or the player is over 125 uu from it, else calls
-// mainPlayer.useLadder(this) (:1722-1760); it does not read its `action`. useLadder (mainPlayer.cpp:14483) sets the
+// mainPlayer.useLadder(this) (:1722-1760); it does not read its `action`. useLadder (CXXHeaderDump/mainPlayer.cpp:14483) sets the
 // player's `controlObject` to the ladder, and clears it on release. The player's AnyKey press and release events
-// (mainPlayer.cpp:11838, :11848; bodies :3476, :3481 into :3094, :3054) hand the key to
-// controlObject->intComs_anyKey, which keeps "forward" and "back" in the ladder's key list (ladder.cpp:523); the
+// (CXXHeaderDump/mainPlayer.cpp:11838, :11848; bodies :3476, :3481 into :3094, :3054) hand the key to
+// controlObject->intComs_anyKey, which keeps "forward" and "back" in the ladder's key list (CXXHeaderDump/ladder.cpp:523); the
 // ladder's tick moves the player toward the top while the last key held is "forward" and calls drop() at the top.
 
 #include "coop/dev/director/ladder_climb.h"
@@ -79,7 +79,7 @@ float SegmentDist(const FVector& p, const FVector& a, const FVector& b) {
 }
 
 // The key the game's settings bind to `bindName` ("forward", "jump"): lib_C::getKeybindFromName, the call the ladder
-// compares its keys against (ladder.cpp:483, :490). Its FKey is read as its name.
+// compares its keys against (CXXHeaderDump/ladder.cpp:483, :490). Its FKey is read as its name.
 bool KeyBind(void* player, const wchar_t* bindName, R::FName& out) {
     void* libCls = R::FindClass(L"lib_C");
     void* lib = R::FindClassDefaultObject(L"lib_C");
@@ -130,7 +130,7 @@ void Climb::Finish(void* player, void* ladder, const char* why, bool drop) {
         // The key goes up as a person's does; on a ladder still held, that takes "forward" off the ladder's list.
         if (!PressKeyEvent(player, g_release, forward_)) UE_LOGW("director/ladder: the release of forward did not run");
         // A climb that ran out is let go as a person lets go: the jump key, which the ladder answers with drop()
-        // (ladder.cpp:483-:422), so the player is not left hanging where the climb stopped.
+        // (CXXHeaderDump/ladder.cpp:483-:422), so the player is not left hanging where the climb stopped.
         if (drop) {
             R::FName jump{};
             if (!KeyBind(player, L"jump", jump) || !PressKeyEvent(player, g_press, jump))

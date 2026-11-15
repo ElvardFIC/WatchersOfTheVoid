@@ -23,10 +23,11 @@ namespace coop::kerfur_menu_input {
 // Idempotent: caches the session (EVERY call -- reconnect re-caches) and registers the
 // InpActEvt_use PRE observer once mainPlayer_C is loaded. Call from subsystems::Install
 // (world-gated: the observer needs mainPlayer_C, and the radial is only used in-world).
-void Install(coop::net::Session* session);
 
 // Net disconnect: drop the cached session so a stray late observer fire no-ops. The observer
 // registration itself stays for process life (the cb is idempotently re-armed on reconnect).
-void OnDisconnect();
 
+
+void Install(coop::net::Session* session);
+void OnDisconnect();
 }  // namespace coop::kerfur_menu_input

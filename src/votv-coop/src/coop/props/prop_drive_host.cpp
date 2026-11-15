@@ -348,7 +348,7 @@ size_t PublishAdmitted(coop::net::Session& s, const Receipt& receipt) {
     pp.vel[0] = d.admitVel.X; pp.vel[1] = d.admitVel.Y; pp.vel[2] = d.admitVel.Z;
     pp.sendTimeMs = d.admitSendMs;
     // A broadcast, the syncer included: MTA relays the accepted sync to every joined player but its source
-    // (CUnoccupiedVehicleSync.cpp:472). The pose batch is one shared datagram per tick, so the source is not left out
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:472). The pose batch is one shared datagram per tick, so the source is not left out
     // here; its client skips the echo (prop_syncer::SkipsHostPose). The End is sent to the others alone.
     if (!Unheld(receipt)) return 0;
     s.PublishPropDrivePose(pp);

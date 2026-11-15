@@ -32,6 +32,6 @@ bool InvokeMainPlayerIgnite(void* player, float fuel);
 
 // mainPlayer_C::extinguishFire() on `player`: the game's own end of a fire (the timer, the burning list, isBurning).
 // False as for InvokeMainPlayerIgnite. Game thread.
-bool InvokeMainPlayerExtinguishFire(void* player);
+
 
 }  // namespace ue_wrap::engine

@@ -75,6 +75,34 @@ void OverrideClientSyncer(void* actor,const char*) { CHECK(actor==&test::actor);
 }
 namespace coop::gravity_motion {void* Target(){return test::localHold==2?&test::actor:nullptr;}}
 namespace coop::hand_item {bool IsHandAxisActor(void*){return test::handAxis;}}
+namespace ue_wrap::reflection {
+const FName& NameOf(void*){static const FName name{};return name;}
+void* OuterOf(void*){return nullptr;}
+void* FindClass(const wchar_t*){return nullptr;}
+std::vector<void*> FindObjectsByClass(const wchar_t*){return {};}
+std::vector<ObjectRef> ChildObjectsOf(void*){return {};}
+std::wstring ClassNameOf(void*){return {};}
+std::wstring ToString(const FName&){return {};}
+}
+namespace coop::element {
+Registry::Registry()=default;
+Registry::~Registry()=default;
+Registry& Registry::Get(){static Registry registry;return registry;}
+ElementId Registry::EidForActor(void*)const{return kInvalidId;}
+bool Registry::ReadIdentity(ElementId,IdentitySnapshot&)const{return false;}
+}
+namespace coop::prop_lifecycle {void DestroyLocalProp(void*,bool){}}
+namespace ue_wrap::actor_end_play {
+bool IsInstalled(){return false;}
+bool AddSink(Sink){return false;}
+}
+namespace ue_wrap::engine {
+bool AttachActorToComponentKeepWorld(void*,void*){return false;}
+bool DetachActorFromParent(void*){return false;}
+bool GetAttachParentActor(void*,void*& parent){parent=nullptr;return false;}
+bool GetAttachParentComponent(void*,void*& parent){parent=nullptr;return false;}
+bool IsActorRootSimulatingPhysics(void*){return false;}
+}
 int main(){using namespace test;
  coop::net::Session session;S::g_session=&session;
  auto& cls=S::g_compOffsets[&actor];cls.cls.Set(&actor);cls.off=-1;

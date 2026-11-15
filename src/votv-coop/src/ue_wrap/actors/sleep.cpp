@@ -8,6 +8,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
 
@@ -26,6 +27,10 @@ int32_t g_offIsSleep = -1;     // mainGamemode.isSleep
 int32_t g_offDreamProb = -1;   // mainGamemode.dreamProbability (-1 = the SP sentinel)
 int32_t g_offBed = -1;         // mainGamemode.bed (Abed_C*)
 int32_t g_offOrigPawn = -1;    // mainGamemode.origPawn (APawn*)
+int32_t g_offDreaming = -1;    // mainGamemode.dreaming
+int32_t g_offNightmaresOn = -1;  // mainGamemode.nightmaresEnabled (the player's setting)
+void* g_wakeupFn = nullptr;    // gamemode.wakeup()
+void* g_createDreamFn = nullptr;  // gamemode.createDream(customDream)
 void* g_sleepFn = nullptr;     // gamemode.sleep(bed, dropItem, ignoreRagdoll)
 
 void* g_gsCdo = nullptr;            // GameplayStatics CDO
@@ -72,6 +77,10 @@ void ResolvePass() {
     if (g_offBed < 0) g_offBed = R::FindPropertyOffset(g_gmCls, L"bed");
     if (g_offOrigPawn < 0) g_offOrigPawn = R::FindPropertyOffset(g_gmCls, L"origPawn");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
+    if (g_offDreaming < 0) g_offDreaming = R::FindPropertyOffset(g_gmCls, L"dreaming");
+    if (g_offNightmaresOn < 0) g_offNightmaresOn = R::FindPropertyOffset(g_gmCls, L"nightmaresEnabled");
+    if (!g_wakeupFn) g_wakeupFn = R::FindFunction(g_gmCls, L"wakeup");
+    if (!g_createDreamFn) g_createDreamFn = R::FindFunction(g_gmCls, L"createDream");
 
     if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
     if (g_gsCdo) {
@@ -90,7 +99,8 @@ void ResolvePass() {
                 g_sleepFn ? "yes" : "NO", g_setDilationFn ? "yes" : "NO",
                 g_getDilationFn ? "yes" : "NO");
     }
-    g_allResolved = core && g_offOrigPawn >= 0 && g_sleepFn && g_getDilationFn;
+    g_allResolved = core && g_offOrigPawn >= 0 && g_sleepFn && g_getDilationFn && g_offDreaming >= 0 &&
+                    g_offNightmaresOn >= 0 && g_wakeupFn && g_createDreamFn;
 }
 
 }  // namespace
@@ -119,6 +129,47 @@ void* OrigPawn() {
     if (!gm || g_offOrigPawn < 0) return nullptr;
     void* pawn = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offOrigPawn);
     return (pawn && R::IsLive(pawn)) ? pawn : nullptr;
+}
+
+bool ReadNightmareChance(float& out) {
+    void* gm = world_singleton::Gamemode();
+    if (!gm || g_offNightmaresOn < 0 || g_offBed < 0) return false;
+    if (*(reinterpret_cast<uint8_t*>(gm) + g_offNightmaresOn) == 0) { out = 0.f; return true; }
+    // What the game's bedSleepProb() answers with no dreamProbability override: the bed's own dreamProb, and 0.15 with
+    // no bed (the literal at CXXHeaderDump/mainGamemode.cpp:15277). The function is not called: it prints its figure on screen.
+    out = 0.15f;
+    void* bed = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offBed);
+    if (!bed || !R::IsLive(bed)) return true;
+    // The bed's own field: a bed subclass is a new class, so the offset is asked of each one met, and a class reborn at
+    // the same address in another world is asked again.
+    static void* s_bedCls = nullptr;
+    static uint32_t s_bedWorld = 0;
+    static int32_t s_offBedProb = -1;
+    void* cls = R::ClassOf(bed);
+    const uint32_t world = world_identity::Generation();
+    if (cls != s_bedCls || world != s_bedWorld) {
+        s_bedCls = cls;
+        s_bedWorld = world;
+        s_offBedProb = R::FindPropertyOffset(cls, L"dreamProb");
+    }
+    if (s_offBedProb >= 0) out = *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(bed) + s_offBedProb);
+    return true;
+}
+
+bool IsDreaming() {
+    void* gm = world_singleton::Gamemode();
+    if (!gm || g_offDreaming < 0) return false;
+    return *(reinterpret_cast<uint8_t*>(gm) + g_offDreaming) != 0;
+}
+
+bool BeginNightmare(void* customDream) {
+    void* gm = world_singleton::Gamemode();
+    if (!gm || !g_wakeupFn || !g_createDreamFn) return false;
+    ue_wrap::ParamFrame wake(g_wakeupFn);
+    if (!wake.valid() || !ue_wrap::Call(gm, wake)) return false;
+    ue_wrap::ParamFrame dream(g_createDreamFn);
+    if (!dream.valid() || (customDream && !dream.Set<void*>(L"customDream", customDream))) return false;
+    return ue_wrap::Call(gm, dream);
 }
 
 bool SetDreamProbability(float v) {

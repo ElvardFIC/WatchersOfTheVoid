@@ -8,4 +8,6 @@ void Install(net::Session* session);
 bool OnReliable(const net::EventCuePayload& payload);
 void OnPeerLeftSlot(int slot);
 void OnDisconnect();
+struct Counts { uint32_t sent=0, received=0, played=0, clicks=0, matched=0; };
+Counts GetCounts();
 }

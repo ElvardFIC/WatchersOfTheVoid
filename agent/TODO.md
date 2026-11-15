@@ -1,6 +1,6 @@
 # TODO - implementation backlog
 
-Development target: **0.9.2164**.
+Development target: **0.9.2165**.
 Only defects and unfinished implementation belong here. Technical scope is in
 [WORK.md](WORK.md); checks, results and release evidence are in
 [TESTLOG.md](TESTLOG.md).
@@ -191,7 +191,7 @@ Remaining behavior/effect routes below and native multiplayer acceptance stay op
   clocks, owner validation, join/retry/cleanup and generation-matched hand display.
 - [ ] Accept EmoteWheel in native multiplayer, including mixed installations,
   random variants, phase/music timing, held items and body/ATV/ragdoll transitions.
-  Scope and offline boundaries: [emote-wheel.md](../docs/emote-wheel.md).
+  Scope and offline boundaries: [WORK.md](WORK.md#requested-mod-integrations).
 - [ ] VEmu 1.1.0: define shared console/cartridge/AV/input ownership and emulator
   state/audio/video transport. Upstream AV output excludes SmartTV; an explicit
   adapter is required to support that combination.

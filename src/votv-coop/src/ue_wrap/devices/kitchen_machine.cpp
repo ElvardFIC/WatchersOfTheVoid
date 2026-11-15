@@ -2,6 +2,7 @@
 #include "ue_wrap/devices/grill.h"
 #include "ue_wrap/actors/swinger.h"
 #include "ue_wrap/actors/prop.h"
+#include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/component_calls.h"
@@ -120,7 +121,13 @@ void* DoorParent(void* child) {
     // Open/Close also occur on non-actor objects; never read Actor fields there.
     if (!child || !swinger::EnsureResolved() || !swinger::IsSwinger(child)) return nullptr;
     void* a = engine::ParentActorOf(child);
-    return a && Door(a)==child ? a : nullptr;
+    if (a && Door(a)==child) return a;
+    // Cremator hatches are held in the cremator's reflected door field but do not
+    // report the cremator through ParentActorOf. Match the exact live child.
+    for (void* cremator : ue_wrap::cremator::Instances()) {
+        if (cremator && R::IsLive(cremator) && Door(cremator)==child) return cremator;
+    }
+    return nullptr;
 }
 bool OwnsDoor(void* actor) {
     // Child actors can have locally minted keys. Only the parent's identity is shared.

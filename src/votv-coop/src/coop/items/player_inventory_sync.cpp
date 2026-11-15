@@ -99,6 +99,13 @@ bool JoinStaysAtHost() {
     static const bool s = coop::config::ResolveFlag(::coop::config_registry::rows::join_at_host);
     return s;
 }
+// The apply of a join's inventory. The equipment drill's red (equip_blank_zeroed) then writes the empty equipment slots
+// zeroed, as the apply wrote them before it took the game's own.
+bool ApplyJoinInventory(void* saveSlot, const ue_wrap::inventory::PlayerInventory& inv) {
+    static const bool zeroed = coop::config::ResolveFlag(::coop::config_registry::rows::equip_blank_zeroed);
+    return ue_wrap::inventory::ApplyToSaveObject(saveSlot, inv) &&
+           (!zeroed || ue_wrap::inventory::ZeroEmptyEquipment(saveSlot));
+}
 std::atomic<bool> g_hasPendingApply{false};
 // Client: this session's world was built from a host profile. The stream to the host is gated on
 // it, because a world that came up without one carries nothing of the player's, and streaming that
@@ -331,7 +338,7 @@ void OnWorldSaveWritten(void* saveObject, const wchar_t* slotName) {
 void Install(coop::net::Session* session) {
     if (g_session.load(std::memory_order_acquire) != session) OnDisconnect();
     g_session.store(session, std::memory_order_release);
-    ue_wrap::save_to_slot_hook::SetWritten(&OnWorldSaveWritten);
+    ue_wrap::save_to_slot_hook::AddWritten(&OnWorldSaveWritten);
     ue_wrap::save_capture::SetWorldGatherHook(&OnWorldGather);
     // Arm the engine's pre-materialise apply point (a no-op until a client join has a pending
     // blob). Re-arming across stop and start is harmless.

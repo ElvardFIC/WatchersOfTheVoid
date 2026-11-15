@@ -412,6 +412,12 @@ bool IsAllowlistedClass(void* cls) {
     return IsClassOrDerivedFromAnyAllowlisted(cls);
 }
 
+const ue_wrap::class_resolve::Family& NpcFamily() {
+    static const ue_wrap::class_resolve::Family family{L"NPC", ue_wrap::profile::name::kNpcAllowlist,
+                                                       ue_wrap::profile::name::kNpcAllowlistSize, &IsAllowlistedClass};
+    return family;
+}
+
 void ClearIncomingNpcSpawn() {
     g_incomingNpcSpawnClass.store(nullptr, std::memory_order_release);
 }
@@ -423,12 +429,6 @@ coop::element::ElementId GetNpcIdForActor(void* actor) {
     return it == g_actorToNpcId.end() ? coop::element::kInvalidId : it->second;
 }
 
-void SyncDestroyedNpcActor(void* actor) {
-    // The K2_DestroyActor PRE body, for destroys the PRE cannot see (a BP-internal by-name destroy,
-    // kerfurOmega.dropKerfurProp). `actor` is a map key only, never dereferenced, so a PendingKill
-    // or purged pointer is safe, and a double call no-ops on the map miss.
-    NpcDestroy_PRE(actor, nullptr, nullptr);
-}
 
 void SyncDestroyedNpcByEid(coop::element::ElementId eid, void* actorKey) {
     // The pose walk's dead-actor retire (a wisp's self-despawn is an EX_VirtualFunction self-call
@@ -519,5 +519,7 @@ void MapActorToNpcId(void* actor, coop::element::ElementId eid) {
     // relay's watch; the lock is released first, since the relay reads the registry.
     coop::creature_event_relay::OnNpcEnrolled(eid, actor);
 }
+
+
 
 }  // namespace coop::npc_sync

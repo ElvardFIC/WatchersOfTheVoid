@@ -816,6 +816,11 @@ void OnPeerLeft(int slot) {
 
 void ForgetPublished(const std::wstring& key) { g_sent.erase(key); }
 
+namespace dev {
+bool StateSentFor(const std::wstring& key) { return g_sent.count(key) != 0; }
+bool StateWaiting(const std::wstring& key) { return g_pendingWorld.count(key) != 0; }
+}  // namespace dev
+
 bool PublishSpawnState(coop::net::Session& s, void* actor, int slot) {
     if (!s.connected() || s.role() != coop::net::Role::Host) return false;
     return Publish(s, actor, slot, true);

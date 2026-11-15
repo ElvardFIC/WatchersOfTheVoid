@@ -61,13 +61,13 @@ using coop::prop_drive_host::Driven;
 namespace tb = coop::net::throw_bounds;
 
 // The ATV's numbers (atv_authority.cpp): the claim pace is per sender, where MTA's is per vehicle, one push per
-// 1500 ms (CUnoccupiedVehicleSync.cpp:490); the stream bucket is the row's, its burst absorbing a syncer's send jitter.
-// MTA polices no rate on the syncer's stream (CUnoccupiedVehicleSync.cpp:263-474 has no bucket): the bucket is ours,
+// 1500 ms (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:490); the stream bucket is the row's, its burst absorbing a syncer's send jitter.
+// MTA polices no rate on the syncer's stream (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:263-474 has no bucket): the bucket is ours,
 // because rows here are sent at 40 Hz and each one reaches the host's physics and every other peer.
 constexpr IntentBudget kClaimBudget{2.f, 1.f};
 constexpr IntentBudget kStreamBudget{16.f, 40.f};
 // Twice mainPlayer.armLength, the helper adding the prop's bounds. MTA's contact radius is 30 m by default
-// (CMainConfig.cpp:1528 vehicle_contact_sync_radius): a kick is within arm's reach, and the radius there is slack for
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CMainConfig.cpp:1528 vehicle_contact_sync_radius): a kick is within arm's reach, and the radius there is slack for
 // the lag between a player's contact and the server's last position of it.
 constexpr float kReachUU = 400.f;
 constexpr uint64_t kSyncerSilenceMs = 5000;      // no admitted row this long: the host takes the prop
@@ -338,7 +338,7 @@ bool Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, uint16_t seq, uin
 // A refusal: counted, answered, and, for an out-of-reach claim on a prop nothing streams, its pose sent to the
 // refused client by a host coast (one pose, then the rested End), so the client parks onto where the prop is. One
 // coast per claim token, so the claim bucket bounds them. A Paced refusal costs the host nothing past the answer:
-// MTA's refused push does nothing at all (CUnoccupiedVehicleSync.cpp:490-507), and a flood must not buy rows.
+// MTA's refused push does nothing at all (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:490-507), and a flood must not buy rows.
 void Refuse(coop::net::Session& s, const coop::net::PropSyncClaimPayload& p, uint8_t slot, PropSyncRefusal why,
             void* actor = nullptr) {
     const Sender sender(slot);
@@ -409,7 +409,7 @@ coop::net::PropDriveEndPayload EndOf(const Driven& d, void* actor) {
 // measured from the release (its pose, and its arrival on this clock), the rest from the last PASSING row (its stamp on
 // the sender's clock, its arrival on this one); the host never compares clocks across peers, only deltas. A failing
 // row is still displayed: AdmitRow counts it on the row, and a run of them revokes the syncer's right. MTA applies
-// every row of the current syncer with no such test (CUnoccupiedVehicleSync.cpp:263-340); ours costs trust and never
+// every row of the current syncer with no such test (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:263-340); ours costs trust and never
 // display, the rule for a client's movement discontinuity (the host relays).
 bool ElectedRowPasses(const Driven& row, const coop::net::PropDriveRow& e, uint64_t nowMs) {
     const bool first = !row.passedEver;
@@ -448,7 +448,7 @@ void AdmitRow(const coop::net::PropDriveRow& input, uint8_t slot, uint64_t nowMs
     if (!current()) return;
     Driven owned = receipt.value;
     Driven* row = &owned;
-    // Strict equality, where MTA's CanUpdateSync also accepts a zero stamp from either side (CElement.cpp:1304): gen 0
+    // Strict equality, where MTA's CanUpdateSync also accepts a zero stamp from either side (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1304): gen 0
     // is "none" here, never issued, so a row that names no generation is stale by construction.
     if (e.ctx != row->gen) { Tally(g_staleGen, "row refused: stale generation", e.elementId, slot); return; }
     if (!row->streamBucket.Take(kStreamBudget, nowMs)) { Tally(g_paced, "row refused: paced", e.elementId, slot); return; }
@@ -624,7 +624,7 @@ void OnClaim(coop::net::Session& s, const coop::net::PropSyncClaimPayload& input
     const bool held = coop::prop_drive_host::InAHand(actor);
     if (!target.Current()) return;
     if (held) return Refuse(s, p, slot, PropSyncRefusal::InHand, actor);
-    // MTA tests the dimension here too (CUnoccupiedVehicleSync.cpp:492); VOTV has one level, so the reach stands in for
+    // MTA tests the dimension here too (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:492); VOTV has one level, so the reach stands in for
     // it. A body or a target the helper cannot read (a puppet that is dead, ragdolled or not yet posed) is Unknown, the
     // nearest analogue of a wrong-dimension player, and only a measured distance beyond reach is OutOfReach.
     const auto outcome = EL::IntentTarget::ForClientIntent(s, slot, kReachUU).Authorize(actor).outcome;
@@ -680,7 +680,7 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
     }
     // The release is within the thrower's reach on the host: its puppet stands where a hand can have held the prop
     // (the claim's reach, kReachUU). MTA's takeover by a client (the push) is gated on contact radius too
-    // (CUnoccupiedVehicleSync.cpp:490-505). Out of reach: the release applied as it always did, and elects nothing.
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:490-505). Out of reach: the release applied as it always did, and elects nothing.
     // A swing's caller has already judged the struck point against the held weapon's own reach from the eye
     // (coop/player/hit_judge), which a long weapon carries past this hand's reach.
     if (!reachJudged) {
@@ -693,7 +693,7 @@ bool ElectSyncer(void* actor, uint8_t slot, uint16_t throwSeq, const float relea
         }
     }
     // A per-slot cap where MTA balances (FindPlayerCloseToVehicle picks the player with the fewest syncing vehicles,
-    // CUnoccupiedVehicleSync.cpp:228-261): a thrown prop has one candidate, the thrower.
+    // reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:228-261): a thrown prop has one candidate, the thrower.
     int held = 0;
     for (const Driven& d : coop::prop_drive_host::Rows())
         if (!d.dead && d.syncer == slot && d.elected) ++held;
@@ -864,7 +864,7 @@ void EndClientRow(Driven& input, Ending why) {
     // ending of a thrown prop nothing was admitted for (but Died and Hand: the held lane streams a hand's) hand the prop to
     // the host: its copy goes on from the last passing row, or from its own state when none was, and its stream takes over
     // under a new generation. MTA re-elects a syncer whenever one is lost, so the prop is never left unsynced while it
-    // moves (CUnoccupiedVehicleSync.cpp:36-40, :143-152).
+    // moves (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:36-40, :143-152).
     const bool unadmitted = d.elected && !d.admittedEver && why != Ending::Died && why != Ending::Hand;
     const bool toHost = why == Ending::HostVerb || why == Ending::FlightBound || why == Ending::RowsUntrusted ||
                         why == Ending::GrantTimeout ||

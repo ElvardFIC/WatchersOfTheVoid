@@ -26,7 +26,7 @@ bool g_saidImageOverCap = false;
 bool g_saidImageImplausible = false;
 
 // A photo the laptop can decode as the game's own are: a PNG whose IHDR, its first chunk, is at most 2048 on a side.
-// The laptop's BytesToImage decodes whatever it is handed at its declared size (ui_laptop.cpp:3836), and the
+// The laptop's BytesToImage decodes whatever it is handed at its declared size (CXXHeaderDump/ui_laptop.cpp:3836), and the
 // photos the desk takes are renders of its download screen.
 bool PlausiblePhoto(const std::vector<uint8_t>& png) {
     static constexpr uint8_t kSig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};

@@ -31,7 +31,7 @@ std::vector<uint8_t> Serialize(const ue_wrap::signal_dynamic::Row& r);
 
 // Deserialize; false on malformed/over-cap input. A photo that is not a plausible PNG
 // (its signature, and an IHDR of at most 2048 x 2048: the laptop decodes it whole,
-// ui_laptop.cpp:3836) is left out of the row, logged, and the row kept.
+// CXXHeaderDump/ui_laptop.cpp:3836) is left out of the row, logged, and the row kept.
 bool Deserialize(const std::vector<uint8_t>& b, ue_wrap::signal_dynamic::Row& out);
 
 // The content identity: the FNV-1a 64 of the blob up to its strings' end, the image bit zeroed.

@@ -31,6 +31,8 @@ bool SetActorRotation(void*,const FRotator&){return true;}void* GetController(vo
 void SetControlRotation(void*,const FRotator&){}
 bool TryGetActorLocation(void*,FVector&){return false;}bool TryGetActorRotation(void*,FRotator&){return false;}
 }
+namespace coop::config { bool ResolveFlag(const coop::config_registry::FlagRow&){return false;} }
+namespace ue_wrap::engine { bool InvokeAddDamage(void*,void*,float,const FVector&){return false;} }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}}
 namespace ue_wrap::game_thread {void Post(Task t){t();}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}

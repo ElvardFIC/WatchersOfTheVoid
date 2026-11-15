@@ -7,13 +7,13 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$SourcePath,[string]$Name){
-  $flags=@('/nologo','/std:c++20','/EHsc','/Gy','/utf-8','/I','agent/tests/sat_console_stubs','/I','src/votv-coop/include')
+  $flags=@('/nologo','/std:c++20','/EHsc','/Gy','/utf-8','/I',(Join-Path $PSScriptRoot 'sat_console_stubs'),'/I','src/votv-coop/include')
   if($SourcePath){
    $includePath=[IO.Path]::GetFullPath($SourcePath).Replace('\','/');$header=Join-Path $output ($Name+'_source_override.h')
    [IO.File]::WriteAllText($header,('#define SAT_CONSOLE_SOURCE "'+$includePath+'"'+[Environment]::NewLine));$flags+="/FI$header"
   }
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" agent/tests/sat_console_callbacks_test.cpp /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/sat_console_callbacks_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE -ne 0){throw "Satellite console callbacks fixture compile failed: $Name"}
   return $exe
  }
@@ -24,11 +24,11 @@ try {
   & cl /nologo /std:c++20 /EHsc /utf-8 /c /I src/votv-coop/include "/Fo$output/controller_production.obj" src/votv-coop/src/coop/interactables/sat_console_sync.cpp
   if($LASTEXITCODE -ne 0){throw 'Satellite console production-header compile failed'}
  }
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" agent/tests/sat_console_input_wrapper_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" "$PSScriptRoot/sat_console_input_wrapper_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Satellite console native input wrapper fixture compile failed'}
  & "$output/wrapper.exe"
  if($LASTEXITCODE -ne 0){throw 'Satellite console native input wrapper regression failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/native_lifetime.obj" "/Fe$output/native_lifetime.exe" agent/tests/sat_console_native_lifetime_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/native_lifetime.obj" "/Fe$output/native_lifetime.exe" "$PSScriptRoot/sat_console_native_lifetime_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Console native lifetime compile failed'}
  & "$output/native_lifetime.exe"
  if($LASTEXITCODE -ne 0){throw 'Console native lifetime regression failed'}
@@ -82,7 +82,7 @@ try {
    $header=Join-Path $mutantRoot ($mutation.Name+'.h')
    [IO.File]::WriteAllText($header,('#define SAT_CONSOLE_WRAPPER_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
    $exe=Join-Path $mutantRoot ($mutation.Name+'.exe')
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/FI$header" "/Fo$mutantRoot/$($mutation.Name).obj" "/Fe$exe" agent/tests/sat_console_input_wrapper_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/FI$header" "/Fo$mutantRoot/$($mutation.Name).obj" "/Fe$exe" "$PSScriptRoot/sat_console_input_wrapper_test.cpp" /link /OPT:REF
    if($LASTEXITCODE -ne 0){throw "Wrapper fault control failed compilation: $($mutation.Name)"}
    $savedPreference=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& $exe 2>&1 | Out-String;$status=$LASTEXITCODE}finally{$ErrorActionPreference=$savedPreference}
@@ -109,7 +109,7 @@ try {
    $header=Join-Path $mutantRoot ('native_'+$control.Name+'.h')
    [IO.File]::WriteAllText($header,('#define SAT_CONSOLE_WRAPPER_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
    $exe=Join-Path $mutantRoot ('native_'+$control.Name+'.exe')
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/FI$header" "/Fo$mutantRoot/native_$($control.Name).obj" "/Fe$exe" agent/tests/sat_console_native_lifetime_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/FI$header" "/Fo$mutantRoot/native_$($control.Name).obj" "/Fe$exe" "$PSScriptRoot/sat_console_native_lifetime_test.cpp" /link /OPT:REF
    if($LASTEXITCODE -ne 0){throw "Native console control compile failed: $($control.Name)"}
    $savedPreference=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& $exe $control.Name 2>&1 | Out-String;$status=$LASTEXITCODE}finally{$ErrorActionPreference=$savedPreference}

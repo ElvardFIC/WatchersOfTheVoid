@@ -7,7 +7,7 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($name in @('hook_retrieve_2152','skin_previews_2151')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/hook_2152_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/hook_2152_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $name"}
   if($name -eq 'skin_previews_2151'){& "$output/$name.exe" (Join-Path $output ([guid]::NewGuid().ToString()))}
   else{& "$output/$name.exe"}

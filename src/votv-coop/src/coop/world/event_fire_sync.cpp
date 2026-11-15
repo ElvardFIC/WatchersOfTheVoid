@@ -715,7 +715,7 @@ void ReplayInFlightRow(const std::string& rowName) {
     // landed in the pre-world window), upgrade it in place: two entries would double-dispatch,
     // and the plain copy alone could history-skip the in-flight replay.
     for (auto& q : g_pending) {
-        if (q.kind == FireKind::RunEvent && q.name == rowName) {
+        if (q.kind == pf.kind && q.name == rowName) {
             q.activeOverride = true;
             UE_LOGI("event_fire: in-flight '%s' already queued -- upgraded to active-override",
                     rowName.c_str());

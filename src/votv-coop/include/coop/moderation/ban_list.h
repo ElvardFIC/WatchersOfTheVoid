@@ -3,7 +3,7 @@
 //
 // MTA precedent: CBanManager / CBan (reference/mtasa-blue/Server/mods/deathmatch/logic/
 // CBanManager.{h,cpp}, CBan.h): a ban's serial, IP and nick persisted to banlist.xml, matched
-// (serial, then IP) in Packet_PlayerJoinData before the player spawns (CGame.cpp:1956, :1973); the
+// (serial, then IP) in Packet_PlayerJoinData before the player spawns (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1956, :1973); the
 // nick is the admin's reference and is never matched. Our serial is the id the identity proof
 // established; our IP is the connection's own address, stored only on a direct path
 // (IsBannableAddress, moderation::EnforceableAddress).

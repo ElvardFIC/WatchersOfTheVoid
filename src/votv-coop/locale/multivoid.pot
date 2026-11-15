@@ -186,10 +186,25 @@ msgstr ""
 
 #: src/coop/comms/peer_action_feed.cpp
 #, c-format
+msgid "%1$s saved the game"
+msgstr ""
+
+#: src/coop/comms/peer_action_feed.cpp
+#, c-format
+msgid "%1$s saved the game, but the save may not have taken"
+msgstr ""
+
+#: src/coop/comms/peer_action_feed.cpp
+#, c-format
 msgid "%1$s sold it for %2$lld point (the host's price)"
 msgid_plural "%1$s sold it for %2$lld points (the host's price)"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/coop/comms/peer_action_feed.cpp
+#, c-format
+msgid "%1$s tried to save the game, but it cannot be saved during an event"
+msgstr ""
 
 #: src/coop/session/player_handshake_version.cpp
 #, c-format
@@ -342,6 +357,10 @@ msgstr ""
 
 #: include/coop/config/config_registry_rows.inc
 msgid "Allow other builds"
+msgstr ""
+
+#: include/coop/config/config_registry_rows.inc
+msgid "Allow the backrooms"
 msgstr ""
 
 #: src/ui/admin_panel.cpp src/ui/scoreboard.cpp
@@ -567,6 +586,10 @@ msgid ""
 "(default)"
 msgstr ""
 
+#: src/ui/hud.cpp
+msgid "Drop the camera or put it away to close this view."
+msgstr ""
+
 #: src/ui/config_review_panel.cpp
 msgid "Duplicate settings with different values"
 msgstr ""
@@ -657,6 +680,10 @@ msgstr ""
 msgid "Keep line %1$d: %2$s"
 msgstr ""
 
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "Kerfur commands are not available right now."
+msgstr ""
+
 #: src/ui/link_format.cpp
 msgid "LAN"
 msgstr ""
@@ -672,6 +699,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "Left the session."
+msgstr ""
+
+#: include/coop/config/config_registry_rows.inc
+msgid "Let a player's clip through the world take them to the backrooms and the game's two secret maps, each player alone. Off, the clip does nothing for anyone in the session, and a player already there stays until their visit ends."
 msgstr ""
 
 #: include/coop/config/config_registry_rows.inc
@@ -856,6 +887,10 @@ msgstr ""
 
 #: src/ui/admin_panel.cpp
 msgid "Nobody in the registry yet (players are recorded when they join)."
+msgstr ""
+
+#: src/coop/props/prop_tool_flags.cpp
+msgid "Not changeable right now"
 msgstr ""
 
 #: src/coop/props/container_act_request.cpp
@@ -1187,6 +1222,10 @@ msgstr ""
 msgid "That can't go in there."
 msgstr ""
 
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "That cannot take kerfur commands."
+msgstr ""
+
 #: src/coop/props/container_act_request.cpp
 msgid "That container is locked."
 msgstr ""
@@ -1195,7 +1234,7 @@ msgstr ""
 msgid "That container is too far away."
 msgstr ""
 
-#: src/coop/props/remover_request.cpp
+#: src/coop/props/prop_tool_flags.cpp src/coop/props/remover_request.cpp
 msgid "That is being held"
 msgstr ""
 
@@ -1205,6 +1244,18 @@ msgstr ""
 
 #: src/coop/props/prop_act_request.cpp
 msgid "That item is too far away."
+msgstr ""
+
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "That kerfur is busy with a task."
+msgstr ""
+
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "That kerfur is no longer there."
+msgstr ""
+
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "That kerfur will not take orders."
 msgstr ""
 
 #: src/coop/commands/command_sync.cpp
@@ -1287,6 +1338,10 @@ msgstr ""
 msgid "The host did not answer through the signaling server. It may be offline, or reconnecting -- try again in a minute."
 msgstr ""
 
+#: src/coop/props/prop_tool_flags.cpp
+msgid "The host does not allow the properties tool"
+msgstr ""
+
 #: src/coop/props/remover_request.cpp
 msgid "The host does not allow the remover"
 msgstr ""
@@ -1343,6 +1398,10 @@ msgstr ""
 msgid "The host was busy, and this connection was the slowest to prove itself."
 msgstr ""
 
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "The host will run that kerfur command in a moment."
+msgstr ""
+
 #: src/coop/net/end_reason.cpp
 msgid "The host's world arrived damaged and could not be used."
 msgstr ""
@@ -1357,6 +1416,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "The join failed before it started. The log has the error."
+msgstr ""
+
+#: src/coop/props/prop_tool_flags.cpp
+msgid "The properties tool cannot change that in multiplayer"
 msgstr ""
 
 #: src/coop/props/remover_request.cpp
@@ -1477,12 +1540,20 @@ msgstr ""
 msgid "Tidy up multivoid.ini"
 msgstr ""
 
+#: src/ui/hud.cpp
+msgid "To stop, look at the camera and press Alt+E. A click or E alone only pauses it."
+msgstr ""
+
 #: src/coop/props/container_act_request.cpp src/coop/props/prop_act_request.cpp
 msgid "Too many actions at once, try again."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "Too many connections from you in a short time. Try again shortly."
+msgstr ""
+
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "Too many kerfur commands at once, try again."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
@@ -1673,6 +1744,14 @@ msgstr ""
 msgid "You are banned from this server."
 msgstr ""
 
+#: src/coop/props/prop_tool_flags.cpp
+msgid "You are not holding a toolgun"
+msgstr ""
+
+#: src/coop/creatures/kerfur_command_answer.cpp
+msgid "You are too far from that kerfur."
+msgstr ""
+
 #: src/ui/game_build_dialog.cpp
 msgid "You can play anyway. This message will not show again for this game version."
 msgstr ""
@@ -1681,8 +1760,12 @@ msgstr ""
 msgid "You can't do that with this item."
 msgstr ""
 
-#: src/coop/props/remover_request.cpp
+#: src/coop/props/prop_tool_flags.cpp src/coop/props/remover_request.cpp
 msgid "You can't see that from there"
+msgstr ""
+
+#: src/coop/net/end_reason.cpp
+msgid "You were sent to the crematorium."
 msgstr ""
 
 #: src/ui/config_review_panel.cpp
@@ -1883,6 +1966,11 @@ msgstr ""
 msgid "your name"
 msgstr ""
 
+#: src/ui/scoreboard.cpp
+msgctxt "cremate"
+msgid "Send to the crematorium"
+msgstr ""
+
 #: src/ui/server_settings_pane.cpp
 msgctxt "f1"
 msgid "Apply"
@@ -1926,6 +2014,11 @@ msgstr ""
 #: src/ui/server_settings_pane.cpp
 msgctxt "f1"
 msgid "Reset"
+msgstr ""
+
+#: src/ui/admin_panel.cpp
+msgctxt "f1"
+msgid "Send to the crematorium"
 msgstr ""
 
 #: src/ui/admin_panel.cpp

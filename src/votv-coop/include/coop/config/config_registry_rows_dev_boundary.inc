@@ -26,7 +26,7 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
-    "bad_hand_family|keep_latest|chat_flood|world_latest|kerfur_flood|remover_far|remover_hidden|remover_flood|"
+    "bad_hand_family|keep_latest|chat_flood|world_latest|kerfur_flood|kerfur_forged|remover_far|remover_hidden|remover_flood|"
     "act_far|act_gone|act_wrongfamily|act_bad_commit|act_notyet|act_flood|act_flood_early|"
     "explosion_malformed|explosion_duplicate|explosion_unknown_shot|explosion_consumed|explosion_no_launcher|"
     "explosion_origin|explosion_reach|explosion_not_seated|explosion_no_explosive|explosion_hand_bound|"
@@ -77,7 +77,10 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "one tick, 120 alarm, bed and laptop-power values alternating two, then a last one; the host must apply each at "
     "its budget, still apply the last, and its laptop settle on it. kerfur_flood: a joined client sends, in one "
     "tick, 121 kerfur menu commands and 121 form conversion requests, each naming an unused host-range id; the host "
-    "must run each kind at its pace and no more than its cap, judged by its own per-sender counts. remover_far: a "
+    "must run each kind at its pace and no more than its cap, judged by its own per-sender counts. kerfur_forged: a "
+    "joined client sends five get_reports blobs, each forged one way (a record of a class that is no floppy disc, a "
+    "record past the byte cap, a stray byte after the record, a record on a command that takes none, an unknown flag "
+    "bit); the host must refuse all five before the serve, run none and build no copy. remover_far: a "
     "joined client asks the host to remove a real prop from a point 2000 uu off its camera; the host must answer "
     "OutOfSight and nothing else. remover_hidden: a joined client asks for a host prop its camera cannot see, from its "
     "real camera; the host must answer OutOfSight. remover_flood: a joined client sends, in one tick, 121 remover "
@@ -109,8 +112,19 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
 // The act drill: an honest client takes and uses shared props through the real verbs, and the host judges what it
 // answered and committed. Set on BOTH peers (the host spawns and judges, the client acts); it arms the sending side
 // only, like the rows above.
-CFG_ENUM(prop_act_drill, "prop_act_drill", "dev", "off", "off|honest|race|depart|edge", "VOTVCOOP_PROP_ACT_DRILL",
+CFG_ENUM(prop_act_drill, "prop_act_drill", "dev", "off", "off|honest|race|depart|edge|snack", "VOTVCOOP_PROP_ACT_DRILL",
     "Drill (host and clients): A3-D2a -- a client's take or use of a shared prop asks the host first. honest: one client "
     "takes and uses each family; race: two clients and the host contend for one prop (with --observer); depart: a "
-    "client leaves holding a reservation and a newcomer takes its slot (with --rejoin); edge: the windows. Lines "
-    "tagged [ACT-DRILL]; the host's PASS line ends a phase.")
+    "client leaves holding a reservation and a newcomer takes its slot (with --rejoin); edge: the windows; snack: a "
+    "client's use of world snacks (a sip, a full eater, a beer's open and sip, the host's own use cancelled for a "
+    "reservation, a client copy that ends while the host's lives, the last use of a chips, a beer and a wine, the hold "
+    "of a spilled beer). Lines tagged [ACT-DRILL]; the host's PASS line ends a phase.")
+CFG_FLAG(d2a_snacks_off, "d2a_snacks_off", "dev", false, "VOTVCOOP_D2A_SNACKS_OFF",
+    "Developer red arm of the act drill's snack phase: never set. The snack family is routed native: a client's action "
+    "4 on a world snack is not asked of the host, so the copies' uses diverge and the phase must FAIL.")
+CFG_FLAG(snack_resend_off, "snack_resend_off", "dev", false, "VOTVCOOP_SNACK_RESEND_OFF",
+    "Developer red arm of the act drill's snack phase: never set. The host does not send a requester whose snack copy "
+    "ended (while the host's lives) the snack's birth again, so the copy stays gone there and the respawn arm must FAIL.")
+CFG_FLAG(snack_wrapper_refusal_off, "snack_wrapper_refusal_off", "dev", false, "VOTVCOOP_SNACK_WRAPPER_REFUSAL_OFF",
+    "Developer red arm of the act drill's snack phase: never set. A client's replay of a snack's last use keeps the "
+    "wrapper its own script births, beside the host's, so two wrappers stand on the client and the phase must FAIL.")

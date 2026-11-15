@@ -287,9 +287,6 @@ bool CallSetMovementMode(void* localPlayer, uint8_t mode, const std::function<bo
 }
 }  // namespace
 
-bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer) {
-    return ApplyGrabToLocalPlayerWhile(wispActor, localPlayer, {});
-}
 
 bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::function<bool()>& current) {
     if (!wispActor || !localPlayer || !R::IsLive(wispActor) || !R::IsLive(localPlayer)) return false;
@@ -329,9 +326,6 @@ bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::
     return true;
 }
 
-bool ReleaseGrabOnLocalPlayer(void* localPlayer) {
-    return ReleaseGrabOnLocalPlayerWhile(localPlayer, {});
-}
 
 bool ReleaseGrabOnLocalPlayerWhile(void* localPlayer, const std::function<bool()>& current) {
     if (!localPlayer || !R::IsLive(localPlayer)) return false;
@@ -514,6 +508,16 @@ bool PlayFatalityMontage(void* wisp) {
         }
     }
     return animRef.Get() && wispRef.Get();
+}
+
+
+
+bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer) {
+    return ApplyGrabToLocalPlayerWhile(wispActor, localPlayer, {});
+}
+
+bool ReleaseGrabOnLocalPlayer(void* localPlayer) {
+    return ReleaseGrabOnLocalPlayerWhile(localPlayer, {});
 }
 
 }  // namespace ue_wrap::wisp

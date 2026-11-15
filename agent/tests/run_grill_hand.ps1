@@ -6,11 +6,11 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/" "/Fe$output/controller.exe" agent/tests/grill_hand_sync_test.cpp src/votv-coop/src/coop/net/session_serial.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/" "/Fe$output/controller.exe" "$PSScriptRoot/grill_hand_sync_test.cpp" src/votv-coop/src/coop/net/session_serial.cpp /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Grill hand controller compile failed'}
     & "$output/controller.exe"
     if($LASTEXITCODE -ne 0){throw 'Grill hand controller failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/persistence.obj" "/Fe$output/persistence.exe" agent/tests/grill_saved_state_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/persistence.obj" "/Fe$output/persistence.exe" "$PSScriptRoot/grill_saved_state_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Grill persistence compile failed'}
     & "$output/persistence.exe"
     if($LASTEXITCODE -ne 0){throw 'Grill persistence failed'}

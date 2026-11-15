@@ -35,16 +35,27 @@ expected_additions = {
     'GeomOctaEvent': 262, 'CoffeeActionIntent': 263,
     'ContainerActRequest': 264, 'ContainerActReply': 265, 'ContainerActCommit': 266,
     'EmoteState': 267,
+    'PropToolFlags': 268,
+    'PropNametag': 269,
+    'AmbientTreeState': 270, 'UfoEvent': 271, 'WorldSaved': 272, 'SpillPour': 273,
+    'DeskShortRequest': 274, 'CargoLiftState': 275, 'WalkerState': 276, 'RoombaState': 277,
+    'PlantState': 278, 'KerfurCommandAnswer': 279, 'WoodchipperState': 280,
+    'CrematorIntent': 281, 'CrematorState': 282, 'RoombaIntent': 283, 'AmbientFixtureState': 284,
+    'WoodchipperIntent': 285, 'CordLinkState': 286, 'SpillPourIntent': 287, 'VentCrawlState': 288,
+    'SusHoleIntent': 289, 'PropPropsState': 290, 'CargoLiftIntent': 292, 'DeskShortState': 293,
+    'PropPropsIntent': 294, 'OrbEvent': 295, 'SpillState': 296, 'SpillIntent': 297,
+    'AtvRequest': 298, 'PlantEdit': 299, 'RequesterFeedback': 300, 'AtvHostState': 301,
+    'CrematorHit': 302, 'PropHoldRefused': 303, 'WalkerSeen': 305,
 }
 assert {name: value for name, value in actual.items() if name not in published} == expected_additions
 version = int(re.search(r'kProtocolVersion\s*=\s*(\d+);', protocol)[1])
 release = json.loads((root / 'package/release.json').read_text())
-assert version == 2220
-assert release['protocol'] == 2217  # last qualified package; this is an unpackaged development integration
+assert version == 2223
+assert release['protocol'] == version
 assert 'uint16_t kind;     // ReliableKind' in protocol
 assert 'sizeof(ReliableHeader) == 8' in protocol
 assert 'kPeerCapacity = 32' in (root / 'src/votv-coop/include/coop/net/peer_limits.h').read_text()
-print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and development protocol {version}; qualified-package metadata retained')
+print(f'PASS protocol integration: {len(published)} published values retained, {len(expected_additions)} exact additions, 32 peers and package protocol {version}')
 
 atv=(root/'src/votv-coop/src/coop/interactables/atv_sync.cpp').read_text()
 assert 'coop::atv_steering_sync::Install(session)' in atv

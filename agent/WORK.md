@@ -68,8 +68,8 @@ missing adapter boundary, not a reproduced multiplayer defect. Recheck the integ
 | ID | Remaining implementation and current local boundary |
 | --- | --- |
 | UG2 | Implemented in `prop_stick_sync`: PropStickStatePayload carries support element/class/actor/component identity; receivers attach KeepWorld to the resolved exact component and retire the mirror from a support EndPlay sink. Join snapshots send the support state after PropSpawn; unresolved support is retried for 10s. No local trace is used for the replicated stick. The Windows target compiles and links; its post-build dependency scan cannot run without dumpbin/llvm-objdump. Two-peer runtime behavior and native stick cosmetics remain unverified. |
-| UG3 | Implemented `prop_tool_flags`: every `tool_*_C::init(toolgun)` reads its keyed `outHit` target's static/frozen/sleep bits before and after the action, then sends a final-state `PropToolFlags` through the host. The receiver uses `prop_C`'s base setter, leaves a locally held prop to the hold/release path, and late join continues to use the host's snapshot flags. Build and wire gates pass; two-peer behavior, tool classes that defer writes beyond `init`, and local-hold transitions remain unverified. |
-| UG4 | The upstream laptop stabilizes its seat locally. No stabilizeSeat/occupied-chair reservation route was found in our coop controllers. Bind protection to the actual chair, operator and laptop lease; clear it on exit, body/world replacement and disconnect. Receiver-side competing-hold arbitration is already present and does not itself reserve an occupied chair. |
+| UG3 | Implemented `prop_tool_flags`: every `tool_*_C::init(toolgun)` reads its keyed `outHit` target's static/frozen/sleep bits before and after the action, then sends a final-state `PropToolFlags` through the host. The receiver uses `prop_C`'s base setter, leaves a locally held prop to the hold/release path, and late join continues to use the host's snapshot flags. The Windows target compiles and links; the reliable-kind Python gate could not run because Python is unavailable. Two-peer behavior, tool classes that defer writes beyond `init`, and local-hold transitions remain unverified. |
+| UG4 | Added `laptop_seat_trace`, an observe-only runtime probe for `stabilizeSeat` and nested/laptop-context `setPropProps`; it logs target key/class, caller, physical flags, active argument and laptop-lease context. The Windows Release target compiles and links. UG4 is not implemented yet: capture two-peer entry/exit logs to identify the real chair and caller before adding a host-owned reservation; then clear it on exit, body/world replacement and disconnect. Receiver-side competing-hold arbitration alone does not reserve an occupied chair. |
 | UG5 | No red-phone ring adapter was found in coop controllers or protocol. Capture the native selected ring/cue and its lifetime; host ownership must not duplicate native client rolls. |
 | UG6 | No desk virusEvent adapter was found. Dish precision, server state and power-panel replication cover parts of the aftermath, not the native virus trigger and phase ownership. Map the actual graph before defining its shared effects and join policy. |
 | UG7 | download_arm_sync replays native begin; no objectRenderer/lifecrystal-specific birth scope was found in coop. Bind any shared signal output to one host-owned invocation across either arm/birth arrival order, including failed construction and replacement. Preserve personal camera/ending branches. |
@@ -79,7 +79,7 @@ Source links are attached to each TODO item. Existing event, entity, resource,
 mod-integration and physics backlogs remain the owners of overlapping work;
 do not duplicate them or import gameplay-only acceptance as implementation.
 
-Development target: **0.9.2164**. [TODO.md](TODO.md) lists priorities.
+Development target: **0.9.2165**. [TODO.md](TODO.md) lists priorities.
 This file contains implementation work and the constraints needed to finish it.
 Checks, completed-change reports and release evidence belong in
 [TESTLOG.md](TESTLOG.md).
@@ -253,6 +253,22 @@ are recorded in TESTLOG.
 
 Other new Ghezra entity/resource/event candidates remain with their owners below.
 The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
+
+## Main and fork refresh — 15 November 2026
+
+- [x] Merge upstream `bb54bd7b5` into `main` as `16fa501a8`, keeping this
+  fork's versions on conflicting hunks and retaining the local Kerfur menu
+  input pair that upstream removed. `origin/main` was already an ancestor.
+  No package or protocol identity was changed.
+- [x] Adapt kdp80's Cremator door fix: `DoorParent` now checks the exact live
+  hatch in the cremator instance list when the parent-actor lookup misses, and
+  local mouse movement is admitted only when the local player grabs that
+  Cremator hatch. Native/runtime checks remain pending.
+- [x] Refresh the 71 inventoried fork default branches: 70 fetched, with
+  `Marlore/temp-mail-generator` unavailable. Candidate dispositions and the
+  separate Kinda Plus snapshot review are in FORK_AUDIT_20261022.md.
+- [ ] Compile and run the required regression/repository gates against the
+  merged source before treating this integration as verified.
 
 ## Client prop physics
 
@@ -467,4 +483,8 @@ effect durations or sleep needs.
 
 - [ ] Reduce public-prose findings in documents, src.comment_doc_row and
   src.files_not_swept; restore required reading-room references. Existing gate
-  findings and evidence belong in TESTLOG.
+  findings and evidence belong in TESTLOG. 15 November 2026 recheck: fact rows
+  pass (720 rows / 243 files); public prose fails 13 counters, including 322
+  comment citations, 44 dead declarations and 192 unswept files. All 163
+  regression groups pass for the 2165 source candidate. Do not build Release
+  until the prose gate passes.

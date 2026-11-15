@@ -7,7 +7,7 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($testName in @('profile_receive_2169','material_profile_2169')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/profile_2169_stubs /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/profile_2169_stubs" /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $testName"}
   & "$output/$testName.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}

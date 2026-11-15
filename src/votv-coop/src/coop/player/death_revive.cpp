@@ -7,6 +7,7 @@
 #include "coop/config/config.h"
 #include "coop/net/session.h"
 #include "coop/player/revive_protection.h"
+#include "coop/player/shelter_spot.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/teleport_client.h"
 #include "ue_wrap/actors/vitals.h"
@@ -49,9 +50,9 @@ constexpr const wchar_t* kBlackScreenClass = ue_wrap::profile::name::BlackScreen
 // death branch of its Tick ever writes Visible, so the restore value is a constant off the asset.
 constexpr uint8_t kSlateCollapsed = 1;
 
-// How close to the KPP the player must land for the reposition to count. The teleport either
-// lands or falls through its tiers, so this is an assertion, not a drift tolerance.
-constexpr float kAtKppToleranceCm = 300.f;
+// How close to the chosen target the player must land for the reposition to count. The teleport
+// either lands or falls through its tiers, so this is an assertion, not a drift tolerance.
+constexpr float kAtTargetToleranceCm = 300.f;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 std::atomic<int32_t>  g_deadByte{-1};
@@ -88,6 +89,7 @@ std::atomic<bool>     g_lastReviveOk{false};
 std::atomic<bool>     g_reviveRanThisDeath{false};
 std::atomic<bool>     g_puppetResidue{false};
 int                   g_puppetBlackLeft = 0;
+coop::shelter_spot::Target g_lastTarget{};
 std::atomic<uint64_t> g_cancelAtMs{0};
 
 // The revive is ten synchronous steps on one tick, so past a few ticks it is failure, not
@@ -234,8 +236,8 @@ bool ClearBlackScreen() {
 // [1] ui_damageIndicator_C.dmg_full.Visibility: the Tick's death branch sets it Visible while the
 // widget authors it Collapsed, and the alive path never writes it, so once dead for a single tick
 // a full-screen red image draws over everything for good.
-// gameInstance.subArea := None is still left alone: the revive puts the player at the KPP,
-// outdoors, where None is correct, and the trigger volumes re-establish it.
+// gameInstance.subArea := None is still left alone: the revive puts the player beside the base's
+// bed, and the trigger volumes re-establish the area from there.
 // Best-effort: a failure here is cosmetic or latent, never a reason to strand the player, so it
 // is not a term of the revive's conjunction.
 void ReconcileRunEndLatches() {
@@ -371,12 +373,12 @@ bool ClearDeadFlag(void* pawn) {
 }
 
 // False when the pawn's location cannot be read.
-bool DistanceToKpp(void* pawn, float& out) {
+bool DistanceToTarget(void* pawn, const coop::shelter_spot::Target& t, float& out) {
     ue_wrap::FVector at{};
     if (!E::TryGetActorLocation(pawn, at)) return false;
-    const float dx = at.X - P::name::kKPPSpawnX;
-    const float dy = at.Y - P::name::kKPPSpawnY;
-    const float dz = at.Z - P::name::kKPPSpawnZ;
+    const float dx = at.X - t.x;
+    const float dy = at.Y - t.y;
+    const float dz = at.Z - t.z;
     out = std::sqrt(dx * dx + dy * dy + dz * dz);
     return true;
 }
@@ -422,11 +424,14 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     //    forceGetUp (a latent delay that re-reads dead) and not wakeup (refuses while dead).
     const bool wokeUp = E::ForceMainPlayerWakeup(pawn);
 
-    // 4. Reposition to the KPP, not spawnLocation, which is just the transform at level start and
-    //    can be kilometres from the corpse after a long session. The same landmark the client
-    //    teleport uses on join.
+    // 4. Reposition to a floor point beside the base's bed (shelter_spot), not spawnLocation, which
+    //    is just the transform at level start and can be kilometres from the corpse after a long
+    //    session, and not the open-sky KPP, where the Bad Sun event kills the revived player again.
+    //    The KPP is the fallback when no bed or NavMesh point is found.
+    const coop::shelter_spot::Target target = coop::shelter_spot::Choose(pawn);
+    g_lastTarget = target;
     const bool teleReported = coop::teleport_client::ApplyLocally(
-        {P::name::kKPPSpawnX, P::name::kKPPSpawnY, P::name::kKPPSpawnZ, 0.f, 0.f, 0.f});
+        {target.x, target.y, target.z, 0.f, 0.f, 0.f});
 
     // 5. Only now the flag. (The menu-prep restore that used to sit here is gone with the writes
     //    it undid: cancelling the loadLevel body means they are never made.)
@@ -438,11 +443,11 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     const bool haveState = E::ReadMainPlayerRagdollState(pawn, isRagdoll, deadNow);
     float hp = -1.f;
     const bool haveHp = V::Read(V::Field::Health, &hp);
-    float dist = -1.f;   // -1: unread, never at the KPP
-    const bool distRead = DistanceToKpp(pawn, dist);
+    float dist = -1.f;   // -1: unread, never at the target
+    const bool distRead = DistanceToTarget(pawn, target, dist);
     // The positional term is load-bearing: ApplyLocally has a tiered fallback, so its report says a
     // call succeeded, not that the player moved.
-    const bool atKpp = distRead && dist <= kAtKppToleranceCm;
+    const bool atTarget = distRead && dist <= kAtTargetToleranceCm;
 
     // The conjunction is about the player, not the screen. With blackCleared as a term, one run in
     // four saw the same-frame IsInViewport read after RemoveFromParent still true, and a living
@@ -455,12 +460,12 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     const bool ok = vitalsOk && haveBurnTime && burnTime <= 0.f &&
                     wokeUp && teleReported &&
                     deadCleared && haveState && !isRagdoll && !deadNow && haveHp && hp > 0.f &&
-                    atKpp;
+                    atTarget;
 
     UE_LOGI("death_revive: REVIVE %s after a run-ending authored by %ls -- vitals=%d wake=%d "
             "tele=%d deadClr=%d fireClr=%d burn=%.1f burning=%d "
             "| screen (retried, NOT a gate): black=%d dmgRed=%.2f bloodLoss=%.0f actor(s) @%.1fs "
-            "| readback: ragdoll=%d dead=%d hp=%.1f distKPP=%.0f cm (tol %.0f)",
+            "| readback: ragdoll=%d dead=%d hp=%.1f target=%s distTarget=%.0f cm (tol %.0f)",
             ok ? "OK" : "FAILED",
             g_pendingAuthorClass.empty() ? L"(unrecorded)" : g_pendingAuthorClass.c_str(),
             vitalsOk ? 1 : 0, wokeUp ? 1 : 0,
@@ -468,7 +473,7 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
             haveBurnTime ? burnTime : -1.f, haveBurning ? static_cast<int>(burning) : -1,
             blackCleared ? 1 : 0, redBefore, bloodActors, bloodTimeBefore,
             haveState ? (isRagdoll ? 1 : 0) : -1, haveState ? (deadNow ? 1 : 0) : -1,
-            haveHp ? hp : -1.f, dist, kAtKppToleranceCm);
+            haveHp ? hp : -1.f, coop::shelter_spot::KindName(target.kind), dist, kAtTargetToleranceCm);
     (void)session;
     return ok;
 }
@@ -530,11 +535,15 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
 }
 
-bool ReviveAvailable() {
+const char* ReviveMissing() {
     coop::net::Session* s = g_session.load(std::memory_order_acquire);
-    return g_verbsResolved.load(std::memory_order_acquire) &&
-           g_deadByte.load(std::memory_order_relaxed) >= 0 && s && s->running();
+    if (!g_verbsResolved.load(std::memory_order_acquire)) return "the revive's verbs are not resolved";
+    if (g_deadByte.load(std::memory_order_relaxed) < 0) return "the dead flag's offset is not known yet";
+    if (!s || !s->running()) return "no session is running";
+    return nullptr;
 }
+
+bool ReviveAvailable() { return ReviveMissing() == nullptr; }
 
 void NoteRunEndSeamReady(bool ready) { g_seamReady.store(ready, std::memory_order_release); }
 
@@ -550,6 +559,8 @@ void NoteRunEndCancelled(void* author, const wchar_t* authorClass, bool authorIs
     // failure of the pump.
     g_cancelAtMsAtomic.store(::GetTickCount64(), std::memory_order_release);
 }
+
+bool ClearBlackScreenNow() { return ClearBlackScreen(); }
 
 void NotePeerPuppetRunEndCancelled() { g_puppetResidue.store(true, std::memory_order_release); }
 
@@ -567,6 +578,8 @@ void OnSessionStart() {
     g_wasDead = false;
     g_reviveRanThisDeath = false;
     g_lastReviveOk = false;
+    g_lastTarget = {};
+    coop::shelter_spot::OnSessionStart();
     g_cancelAtMs = 0;
     g_screenCleanupLeft = 0;
     g_screenCensusAtMs.store(0, std::memory_order_relaxed);

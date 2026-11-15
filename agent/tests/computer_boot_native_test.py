@@ -2,12 +2,12 @@
 from pathlib import Path
 import sys
 
-research = Path(__file__).resolve().parents[3] / "_research"
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / "_research"
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-package = Package(str(research / "assets/VotV__Content__objects__laptop.uasset"))
+package = Package(str(evidence_root / "assets/VotV__Content__objects__laptop.uasset"))
 export, = [entry for entry in package.exports if entry["name"] == "ExecuteUbergraph_laptop"]
 rows = dict(body(package, export))
 assert rows[29] == "Inst(widget)->Inst(rootswitch)->SetActiveWidgetIndex(0)"

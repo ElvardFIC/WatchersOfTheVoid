@@ -6,15 +6,15 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" agent/tests/dingus_music_wrapper_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" "$PSScriptRoot/dingus_music_wrapper_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Toy music wrapper compile failed'}
     & "$output/wrapper.exe"
     if($LASTEXITCODE -ne 0){throw 'Toy music wrapper failed'}
     foreach($test in @('toy_music_phase','toy_music_lifetime','toy_music_clock_wrapper')){
         $includes=@('/I','src/votv-coop/include')
-        if($test -ne 'toy_music_clock_wrapper'){$includes=@('/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')+$includes}
-        if($test -eq 'toy_music_lifetime'){$includes=@('/I','agent/tests/toy_stubs')+$includes}
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/$test.obj" "/Fe$output/$test.exe" "agent/tests/${test}_test.cpp" /link /OPT:REF
+        if($test -ne 'toy_music_clock_wrapper'){$includes=@('/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))+$includes}
+        if($test -eq 'toy_music_lifetime'){$includes=@('/I',(Join-Path $PSScriptRoot 'toy_stubs'))+$includes}
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$PSScriptRoot/${test}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE -ne 0){throw "Toy music compile failed: $test"}
         & "$output/$test.exe"
         if($LASTEXITCODE -ne 0){throw "Toy music failed: $test"}
@@ -45,7 +45,7 @@ try {
             $path=Join-Path $output ($name+'.cpp');[IO.File]::WriteAllText($path,$mutant)
             $header=Join-Path $output ($name+'.h')
             [IO.File]::WriteAllText($header,('#define TOY_MUSIC_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/toy_music_lifetime_test.cpp /link /OPT:REF
+            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/toy_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/toy_music_lifetime_test.cpp" /link /OPT:REF
             if($LASTEXITCODE){throw "Toy control compile failed: $name"}
             $saved=$ErrorActionPreference
             try{$ErrorActionPreference='Continue';$report=& "$output/$name.exe" 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}

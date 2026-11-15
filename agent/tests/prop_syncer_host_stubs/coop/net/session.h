@@ -9,8 +9,8 @@
 #include <vector>
 namespace coop::net {
 inline constexpr uint8_t kMaxPeers=coop::players::kMaxPeers;
-struct Config;
 enum class Role { Host, Client };
+struct Config;
 class Session {
 public:
     struct ReliableMessage;

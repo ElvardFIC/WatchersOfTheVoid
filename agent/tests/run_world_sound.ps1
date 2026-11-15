@@ -10,7 +10,7 @@ try {
         if (-not (Test-Path -LiteralPath $environment)) { $environment = Join-Path $root '../_toolchain/env.ps1' }
         . $environment
     }
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/world_sound_stubs /I src/votv-coop/include "/Fo$output/world_sound.obj" "/Fe$output/world_sound.exe" agent/tests/world_sound_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/world_sound_stubs" /I src/votv-coop/include "/Fo$output/world_sound.obj" "/Fe$output/world_sound.exe" "$PSScriptRoot/world_sound_test.cpp" /link /OPT:REF
     if ($LASTEXITCODE -ne 0) { throw 'World sound test compile failed' }
     & "$output/world_sound.exe"
     if ($LASTEXITCODE -ne 0) { throw 'World sound test failed' }

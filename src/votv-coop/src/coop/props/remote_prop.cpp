@@ -11,6 +11,7 @@
 #include "coop/dev/swinger_drill.h"     // NotePropPose, NotePropUnresolved
 #include "coop/interactables/swinger_join_pose.h"   // Forget: a release supersedes a parked connect pose
 #include "coop/props/active_drive.h"   // the fixed-delay snapshot interp, shared with the trash carry stream
+#include "coop/props/prop_hold_claim.h"  // OnSlotLeft: the leaver's wait line is forgotten with its hold gate
 #include "coop/props/prop_sound.h"
 #include "coop/props/trash_mirror.h"   // Retire (a trash mirror retires whole, pin released after the destroy)
 #include "coop/element/bind_wait.h"  // OnBound / MarkDeferred: the bind funnel releases and marks
@@ -24,6 +25,8 @@
 #include "coop/player/local_prop_hold.h"
 #include "coop/props/container_act_host.h"  // overlap::OnBound: an overlap put waits for a prop's bind
 #include "coop/props/pile_look.h"
+#include "coop/creatures/walker_state_client.h"  // OnBound: a walker copy bound after the host sent its state takes the state here
+#include "coop/props/roomba_sync.h"  // OnBound: a cleaner copy bound after the host sent its state takes the state here
 #include "coop/props/prop_drive_host.h"    // OverrideClientSyncer: a release that writes the copy ends a client's row on it
 #include "coop/props/prop_drive_stream.h"  // IsParked: the host's channel owns a parked copy
 #include "coop/props/prop_syncer_host.h"   // ElectSyncer: a thrown prop is its thrower's to sync
@@ -236,6 +239,13 @@ void OnRelease(int senderSlot, const coop::net::PropReleasePayload& payload, voi
     // The release closes its hold, even one dropped as stale below, so a pose of it still in flight
     // starts nothing.
     CloseHold(senderSlot, payload.holdGen);
+    // A hold the host refused drove no copy, and the prop is the kept hold's: its release lets go of nothing.
+    if (senderSlot >= 0 && senderSlot < static_cast<int>(coop::players::kMaxPeers) && payload.holdGen != 0 &&
+        g_holds[senderSlot].haveDenied && g_holds[senderSlot].deniedGen == payload.holdGen) {
+        UE_LOGI("remote_prop: RELEASE of slot %d hold %u, which the host refused -- nothing to apply", senderSlot,
+                static_cast<unsigned>(payload.holdGen));
+        return;
+    }
     // A stale trash release (ctx older than the entity's last transition) is dropped, so a throw
     // delayed past a re-pile or re-grab never applies velocity to the re-skinned entity. ctx 0 or
     // eid 0 (a keyed release) is always fresh.
@@ -498,6 +508,8 @@ void RegisterPropMirror(coop::element::ElementId eid,
     if (row && row->GetActor() == actor) {
         coop::pile_look::OnBound(static_cast<uint32_t>(eid), actor);
         coop::drive_payload_sync::OnBound(static_cast<uint32_t>(eid), actor, senderSlot);  // a data drive's row, by its author
+        coop::walker_state_client::OnBound(actor, key);  // a walker copy takes the host's held pose and hunt
+        coop::roomba_sync::OnBound(static_cast<uint32_t>(eid), actor, cls.c_str());  // a cleaner copy joins the brush list and takes its held state
         coop::element::bind_wait::OnBound(static_cast<uint32_t>(eid));  // messages held for this eid replay at the next Pump
         coop::props::container_act_host::overlap::OnBound(actor);  // an overlap put that waited for this prop's id is judged at the next tick
     } else if (!row && actor && eid != 0 && eid != coop::element::kInvalidId) {
@@ -643,6 +655,7 @@ void OnDisconnectForSlot(int peerSlot) {
     // above them.
     const auto identity = g_holds[peerSlot].actorIdentity;
     g_holds[peerSlot] = {};
+    coop::prop_hold_claim::OnSlotLeft(peerSlot);
     // Ledger rows are keyed by slot and slots recycle lowest-free, so the leaver's counts must not
     // reach the next occupant; cleared before the early return, since a slot can have rows without
     // a drive.

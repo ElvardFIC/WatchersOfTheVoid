@@ -1,21 +1,10 @@
-// coop/interactables/window_stroke_sync.h -- the base's big bay window (Ad_window_C), whose dirt is a
-// render target wiped one sponge dab at a time, replicated as dabs on ReliableKind::WindowStroke.
-// Gameplay/network layer (principle 7); the engine is reached only through ue_wrap::window_canvas.
-//
-// SYMMETRIC, presser-authored. A stroke runs only on the peer whose camera launched it, so that
-// peer observes its own dab (a Func post-hook on UCanvas::K2_DrawMaterial filtered to a window frame
-// with an open stroke session), reads the held sponge's brush and sends the dab. Every other peer
-// replays it through the window's own Canvas session, and the host relays a client's dab to the
-// other clients, so the host's world -- and its save -- carries every peer's wipes. A joiner gets the
-// window as it was in the host's transferred save.
-// Known limits: a thrown sponge's dab is not sent (no hand to read its brush from); dabs that
-// arrive while a signal plays wait for playback to end; the periodic dirt splotch still rolls on
-// each peer independently.
-// Queues are scoped to one running session/world/role and bounded to 256 dabs.
-// Outgoing payloads are sealed at the first drain and retain their brush on refused
-// sends; FIFO retries expire after 20 seconds. Each tick sends/replays at most eight.
-// Unresolved native preparation retains its FIFO row; an admitted native draw is
-// attempted once, including an uncertain failure.
+// coop/interactables/window_stroke_sync.h -- syncs sponge dabs on the bay window.
+// The presser captures its own dab; the host relays client dabs, and joiners
+// receive the window through the transferred save.
+// Thrown sponges are omitted, signal playback delays arrivals, and dirt marks
+// still roll independently. Queues hold 256 dabs; refused sends retry for 20 s.
+// Each tick handles at most eight dabs. Unresolved draws retain their FIFO row;
+// each admitted native draw is attempted once.
 
 #pragma once
 

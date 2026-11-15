@@ -5,6 +5,7 @@
 #include "ue_wrap/actors/inventory.h"      // ResolveSaveSlot
 #include "ue_wrap/actors/prop.h"           // WalksToBase
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/core/component_calls.h"  // CallParamless
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
@@ -273,7 +274,8 @@ bool IsContainerRecord(const SR::SaveRecord& r) {
     if (r.className.empty()) return false;
     void* const base = ContainerClass();
     if (!base) return false;
-    void* const cls = ue_wrap::object_index::ClassByName(r.className.c_str());
+    void* const cls = ue_wrap::class_resolve::ResolveClass(r.className.c_str(), ue_wrap::class_resolve::AnyFamily(),
+                                                           ue_wrap::class_resolve::Load::LookupOnly).cls;
     return cls && ue_wrap::prop::WalksToBase(cls, base);
 }
 

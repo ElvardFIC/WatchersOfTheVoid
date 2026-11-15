@@ -45,13 +45,13 @@ using coop::net::PropSyncRefusal;
 using coop::net::PropSyncResult;
 using dev::Count;
 
-// MTA's MIN_PUSH_ANTISPAM_RATE (CUnoccupiedVehicleSync.h:15), here per client and eid: after a refusal or a
+// MTA's MIN_PUSH_ANTISPAM_RATE (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.h:15), here per client and eid: after a refusal or a
 // revoke the same prop is not claimed again sooner.
 constexpr uint64_t kReclaimBackoffMs = 1500;
 // A claim's syncer that is standing still re-sends its pose this often, well inside the host's kSyncerSilenceMs, and
 // reads the prop at most every kRestProbeMs between beats. MTA sends a syncer's rows every 400 ms by default with the
-// move and turn speed in each, on change only and with no beat (CMainConfig.cpp:1513, and the client's
-// CUnoccupiedVehicleSync.cpp:19,66): rows here carry the pose and the copy's velocity at kClientDriveSendMs, the receiver
+// move and turn speed in each, on change only and with no beat (reference/mtasa-blue/Server/mods/deathmatch/logic/CMainConfig.cpp:1513, and the client's
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:19,66): rows here carry the pose and the copy's velocity at kClientDriveSendMs, the receiver
 // lerping to the pose and the velocity serving the host's override, and the beat answers the host's silence rule, which MTA lacks.
 constexpr uint64_t kSyncerBeatMs = 1000;
 // A claim the host has not answered in this long is lost (an answer can only be lost to a session change): the entry
@@ -357,7 +357,7 @@ void EndUnheldGrant(const coop::net::PropSyncAnswerPayload& p) {
 // was sent. The record prop_throw kept supplies the actor and clock. Missing
 // records and cancelled captures are distinct outcomes. The
 // grant carries no state: MTA's StartSync carries the vehicle's position, rotation, velocity and turn speed and the
-// client snaps to them (CUnoccupiedVehicleStartSyncPacket.cpp:23-50, the client's CUnoccupiedVehicleSync.cpp:102-160),
+// client snaps to them (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CUnoccupiedVehicleStartSyncPacket.cpp:23-50, the client's reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:102-160),
 // where here the thrower's copy has flown on since the release and is the truth, so a snap would undo the throw.
 enum class ThrowGrant { Missing, Entered, Cancelled };
 ThrowGrant EnterThrownSync(const coop::net::PropSyncAnswerPayload& p) {
@@ -412,7 +412,7 @@ void OnGranted(const coop::net::PropSyncAnswerPayload& p, bool duplicate = false
         return;
     }
     // The grant carries no state and the copy keeps simulating, where MTA's StartSync resets the syncer to the
-    // server's place and speed (the client's CUnoccupiedVehicleSync.cpp:102-134): a pusher's own copy is the contact
+    // server's place and speed (the client's reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:102-134): a pusher's own copy is the contact
     // truth, and a snap to the host's pre-kick pose would undo the kick.
     Entry& e = it->second;
     e.state = State::Syncing;

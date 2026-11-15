@@ -16,9 +16,11 @@ set(VOTVCOOP_SOURCES_UE_WRAP_1
     src/ue_wrap/core/reflection_call.cpp
     src/ue_wrap/core/uobject_listeners.cpp
     src/ue_wrap/core/object_index.cpp
+    src/ue_wrap/core/class_reask.cpp
     src/ue_wrap/core/reflection_dispatch.cpp
     src/ue_wrap/core/reflection_props.cpp
     src/ue_wrap/core/asset_load.cpp
+    src/ue_wrap/core/class_resolve.cpp
     src/ue_wrap/core/engine_heap.cpp
     src/ue_wrap/core/hook.cpp
     src/ue_wrap/core/hook_drill.cpp
@@ -51,6 +53,7 @@ set(VOTVCOOP_SOURCES_UE_WRAP_1
     src/ue_wrap/actors/sleepingbag.cpp
     src/ue_wrap/actors/notebook.cpp
     src/ue_wrap/actors/hook.cpp
+    src/ue_wrap/actors/nametag.cpp
     src/ue_wrap/world/keyed_objects.cpp
 )
 
@@ -73,10 +76,13 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/devices/cord.cpp
     src/ue_wrap/devices/base_window.cpp
     src/ue_wrap/devices/window_canvas.cpp
+    src/ue_wrap/devices/video_camera.cpp
     src/ue_wrap/devices/grime.cpp
     src/ue_wrap/world/daynightcycle.cpp
+    src/ue_wrap/world/level_instance.cpp
     src/ue_wrap/world/active_events.cpp
     src/ue_wrap/world/jellyfish_path.cpp
+    src/ue_wrap/world/spline.cpp
     src/ue_wrap/world/bad_sun.cpp
     src/ue_wrap/world/red_sky.cpp
     src/ue_wrap/world/explosion.cpp
@@ -87,10 +93,12 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/devices/garage.cpp
     src/ue_wrap/devices/appliance.cpp
     src/ue_wrap/devices/coffee.cpp
+    src/ue_wrap/devices/cremator.cpp
     src/ue_wrap/devices/power_control.cpp
     src/ue_wrap/devices/generator.cpp
     src/ue_wrap/devices/generator_panel.cpp
     src/ue_wrap/devices/atv.cpp
+    src/ue_wrap/devices/cargo_lift.cpp
     src/ue_wrap/devices/atv_condition.cpp
     src/ue_wrap/devices/drone.cpp
     src/ue_wrap/devices/drone_console.cpp
@@ -101,6 +109,7 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/desk/device_screen.cpp
     src/ue_wrap/desk/space_renderer.cpp
     src/ue_wrap/desk/console_desk.cpp
+    src/ue_wrap/desk/desk_short.cpp
     src/ue_wrap/desk/comp_pane.cpp
     src/ue_wrap/desk/coords_panel.cpp
     src/ue_wrap/desk/dish.cpp
@@ -130,6 +139,7 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/actors/swinger.cpp
     src/ue_wrap/actors/broom.cpp
     src/ue_wrap/actors/fire_extinguisher.cpp
+    src/ue_wrap/actors/woodchipper.cpp
     src/ue_wrap/actors/chip_pile.cpp
     src/ue_wrap/engine/engine_pawn.cpp
     src/ue_wrap/engine/engine_physics.cpp
@@ -149,6 +159,7 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/desk/meadow_store.cpp
     src/ue_wrap/desk/saved_signals.cpp
     src/ue_wrap/actors/puppet.cpp
+    src/ue_wrap/actors/character_floor.cpp
     src/ue_wrap/actors/puppet_spawn.cpp
     src/ue_wrap/actors/kerfur.cpp
     src/ue_wrap/actors/kerfus.cpp
@@ -164,12 +175,14 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/world/store_catalog.cpp
     src/ue_wrap/world/weapon_catalog.cpp
     src/ue_wrap/actors/prop.cpp
+    src/ue_wrap/actors/ambient_creature.cpp
     src/ue_wrap/actors/prop_keys.cpp
     src/ue_wrap/actors/prop_flags.cpp
     src/ue_wrap/actors/prop_gather.cpp
     src/ue_wrap/actors/spawner_stamp.cpp
     src/ue_wrap/actors/prop_events.cpp
     src/ue_wrap/actors/prop_use.cpp
+    src/ue_wrap/actors/snack.cpp
     src/ue_wrap/actors/prop_fire.cpp
     src/ue_wrap/actors/garbage_bag.cpp
     src/ue_wrap/actors/vitals.cpp
@@ -181,4 +194,5 @@ set(VOTVCOOP_SOURCES_UE_WRAP_2
     src/ue_wrap/world/upgrades.cpp
     src/ue_wrap/world/game_rules_pane.cpp
     src/ue_wrap/engine/spawn_menu.cpp
+    src/ue_wrap/actors/grime_spill.cpp
 )

@@ -7,7 +7,7 @@
 // brings into the world (a fresh birth, a drop intent by any route, a held item) is noted by the prop lanes and sends
 // its row to the host at its enrolment or its bind. The host takes one row per such drive, from the client that
 // brought it and while its own copy is still at the class default, and answers any other client row with its own
-// (MTA answers a cancelled element-data change to its source: CGame.cpp:2779-2793). A joiner's world-ready seed
+// (MTA answers a cancelled element-data change to its source: reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2779-2793). A joiner's world-ready seed
 // carries every row that differs from its class default.
 
 #pragma once

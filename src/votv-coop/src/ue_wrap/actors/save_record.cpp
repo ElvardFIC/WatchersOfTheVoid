@@ -1,8 +1,10 @@
 // ue_wrap/actors/save_record.cpp -- see ue_wrap/actors/save_record.h.
 
 #include "ue_wrap/actors/save_record.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/actors/prop.h"
 
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"
@@ -20,6 +22,19 @@
 #include <unordered_map>
 
 namespace ue_wrap::save_record {
+
+bool ClassesReady(const SaveRecord& record, ClassLoad load) {
+    const auto ready = [load](const std::wstring& name) {
+        if (name.empty()) return true;
+        const auto resolved = class_resolve::ResolveClass(name.c_str(), class_resolve::AnyFamily(), load);
+        return resolved.state == class_resolve::ClassState::Found && resolved.cls;
+    };
+    if (!ready(record.className)) return false;
+    for (const auto& group : record.classes)
+        for (const auto& name : group)
+            if (!ready(name)) return false;
+    return true;
+}
 namespace {
 
 namespace R = ue_wrap::reflection;
@@ -150,6 +165,28 @@ void* AllocZeroed(size_t count, size_t elemSize) {
     return buf;
 }
 
+bool ReplaceByteArray(void* base, int32_t off, const uint8_t* data, int32_t count) {
+    if (!base || count < 0 || count > kMaxArr || (count > 0 && !data)) return false;
+    uint8_t* hdr = reinterpret_cast<uint8_t*>(base) + off;
+    void* old = nullptr;
+    int32_t oldNum = 0, oldMax = 0;
+    std::memcpy(&old, hdr, sizeof(void*));
+    std::memcpy(&oldNum, hdr + 8, 4);
+    std::memcpy(&oldMax, hdr + 12, 4);
+    const bool own = old && PlausibleObjPtr(old) && oldNum >= 0 && oldNum <= oldMax && oldMax <= kMaxArr;
+    if (own && oldMax >= count) {   // the array's own slack holds it: the buffer stays, only Num moves
+        if (count > 0) std::memcpy(old, data, static_cast<size_t>(count));
+        std::memcpy(hdr + 8, &count, 4);
+        return true;
+    }
+    void* buf = AllocZeroed(static_cast<size_t>(count), 1);
+    if (count > 0 && !buf) return false;
+    if (buf) std::memcpy(buf, data, static_cast<size_t>(count));
+    WriteArrHeader(base, off, buf, count);
+    if (own) R::EngineFree(old);
+    return true;
+}
+
 std::wstring ReadFNameAt(const void* base, int32_t off) {
     R::FName n{};
     std::memcpy(&n, reinterpret_cast<const uint8_t*>(base) + off, sizeof(n));
@@ -264,11 +301,6 @@ bool WriteSaveRecordChecked(uint8_t* base, const SaveRecord& r, ClassResolver re
     return complete && valuesComplete && !classMiss;
 }
 
-void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
-    // Existing live writers retain their valid-empty fallback. Transactional
-    // callers use the checked result before publishing any of their scratch.
-    (void)WriteSaveRecordChecked(base,r,resolve);
-}
 
 
 // ---- The GAME's own codec, on a LIVE actor --------------------------------------------------
@@ -566,6 +598,16 @@ bool CaptureRecord(void* actor, SaveRecord& out) {
     return CallForRecord(actor, getFn.Get(), out) && current();
 }
 
+namespace {
+int g_applying = 0;   // ApplyRecord calls in progress; game thread
+struct ApplyingScope {
+    ApplyingScope() { ++g_applying; }
+    ~ApplyingScope() { --g_applying; }
+};
+}  // namespace
+
+bool IsApplying() { return g_applying > 0; }
+
 bool CaptureOwnRecord(void* actor, SaveRecord& out) {
     if (!actor) return false;
     const ClassVerbs* v = VerbsFor(R::ClassOf(actor));
@@ -670,6 +712,14 @@ void ResetCodecCache() {
     g_baseGetData = nullptr;
     g_nextPropTryMs = 0;
     g_verbs.clear();
+}
+
+
+
+void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
+    // Existing live writers retain their valid-empty fallback. Transactional
+    // callers use the checked result before publishing any of their scratch.
+    (void)WriteSaveRecordChecked(base,r,resolve);
 }
 
 }  // namespace ue_wrap::save_record

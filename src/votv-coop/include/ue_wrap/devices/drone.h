@@ -45,11 +45,17 @@ bool ReadPose(void* drone, FVector& loc, FRotator& rot);
 bool DriveMirror(void* drone, const FVector& loc, const FRotator& rot);
 
 // CLIENT mirror: stop the drone's own ReceiveTick (its flight integrator) so it can't fly on its
-// own + fight the host stream -- the client drone is ALWAYS a mirror. Idempotent at the engine
-// level. Game thread.
-void SuppressTick(void* drone);
+// own + fight the host stream -- the client drone is ALWAYS a mirror -- and take its root sphere out
+// of the simulation. The flight is forces on that sphere, so with the tick off and the body still
+// simulated, gravity and the motion it had pulled the copy off every streamed pose between two
+// writes, which showed as a drone shaking and turning in place. Idempotent at the engine level. True when
+// the root is out of the simulation and the tick is off afterwards (taken out now, or not simulating to begin
+// with); false when the root does not read as a primitive or the engine refused either call, with nothing
+// left changed, so the caller asks again. Game thread.
+bool SuppressTick(void* drone);
 
-// Restore the drone's ReceiveTick (on disconnect, so single-player flight works again). Game thread.
+// Restore the drone's ReceiveTick and its simulated root (on disconnect, so single-player flight
+// works again). Game thread.
 void RestoreTick(void* drone);
 
 // ---- FX mirroring ----------------------------------------------------------------------------
@@ -75,7 +81,6 @@ inline constexpr uint8_t kFxLeaveAfter5min = 0x08;
 
 // Drone's leave mode: true means leave after five minutes, false means wait indefinitely.
 bool ReadLeaveAfter5min(void* drone, bool& out);
-bool WriteLeaveAfter5min(void* drone, bool value);
 
 // HOST: read the synced drone state into the packed stateBits byte:
 // eff_droneDust's bIsActive bit (what its IsActive returns), canTakeOff, hasSack and leaveAfter5min,
@@ -119,5 +124,6 @@ void* ContainerOf(void* drone);
 // The drone a droneSellLocation_C instance names through its `drone` field, or null when it is null or dead.
 // Game thread.
 void* OfSellLocation(void* sellLocation);
+
 
 }  // namespace ue_wrap::drone

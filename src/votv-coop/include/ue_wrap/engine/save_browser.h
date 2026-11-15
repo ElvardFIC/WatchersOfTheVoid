@@ -1,19 +1,9 @@
-// ue_wrap/engine/save_browser.h -- VOTV save enumeration + creation. Engine-wrapper layer
-// (principle 7): NO coop, network or gameplay state lives here. The UFunction-driven
-// parts -- create, exists, and the scan's stage A -- are GAME THREAD ONLY.
-//
-// EnumerateSaves lists <SavedDir>/SaveGames/*.sav -- directory from the native
-// GetProjectSavedDirectory, subsaves excluded through lib_C::processSaveNameIntoSubsave
-// -- and reads each row's metadata DIRECTLY from the file's GVAS tag stream
-// (ue_wrap/gvas_meta), taking saveSlot_C CDO defaults for delta-omitted properties.
-// Driving loadSlots instead means N calls to LoadGameFromSlot, a full 15-20 MB
-// deserialize per save on the game thread, which froze the picker for seconds once
-// real saves accumulated. Non-saveSlot_C slots and subsaves are excluded; b_* is the
-// SANDBOX prefix and is never filtered.
-//
-// CreateNamedSave mirrors VOTV's create primitive: CreateSaveGameObject(saveSlot_C)
-// + SaveGameToSlot(obj, "<prefix><name>", 0), a persisted-at-creation blank save.
-// The new save's mainMap is initialized to the mode's native starting level.
+// ue_wrap/engine/save_browser.h -- enumerates and creates VOTV saves.
+// Enumeration reads GVAS metadata directly from SaveGames/*.sav and uses saveSlot_C
+// defaults for omitted properties. It excludes subsaves and non-saveSlot_C files.
+// CreateNamedSave follows the game native create/save path and initializes the
+// mode starting level. UFunction work and stage A run on the game thread.
+// The picker cache reads per-file metadata on a worker and serves render-thread UI.
 
 #pragma once
 

@@ -172,8 +172,6 @@ bool WriteEnergyWhile(void* k,float energy,const std::function<bool()>& current)
 }
 bool ReadActive(void* k,bool& on){return ReadActiveWhile(k,on,{});}
 bool WriteActive(void* k,bool on){return WriteActiveWhile(k,on,{},nullptr);}
-bool ReadCharging(void* k,bool& on){return ReadChargingWhile(k,on,{});}
-bool WriteCharging(void* k,bool on){return WriteChargingWhile(k,on,{});}
 bool ReadEnergy(void* k,float& energy){return ReadEnergyWhile(k,energy,{});}
 bool WriteEnergy(void* k,float energy){return WriteEnergyWhile(k,energy,{});}
 
@@ -241,5 +239,11 @@ bool RunPossess(void* k, const FVector& at) {
     ue_wrap::ParamFrame f(fn);
     return f.valid() && f.Set<FVector>(L"possessLoc", at) && ue_wrap::Call(k, f);
 }
+
+
+
+bool ReadCharging(void* k,bool& on){return ReadChargingWhile(k,on,{});}
+
+bool WriteCharging(void* k,bool on){return WriteChargingWhile(k,on,{});}
 
 }  // namespace ue_wrap::kerfus

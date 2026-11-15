@@ -3,8 +3,8 @@
 **By ElvardFIC, co-maintained by AquaFishhh** — community co-op for Voices of the Void.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2163** targets **Voices of the Void Alpha 0.9.0n** on Windows.
-The in-game mod label also shows **Watchers of the Void 0.9.2163**.
+Version **0.9.2165** is being prepared for **Voices of the Void Alpha 0.9.0n** on Windows.
+The intended in-game mod label is **Watchers of the Void 0.9.2165**.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -34,11 +34,12 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2163.zip** using
+For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2165.zip** using
 the manager's **Import local mod** action. The package identity remains
 **ElvardFIC-WatchersOfTheVoid**. Remove the mistakenly imported **ragdoll** entry
 if it was created from the earlier DLL-only archive.
-Every player must use this exact **0.9.2163** package and the same game version.
+Every player must use the exact same package and game version. The 2165 archive
+will be available after qualification and package verification pass.
 
 ## Current status
 
@@ -46,17 +47,18 @@ Every player must use this exact **0.9.2163** package and the same game version.
 > Bugs, crashes and multiplayer desynchronization may occur. Automated checks do not
 > guarantee stable gameplay. Test with matching host/client packages and report issues.
 
-This test package contains **DLL b2217 / network protocol 2217** and includes the
-changes since 0.9.2158, plus the current upstream integration.
+The intended package identity is **DLL b2223 / network protocol 2223** and includes
+the current upstream integration. The retained 0.9.2163 archive remains the last
+qualified package until 2165 completes qualification.
 Automatic joins above four players also require the updated master service.
 
-The last qualified archive is **2163**. Development now targets **2164**;
-its b2219 source integration is separate from this retained b2217 archive. Its package checks
-cover the manager layout, included models, version label and matching Release DLL.
-Current qualification and limits are recorded in RELEASE.md and agent/TESTLOG.md.
-Rendered gameplay, real-peer synchronization and full event coverage remain
-unverified for this exact package. Paid client repair, resource transactions,
-ancillary MRE effects and other reported gameplay cases remain open.
+The 2165 archive has not yet been built. Its qualification must cover the manager
+layout, included models, version label and exact Release DLL. Current
+qualification and limits are recorded in RELEASE.md. Rendered gameplay,
+real-peer synchronization and full event coverage remain unverified for this
+package. Occupied laptop-seat protection, red-phone ring ownership, desk
+virusEvent authority, signal-born prop ownership and runtime 3D-print mesh
+synchronization remain open.
 
 ## Credits
 

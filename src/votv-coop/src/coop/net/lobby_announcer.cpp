@@ -133,7 +133,7 @@ std::string ErrorWord(const http::Response& resp) {
 
 // The word of a refusal that waiting cannot clear: a proof the master will not accept, a build
 // below its floor, an identity it blocks. Empty for anything else, which may clear. MTA retries
-// only a timeout (CMasterServerAnnouncer.h:154) and gives up on every other answer (:169-180); we
+// only a timeout (reference/mtasa-blue/Server/mods/deathmatch/utils/CMasterServerAnnouncer.h:154) and gives up on every other answer (:169-180); we
 // also retry what the host's own clock or the master's restart can clear (410, 409, 5xx).
 std::string PermanentRefusal(const http::Response& resp) {
     if (!resp.ok) return {};
@@ -176,7 +176,7 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
         if (now) UE_LOGI("lobby: host announce -- stopped before the next request");
         return now;
     };
-    // MTA sends one request per announce and retries only a timeout (CMasterServerAnnouncer.h:154);
+    // MTA sends one request per announce and retries only a timeout (reference/mtasa-blue/Server/mods/deathmatch/utils/CMasterServerAnnouncer.h:154);
     // here a create is a challenge and a POST, and a spent or missing nonce is retried once.
     http::Response resp;
     for (int attempt = 0; attempt < 2; ++attempt) {

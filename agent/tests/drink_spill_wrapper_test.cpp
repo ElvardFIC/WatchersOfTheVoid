@@ -88,9 +88,9 @@ bool CallHasLocal(const CallSite& call,const wchar_t* name){using namespace test
     (call.locals[0]==At(CupGraph) && !wcscmp(name,L"CallFunc_K2_GetActorLocation_ReturnValue"));}
 }
 namespace ue_wrap::engine {
-void* BeginDeferredSpawn(void* cls,const FVector&,const FRotator&){++test::births;test::objects[test::Actor].cls=cls;
+void* BeginDeferredSpawn(void* cls,const FVector&,const FRotator&,uint8_t,const FVector*){++test::births;test::objects[test::Actor].cls=cls;
     if(cls==test::At(test::ProjectileClass))test::objects[test::Actor].lifeSpan=60;test::Run(test::onBegin);return test::At(test::Actor);}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){++test::finishes;test::objects[test::Actor].scale={1,1,1};test::Run(test::onFinish);return test::callOK;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){++test::finishes;test::objects[test::Actor].scale={1,1,1};test::Run(test::onFinish);return test::callOK;}
 bool SetActorScale3D(void* actor,const FVector& value){static_cast<test::Obj*>(actor)->scale=value;return true;}
 bool SetActorEnableCollision(void*,bool enabled){test::collision=enabled;test::Run(test::onPaint);return true;}
 bool SetComponentSimulatePhysics(void*,bool enabled){test::simulation=enabled;return true;}

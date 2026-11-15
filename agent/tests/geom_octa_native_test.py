@@ -3,12 +3,12 @@ from pathlib import Path
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = checkout.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = checkout.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-asset = research / 'current-assets/VotV__Content__objects__misc__geomOcta.uasset'
+asset = evidence_root / 'current-assets/VotV__Content__objects__misc__geomOcta.uasset'
 pkg = Package(str(asset))
 graph = dict(body(pkg, next(e for e in pkg.exports if e['name'] == 'ExecuteUbergraph_geomOcta')))
 assert 'K2Node_CustomEvent_NotifyName_3' in graph[1092]

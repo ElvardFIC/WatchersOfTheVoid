@@ -2,13 +2,13 @@
 from pathlib import Path
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package, Dis, find_script
 
 
 def rows(asset, function):
-    p = Package(str(research / 'assets' / f'VotV__Content__objects__{asset}.uasset'))
+    p = Package(str(evidence_root / 'assets' / f'VotV__Content__objects__{asset}.uasset'))
     e = next(e for e in p.exports if e['name'] == function and p.class_of_export(e) == 'Function')
     code, _ = find_script(p.export_data(e))
     result = dict(Dis(p, code).run())

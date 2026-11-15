@@ -25,6 +25,8 @@ namespace ue_wrap::fossilhound {void DriveBodyYaw(void*,float yaw){test::bodyYaw
 namespace ue_wrap::rufus {bool IsFamily(void*){return test::rufus;}bool DriveBodyYaw(void*,float){++test::rufusWrites;return test::rufusReady;}}
 namespace ue_wrap::wisp {bool DriveWispLanding(void*){++test::landings;return test::canLand;}}
 namespace ue_wrap::sit_pose {void DriveSitting(void*,bool){}}
+namespace coop::config { std::string ResolveEnum(const coop::config_registry::EnumRow&) { return "native"; } }
+namespace ue_wrap::character_floor { bool Refresh(void*,const FVector&) { return true; } }
 int main(){
  using namespace coop::element;
  Npc npc;npc.actor=&test::actor;

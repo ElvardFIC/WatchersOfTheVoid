@@ -8,8 +8,8 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
  function Compile-Join($exe,$forcedHeader=''){
   $extra=@();if($forcedHeader){$extra+="/FI$forcedHeader"}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/state_2145_stubs `
-   /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" agent/tests/flashlight_join_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/state_2145_stubs" `
+   /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/flashlight_join_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Flashlight join fixture compile failed'}
  }
  $exe=Join-Path $output 'join.exe';Compile-Join $exe

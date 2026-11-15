@@ -73,7 +73,6 @@ bool SetActorRootCollisionEnabled(void* actor, uint8_t collisionType);
 
 // The root primitive's GetCollisionEnabled (0 None, 1 QueryOnly, 2 PhysicsOnly, 3 QueryAndPhysics; the actor's own
 // collision flag is folded in by the engine), or -1 when the root is not a primitive or the call did not run.
-int GetActorRootCollisionEnabled(void* actor);
 
 // GetCollisionEnabled and SetCollisionEnabled on one primitive component, as the root forms above (-1 / false for
 // anything that is not a live primitive component).
@@ -119,5 +118,6 @@ bool IsActorRootBodyAtRest(void* actor);
 // True when the actor's root is a live primitive component that simulates physics (the root through
 // K2_GetRootComponent, then IsSimulatingPhysics); false for no root or a call that did not run.
 bool IsActorRootSimulatingPhysics(void* actor);
+
 
 }  // namespace ue_wrap::engine

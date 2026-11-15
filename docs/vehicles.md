@@ -105,6 +105,9 @@ servicing peer's copy keeps the serviced values (a three-second floor), so nothi
 | every route to an ATV's damage and death (the two blast verbs, the explosion) | the tick owner | a copy that does not own the tick cancels them at the script gate; the owner takes every blast that reaches it |
 | the story event's trap | the host | the host copy's `trap` rides the stamp (bit 4); the driven copy fires it |
 | the condition values | the syncer | overwritten on the mirror, re-derived on edges |
+| fuel and health | the host | a client's refuel or repair is a request the host judges and applies on its copy; a client driver only lowers them |
+| the modules | the host | a client's fit or take-off is a request the host judges and makes on its copy |
+| lights, brake, turbo, the horn | the syncer | the syncer's copy's bools and the horn key's level ride its block's `stateBits`; the host applies each change and re-sends |
 | tyre and spare presence | the host | consumed from the host's own copy only |
 | a runtime ATV's identity | the host | its game key, announced |
 
@@ -112,12 +115,14 @@ servicing peer's copy keeps the serviced values (a three-second floor), so nothi
 
 | Kind | Direction | Carries |
 |---|---|---|
-| `AtvState` | the syncer (a client's to the host alone), re-sent by the host; the host when idle | key, pose, rotation, velocities, the seat and the syncer the host stamps, the host copy's trap, the condition block, an adopt flag |
+| `AtvState` | the syncer (a client's to the host alone), re-sent by the host; the host when idle | key, pose, rotation, velocities, the seat and the syncer the host stamps, the host copy's trap, the syncer's brake, lights, turbo and horn, the condition block with its vitals ack, an adopt flag |
 | `AtvSeat`, `AtvTakeover` | a client to the host | a sit in or leave of the driver's seat; a grab of the ATV |
 | `AtvAnswer` | the host to the asking client | the verdict on one request, with the seat and the syncer the host holds |
 | `AtvExplodeRequest` | a client to the host | the ATV the client syncs that exploded, by key, and whether the story event's trap fell in that frame; the host blasts at the ATV's own `tp` |
 | `AtvSpawn`, `AtvDestroy` | the host to all | an ATV's key, class and pose; its teardown |
 | `AtvSetComplete` | the host to a joiner | the count of distinct keys its connect snapshot named |
+| `AtvHostState` | the host to all | an ATV's fuel, health, modules, empty and broken with its state sequence; the answer to a request (to its sender alone: the request's id, the verdict, the copy's state) |
+| `AtvRequest` | a client to the host | a refuel's gain, a repair, a module fitted or taken off (each with a request id), a copy's ask for the host's state |
 
 ## Late join
 

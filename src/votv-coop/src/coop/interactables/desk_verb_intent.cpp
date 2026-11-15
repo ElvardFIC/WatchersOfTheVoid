@@ -5,7 +5,7 @@
 #include "coop/element/element.h"
 #include "coop/element/intent_authority.h"
 #include "coop/element/registry.h"
-#include "coop/interactables/desk_verb_effects.h"
+#include "coop/requester_feedback/requester_feedback.h"
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/intent_bucket.h"
 #include "coop/net/intent_queue.h"
@@ -26,8 +26,11 @@
 #include "ue_wrap/desk/saved_signals.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 #include "ue_wrap/facts/function_row.h"
+#include "ue_wrap/world/profile.h"
 
 #include <atomic>
+#include <string>
+#include <string_view>
 
 namespace coop::desk_verb_intent {
 namespace {
@@ -43,7 +46,7 @@ using coop::net::DeskVerbPayload;
 constexpr int kTagPress = 0x44565001;  // 'DVP' 1
 UE_FACT_FN(kRowActionOptionIndex, "desk_verb_intent", L"analogDScreenTest_C", L"actionOptionIndex", Declared);
 
-// The seven buttons by the desk's component variables (analogDScreenTest.cpp :2860, :3048, :2606, :2691, :3128,
+// The seven buttons by the desk's component variables (CXXHeaderDump/analogDScreenTest.cpp :2860, :3048, :2606, :2691, :3128,
 // :3173, :3203).
 constexpr const wchar_t* kButtonMember[DV::kButtons] = {
     L"button_downl_saveSig1", L"button_downl_delSig", L"button_play_left", L"button_play_saveSig",
@@ -77,6 +80,7 @@ struct Slot {
 coop::roster_ledger::PerSlotState<Slot> g_slots;
 
 unsigned long long g_sent = 0, g_ran = 0, g_refused = 0, g_dropped = 0, g_heard = 0;
+unsigned long long g_statsSent = 0, g_statsMade = 0, g_statsLost = 0;  // op 4, the decode's profile stat
 
 // ---- what a button acts on ----------------------------------------------------------------------------------
 
@@ -94,7 +98,7 @@ uint64_t HashOf(const SD::Row& r) {
 }
 
 // The decode a start or stop acts on: the refiner's row less what a completion rewrites, its level, id and isCopy
-// (analogDScreenTest.cpp :6232-6240), so a press that crossed a level-up still names the same decode.
+// (CXXHeaderDump/analogDScreenTest.cpp :6232-6240), so a press that crossed a level-up still names the same decode.
 uint64_t DecodeOf(SD::Row r) {
     r.level = 0;
     r.id.clear();
@@ -141,7 +145,7 @@ Seen Look(void* desk, uint8_t button) {
         if (button == DV::kDeckDrive) DriveIn(DC::kRoleDeskPlay, true, s);
         s.selectedRow = RowAt(DP::SelectedRow(desk));
     } else if (button == DV::kUpload || button == DV::kCompStart || button == DV::kCompStop) {
-        // The start asks only that a drive sits in the slot (analogDScreenTest.cpp :3180); the upload moves its data.
+        // The start asks only that a drive sits in the slot (CXXHeaderDump/analogDScreenTest.cpp :3180); the upload moves its data.
         if (button != DV::kCompStop) DriveIn(DC::kRoleDeskComp, button == DV::kUpload, s);
         SD::Row r;
         void* base = ue_wrap::comp_pane::CompDataPtr();
@@ -240,6 +244,30 @@ void OnVerdict(const DeskVerbPayload& p) {
     coop::prop_sound::PlayDenyClick(coop::players::Registry::Get().Local());
 }
 
+// A stat's name into the payload, ASCII; false for a name the wire cannot carry.
+bool PutStatName(DeskVerbPayload& p, std::wstring_view text) {
+    if (text.empty() || text.size() > DV::kTextCap) return false;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] < 0x20 || text[i] > 0x7E) return false;
+        p.text[i] = static_cast<char>(text[i]);
+    }
+    p.textLen = static_cast<uint8_t>(text.size());
+    return true;
+}
+
+// CLIENT: the host's op 4, `level` added to this profile's stat the text names, as the decode would have.
+void OnStat(const DeskVerbPayload& p) {
+    const size_t n = p.textLen < DV::kTextCap ? p.textLen : DV::kTextCap;
+    const std::wstring text(p.text, p.text + n);
+    if (!ue_wrap::profile::AddStat(text, p.level)) {
+        ++g_statsLost;
+        UE_LOGW("desk_verb: the host's %ls %+d for press #%u did not apply here", text.c_str(), p.level, p.seq);
+        return;
+    }
+    ++g_statsMade;
+    UE_LOGI("desk_verb: CLIENT added %+d to this profile's %ls (press #%u)", p.level, text.c_str(), p.seq);
+}
+
 // ---- the host -----------------------------------------------------------------------------------------------
 
 void Answer(coop::net::Session& s, uint8_t slot, const DeskVerbPayload& press, uint8_t verdict) {
@@ -259,15 +287,16 @@ void Refuse(coop::net::Session& s, uint8_t slot, const DeskVerbPayload& p, uint8
 }
 
 // One press, run or refused and then consumed, or left at the head of its queue while the host has no body for
-// its presser yet or the effects' seams are settling: a window, not a verdict.
+// its presser yet or requester_feedback's seams are settling: a window, not a verdict.
 bool Execute(coop::net::Session& s, const DeskVerbPayload& p, uint8_t slot) {
     void* desk = ue_wrap::console_desk::Instance();
     void* button = desk ? DP::Member(desk, kButtonMember[p.button]) : nullptr;
-    if (!button || desk_verb_effects::Refused()) {
-        Refuse(s, slot, p, DV::kUnavailable, button ? "the effects' seams are refused" : "no desk or no button");
+    if (!button || requester_feedback::Refused()) {
+        Refuse(s, slot, p, DV::kUnavailable,
+               button ? "requester_feedback's seams are refused" : "no desk or no button");
         return true;
     }
-    if (!desk_verb_effects::Ready()) return false;
+    if (!requester_feedback::Ready()) return false;
     const EL::IntentSubject subj = EL::IntentTarget::ForClientIntent(s, slot, kDeskReachUU).Authorize(desk);
     if (subj.outcome == EL::IntentOutcome::NoBody) {
         if (!g_slots[slot].waitSaid) {
@@ -301,7 +330,7 @@ bool Execute(coop::net::Session& s, const DeskVerbPayload& p, uint8_t slot) {
     int dropped = 0;
     bool pressed = false;
     {
-        desk_verb_effects::Replay replay(slot, p.seq);
+        requester_feedback::Scope feedback(slot, p.seq);
         pressed = DP::PressForAnother(desk, puppet, button, &dropped);
     }
     if (!pressed) {
@@ -315,7 +344,7 @@ bool Execute(coop::net::Session& s, const DeskVerbPayload& p, uint8_t slot) {
     return true;
 }
 
-void Register(coop::net::Session* session) {
+void Register() {
     if (!g_watched && !g_watchRefused) {
         g_watched = sg::WatchName(kRowActionOptionIndex, kTagPress, &OnPressPre, nullptr);
         if (!g_watched) {
@@ -324,18 +353,32 @@ void Register(coop::net::Session* session) {
                     "its own machine");
         }
     }
-    desk_verb_effects::Install(session);
 }
 
 }  // namespace
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    Register(session);
+    Register();
+}
+
+void SendStat(uint8_t slot, uint32_t seq, const wchar_t* stat, int32_t delta) {
+    DeskVerbPayload p{};
+    p.op = DV::kOpStat;
+    p.level = delta;
+    p.seq = seq;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!stat || !PutStatName(p, stat) || !s || !s->connected() ||
+        !s->SendReliableToSlot(slot, coop::net::ReliableKind::DeskVerb, &p, static_cast<int>(sizeof(p)))) {
+        ++g_statsLost;
+        return;
+    }
+    ++g_statsSent;
+    UE_LOGI("desk_verb: HOST sent slot %u its %ls %+d (#%u)", static_cast<unsigned>(slot), stat, delta, seq);
 }
 
 void Tick(coop::net::Session& session) {
-    Register(&session);
+    Register();
     if (!g_saidLive && g_watched && !g_watchRefused) {
         sg::ResolvePendingNames();
         if (!sg::NameWatchLive(kRowActionOptionIndex, kTagPress)) {
@@ -383,16 +426,18 @@ void OnMessage(coop::net::Session& session, const DeskVerbPayload& p, int sender
     }
     // A client hears DeskVerb from the host alone: the kind is never relayed.
     if (p.op == DV::kOpVerdict) OnVerdict(p);
-    else if (p.op == DV::kOpGloss || p.op == DV::kOpSound || p.op == DV::kOpStat) desk_verb_effects::OnEffect(p);
+    else if (p.op == DV::kOpStat) OnStat(p);
 }
 
 void OnDisconnect() {
     if (g_sent || g_ran || g_refused || g_dropped || g_heard)
         UE_LOGI("desk_verb: session end -- sent=%llu ran=%llu refused=%llu dropped=%llu verdicts heard=%llu", g_sent,
                 g_ran, g_refused, g_dropped, g_heard);
+    if (g_statsSent || g_statsMade || g_statsLost)
+        UE_LOGI("desk_verb: session end -- stats sent=%llu made=%llu lost=%llu", g_statsSent, g_statsMade, g_statsLost);
     g_sent = g_ran = g_refused = g_dropped = g_heard = 0;
+    g_statsSent = g_statsMade = g_statsLost = 0;
     g_saidOffline = false;
-    desk_verb_effects::OnDisconnect();
 }
 
 }  // namespace coop::desk_verb_intent

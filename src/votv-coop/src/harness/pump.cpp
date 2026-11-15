@@ -8,6 +8,9 @@
 #include "coop/props/food_save_sync.h"
 #include "ue_wrap/actors/llama_marker.h"
 #include "coop/dev/class_lifetime_probe.h"
+#include "coop/element/class_load_wait.h"
+#include "coop/session/world_load_episode.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "coop/dev/init_seam_probe.h"
 #include "coop/dev/key_parity_probe.h"
 #include "coop/dev/mannequin_drill.h"
@@ -15,13 +18,16 @@
 #include "coop/dev/ragdoll_bone_overlay.h"
 #include "coop/dev/function_lookup_parity.h"
 #include "coop/dev/join_abort_drill.h"
+#include "coop/dev/join_minimized_drill.h"
 #include "coop/dev/world_singleton_parity.h"
 #include "coop/input/game_window_proc.h"
 #include "coop/input/input_owner.h"
 #include "coop/player/death_revive.h"
 #include "coop/player/nameplate.h"
 #include "coop/player/revive_protection.h"
+#include "coop/player/leave_in_event.h"
 #include "coop/player/run_end_travel.h"
+#include "coop/player/vidcam_hint.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/shutdown.h"
@@ -57,6 +63,7 @@ void TickShutdownHooks() {
     coop::death_revive::Install(s);
     coop::revive_protection::Install();
     coop::player::run_end_travel::Install(s);
+    coop::player::leave_in_event::Install(s);
 }
 
 // Republishes "does the game own typed text" on two cadences (coop/input/input_owner.h): the cheap
@@ -107,6 +114,7 @@ void TickFrameTail() {
     ue_wrap::llama_marker::Tick();
     // Self-clearing and cheap when idle: an empty nameplate snapshot hides the HUD at the menu.
     coop::nameplate::Update();
+    coop::vidcam_hint::Install();  // the watch on the video camera overlay's state, for the HUD's hint line
     coop::dev::object_overlay::Update(); coop::dev::ragdoll_bone_overlay::Update();
     coop::chat_feed::Tick();
     // The prop key index's watches' names, driven to resolve (the install itself is harness::Start's first
@@ -132,6 +140,9 @@ void TickFrameTail() {
     // the play loop alike, so it catches either abort window) and notes the rejoin's world-ready; a
     // single enum read when off.
     coop::dev::join_abort_drill::OnFrameTail();
+    // [dev] The minimized-window join proof minimizes the window at boot, judges at the first tick after the join
+    // completed and restores it; a single flag read when off.
+    coop::dev::join_minimized_drill::OnFrameTail();
     // The one subclass of the game window (close signals, hotkeys, native text fields): found and
     // followed here, in session or out of one, with no present needed.
     coop::input::game_window_proc::Tick();

@@ -23,7 +23,7 @@ try {
  }
  $tests=if($CollectOnly){@('handoff_2151')}elseif($InventoryOnly){@('pocket_state_2151')}else{@('handoff_2151','skin_previews_2151','flashlight_2145','pocket_state_2151')}
  function Compile-Test([string]$TestName,[string]$TestSource){
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/handoff_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$TestName.obj" "/Fe$output/$TestName.exe" $TestSource /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/handoff_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$TestName.obj" "/Fe$output/$TestName.exe" $TestSource /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $TestName"}
  }
  foreach($name in $tests) {

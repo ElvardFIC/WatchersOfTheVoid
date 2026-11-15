@@ -26,8 +26,8 @@ namespace coop::net {
 
 namespace {
 // A kind the host relays from one client to the others must be one a client may author: the edge below would
-// otherwise refuse what the relay table forwards. Every byte value is checked, so a kind added to the relay
-// table without its authorship row fails the build here.
+// otherwise refuse what the relay table forwards. Every value below the tables' space is checked, so a kind
+// added to the relay table without its authorship row fails the build here.
 constexpr bool RelayedKindsAreClientAuthored() {
     for (int v = 0; v < static_cast<int>(kReliableKindCount); ++v) {
         const auto k = static_cast<ReliableKind>(v);
@@ -97,8 +97,8 @@ void Session::HandlePendingMessage(int pendIdx, uint32_t hConn, const void* data
 
     const std::string guid = peer_identity::GuidForPublicKey(res.provedKey);
 
-    // The ban check, MTA's shape (CGame::Packet_PlayerJoinData: the serial at CGame.cpp:1956, then
-    // the IP at :1973; MTA supplants the old player first, CGame.cpp:1892-1907, ours refuses
+    // The ban check, MTA's shape (CGame::Packet_PlayerJoinData: the serial at reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1956, then
+    // the IP at :1973; MTA supplants the old player first, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1892-1907, ours refuses
     // first so a banned joiner kicks nobody), asked here because the proof is the first place
     // every transport holds an id and a route: the proved id, and the connection's own address
     // (empty on a relayed path or when GNS has none). Before the supersession kick and the seat:
@@ -291,11 +291,11 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             rateControl_.NoteReliableReceived(peerSlot, len);
         if (dev::wire_census::Enabled())
             dev::wire_census::NoteReliable(routeSlot, static_cast<unsigned>(rh.kind));
-        // Default deny at the edge (client_authorship.h): a kind no client may author, or a byte that names no
+        // Default deny at the edge (client_authorship.h): a kind no client may author, or a value that names no
         // kind, is dropped here, counted by the budget ahead of the epoch latch and acted on by nothing below --
         // not diverted, echoed, inboxed or relayed. The first of each value in a session is said with its number,
         // the rest summed per window: MTA logs each refused event, and rate-limits only an unknown one, one line
-        // per gap for the whole server (CGame.cpp:2683-2707); the fold here is ours, the net thread's log being one
+        // per gap for the whole server (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2683-2707); the fold here is ours, the net thread's log being one
         // a client could fill.
         if (cfg_.role == Role::Host) {
             const ClientAuthorship who = AuthorshipOf(static_cast<ReliableKind>(rh.kind));

@@ -12,6 +12,7 @@ foreach($name in @('container_act_wire','container_act_state','container_slice_w
     $sources+=Join-Path $production "coop/props/$name.cpp"
 }
 $sources+=Join-Path $production 'coop/items/save_record_wire.cpp'
+$sources+=Join-Path $production 'coop/props/prop_record_wire.cpp'
 $sources+=Join-Path $production 'coop/interactables/signal_wire.cpp'
 & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$root/src/votv-coop/include" "/Fo$output/" "/Fe$output/test.exe" @sources /link /OPT:REF
 if($LASTEXITCODE){throw 'Upstream container selftest compile failed'}

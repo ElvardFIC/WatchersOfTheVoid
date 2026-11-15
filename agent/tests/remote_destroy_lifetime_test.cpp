@@ -77,7 +77,7 @@ void* Registry::Local(){return &test::objects[3];}
 }
 int main(){
  using namespace test;
- Reset();Apply();CHECK(calls==1&&heard==1&&releases==1&&marks==1&&unpins==1);
+ Reset();Apply();std::fprintf(stderr,"destroy counts calls=%d heard=%d releases=%d marks=%d unpins=%d\n",calls,heard,releases,marks,unpins);CHECK(calls==1&&heard==1&&releases==1&&marks==1&&unpins==1);
  Reset();listener=[] {++objects[2].serial;};Apply();CHECK(calls==0&&releases==0&&marks==0);
  Reset();listener=[] {objects[2].live=false;};Apply();CHECK(calls==0&&releases==0);
  Reset();listener=[] {++world;};Apply();CHECK(calls==0&&releases==0);
@@ -111,3 +111,4 @@ ElementId Registry::EidForActor(void*)const{return kInvalidId;}
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return L"rifle";}}
 
 namespace coop::element::bind_wait { void GiveUp(uint32_t,const char*) {} }
+namespace coop::element::class_load_wait { bool Cancel(const char*,uint32_t) { return false; } }

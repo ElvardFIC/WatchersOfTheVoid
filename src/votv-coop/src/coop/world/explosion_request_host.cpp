@@ -62,7 +62,7 @@ constexpr float kStickyReachCm = 20000.0f;
 
 // The round trip when the session has not measured one yet, and the most of it a bound is widened by. Source caps
 // one-way latency plus interpolation at sv_maxunlag, 1 s (reference/source-sdk-2013/src/game/server/
-// player_lagcompensation.cpp:34, :399); here the round trip is capped at the same second.
+// reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp:34, :399); here the round trip is capped at the same second.
 constexpr float kUnmeasuredRttMs = 500.0f;
 constexpr float kMaxRttMs        = 1000.0f;
 
@@ -179,7 +179,7 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2953-3016). This lane does not relay: a relay
     // needs the projectile's velocity, rotation and target on the wire, and the shot carries the origin only, so the
     // other peers see only the blast.
-    // MTA checks no weapon on its server (CGame.cpp:2831-2932); here the launcher must be in the shooter's hand or seat.
+    // MTA checks no weapon on its server (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2831-2932); here the launcher must be in the shooter's hand or seat.
     void* car = nullptr;
     if (p.launcher == static_cast<uint8_t>(RC::Launcher::WitchCar)) {
         car = coop::atv_sync::ActorSeatedBy(slot);
@@ -288,7 +288,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
     FVector at{};
     coop::RemotePlayer* rp = nullptr;
 
-    // MTA marks no player's explosion once and checks no weapon (CGame.cpp:2831-2932); here a hand blast needs its
+    // MTA marks no player's explosion once and checks no weapon (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2831-2932); here a hand blast needs its
     // explosive in the hand within its fuse, and a self blast needs a living puppet and the bucket's pace.
     if (p.kind == static_cast<uint8_t>(RC::RequestKind::Hand)) {
         const uint64_t fuse = src == XS::Kind::Pipebomb ? kPipebombFuseMs : kGrenadeFuseMs;

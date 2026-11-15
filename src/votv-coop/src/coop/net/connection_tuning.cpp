@@ -62,7 +62,7 @@ void TuneConnection(uint32_t hConn, bool rateControlled, long pinnedRateKbs) {
     // decision, because the admission exchange that runs before a slot exists is inside that
     // window. What the window holds is now GNS's own stock flat 256 KB/s, not its ping-derived
     // guess: with no global pin, `SendRateMin == SendRateMax` and `SNP_ClampSendRate` takes the
-    // "application has disabled bandwidth estimation" branch (`snp.cpp:4249-4255`), so
+    // "application has disabled bandwidth estimation" branch (`Engine/snp.cpp:4249-4255`), so
     // `m_nCurrentSendRateEstimate` is never consulted. 1.77x our opening rate, and flat.
     //
     // With both off nothing is written and the link runs at GNS's stock 256 KB/s, fixed. That is

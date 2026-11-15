@@ -9,8 +9,10 @@
 #include "ue_wrap/devices/drone.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_attach.h"  // SetActorSimulatePhysics: the mirror's root sphere
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -224,11 +226,6 @@ bool ReadLeaveAfter5min(void* drone, bool& out) {
     return true;
 }
 
-bool WriteLeaveAfter5min(void* drone, bool value) {
-    if (!drone || !EnsureResolved() || g_leaveAfter5minOff < 0) return false;
-    *reinterpret_cast<bool*>(reinterpret_cast<char*>(drone) + g_leaveAfter5minOff) = value;
-    return true;
-}
 
 bool ReadPose(void* drone, FVector& loc, FRotator& rot) {
     if (!drone) return false;
@@ -243,13 +240,30 @@ bool DriveMirror(void* drone, const FVector& loc, const FRotator& rot) {
     return ok;
 }
 
-void SuppressTick(void* drone) {
-    if (!drone) return;
-    E::SetActorTickEnabled(drone, false);  // stop the flight integrator -- the client drone is a mirror
+namespace {
+// The drone whose simulated root SuppressTick took out of the simulation, so RestoreTick gives that one its
+// body back; a reloaded level's drone is a new object (its slot serial differs, even at the same address), frozen afresh.
+CachedObjRef g_frozenDrone;
+}  // namespace
+
+bool SuppressTick(void* drone) {
+    if (!drone) return false;
+    // The read only says what to give back: a root that does not read answers "not simulating" too, so the freeze itself
+    // (idempotent, and false for no primitive root or a call that did not run) is what says the body is out.
+    const bool wasSimulating = E::IsActorRootSimulatingPhysics(drone);
+    if (!E::SetActorSimulatePhysics(drone, false)) return false;   // nothing changed yet
+    if (!E::SetActorTickEnabled(drone, false)) {                   // the flight integrator: the client drone is a mirror
+        if (wasSimulating) E::SetActorSimulatePhysics(drone, true);
+        return false;
+    }
+    if (wasSimulating) g_frozenDrone.Set(drone);  // the stream alone places it: RestoreTick gives this body back
+    return true;
 }
 
 void RestoreTick(void* drone) {
     if (!drone) return;
+    if (g_frozenDrone.Is(drone)) E::SetActorSimulatePhysics(drone, true);
+    g_frozenDrone.Reset();
     E::SetActorTickEnabled(drone, true);
 }
 
@@ -413,5 +427,7 @@ void* OfSellLocation(void* sellLocation) {
     void* const d = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(sellLocation) + off);
     return d && R::IsLive(d) ? d : nullptr;
 }
+
+
 
 }  // namespace ue_wrap::drone

@@ -7,8 +7,8 @@ Push-Location $checkout
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
     foreach($fixture in @('native','sync')) {
-        $extra=@();if($fixture -eq 'sync'){$extra=@('/I','agent/tests/placed_save_stubs')}
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/Fo$output/$fixture.obj" "/Fe$output/$fixture.exe" "agent/tests/llama_marker_${fixture}_test.cpp" /link /OPT:REF
+        $extra=@();if($fixture -eq 'sync'){$extra=@('/I',(Join-Path $PSScriptRoot 'placed_save_stubs'))}
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/Fo$output/$fixture.obj" "/Fe$output/$fixture.exe" "$PSScriptRoot/llama_marker_${fixture}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE){throw "Llama marker $fixture fixture compile failed"}
         & "$output/$fixture.exe"
         if($LASTEXITCODE){throw "Llama marker $fixture fixture failed"}

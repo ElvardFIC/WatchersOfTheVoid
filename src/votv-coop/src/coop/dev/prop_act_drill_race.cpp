@@ -106,6 +106,7 @@ EL::ElementId g_eid = EL::kInvalidId;
 std::string g_key;          // c1's disc key, once it said it
 bool g_grabbing = false;    // host held: the host's own grab of the target, written every tick
 RaceBase g_base;
+bool g_fannedSaid = false;   // the host said c1's destroy commit was processed (and so its fan-out sent)
 
 void HEnter(HStage s) {
     g_hs = s;
@@ -123,7 +124,22 @@ void ClearGrab() {
 void HostFail(const RaceRow* row, const std::string& why) {
     ClearGrab();
     UE_LOGW("%s host %s FAIL -- %s%s%s", kTag, PhaseName().c_str(), row ? row->act.name : "", row ? ": " : "", why.c_str());
+    HostEnds(End::Fail, std::string(row ? row->act.name : "") + ": " + why);
     g_hs = HStage::Done;
+}
+
+// A bound ran out with no event to decide on: INVALID, never a verdict on the lane. The phase stops as it does on a FAIL.
+void HostInvalid(const RaceRow* row, const std::string& why) {
+    ClearGrab();
+    UE_LOGW("%s host %s INVALID -- %s%s%s", kTag, PhaseName().c_str(), row ? row->act.name : "", row ? ": " : "", why.c_str());
+    HostEnds(End::Invalid, std::string(row ? row->act.name : "") + ": " + why);
+    g_hs = HStage::Done;
+}
+
+// What a client said when its step ended other than ok: its FAIL stays a FAIL, its INVALID stays INVALID.
+void HostReported(const RaceRow* row, const std::string& who, const std::string& said) {
+    if (said.compare(0, 8, "invalid ") == 0) HostInvalid(row, who + " reported: " + said.substr(8));
+    else HostFail(row, who + " reported: " + said);
 }
 
 // The host's own grab, re-written every tick (a cold-written grab can be cleared by the Blueprint).
@@ -176,6 +192,7 @@ void ResetStep() {
     g_hostRoot.Reset();
     g_eid = EL::kInvalidId;
     g_key.clear();
+    g_fannedSaid = false;
 }
 
 // The target is announced and the step's own setup is done: take the counters and say the step is ready.
@@ -298,7 +315,7 @@ bool DoneOk(const RaceRow& r, int slot, bool* failed) {
     std::string rest;
     if (!ClientSaid(slot, DoneHead(r.act, slot), &rest)) return false;
     if (rest != "ok") {
-        HostFail(&r, "c" + std::to_string(slot) + " reported: " + rest);
+        HostReported(&r, "c" + std::to_string(slot), rest);
         *failed = true;
         return false;
     }
@@ -321,7 +338,7 @@ void HostStep(coop::net::Session* s) {
     case HStage::Spawn: {
         void* actor = nullptr;
         if (const char* why = SpawnTarget(r.act, 0.f, &actor)) {
-            HostFail(&r, why);
+            if (const char* bad = InvalidText(why)) HostInvalid(&r, bad); else HostFail(&r, why);
             return;
         }
         g_target.Set(actor);
@@ -336,7 +353,7 @@ void HostStep(coop::net::Session* s) {
         }
         g_eid = EL::Registry::Get().EidForActor(actor);
         if (g_eid == EL::kInvalidId) {
-            if (HExpired(kAnnounceBoundMs)) HostFail(&r, "the spawned prop was never announced");
+            if (HExpired(kAnnounceBoundMs)) HostInvalid(&r, "the spawned prop was never announced");
             return;
         }
         if (r.blocker != Blocker::HostGrab) {
@@ -351,7 +368,7 @@ void HostStep(coop::net::Session* s) {
     }
     case HStage::Grab:
         if (!coop::prop_hold::HostHolds(g_target.Get())) {
-            if (HExpired(kAnnounceBoundMs)) HostFail(&r, "the host's own grab was never read as a hold");
+            if (HExpired(kAnnounceBoundMs)) HostInvalid(&r, "the host's own grab was never read as a hold");
             return;
         }
         SayReady(r);
@@ -361,7 +378,7 @@ void HostStep(coop::net::Session* s) {
         if (g_key.empty()) {
             if (!ClientSaid(kSlotC1, KeyHead(), &g_key) || g_key.empty()) {
                 g_key.clear();
-                if (HExpired(kDoneBoundMs)) HostFail(&r, "c1 never said its disc's key");
+                if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c1 never said its disc's key");
                 return;
             }
             HEnter(HStage::AwaitKey);
@@ -372,11 +389,11 @@ void HostStep(coop::net::Session* s) {
             SayReady(r);
             return;
         }
-        if (HExpired(kAnnounceBoundMs)) HostFail(&r, "cell not reached: c1's disc key never got a row");
+        if (HExpired(kAnnounceBoundMs)) HostInvalid(&r, "cell not reached: c1's disc key never got a row");
         return;
     case HStage::AwaitReserved:
         if (coop::prop_hold::ReservedEid(kSlotC1) != static_cast<uint32_t>(g_eid)) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "c1 never reserved the target");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c1 never reserved the target");
             return;
         }
         if (r.blocker != Blocker::HostActs) Say(HostLine(r, "c1 reserved"));
@@ -384,7 +401,7 @@ void HostStep(coop::net::Session* s) {
         return;
     case HStage::Blocking:
         if (!Block(r)) {
-            if (g_hs == HStage::Blocking && HExpired(kDoneBoundMs)) HostFail(&r, "the blocker was never answered");
+            if (g_hs == HStage::Blocking && HExpired(kDoneBoundMs)) HostInvalid(&r, "the blocker was never answered");
             return;
         }
         Say(HostLine(r, "answered"));
@@ -396,7 +413,7 @@ void HostStep(coop::net::Session* s) {
                                         ? coop::remote_prop::IsActorDrivenByOtherThan(actor, kSlotC1)
                                         : (coop::hook_sync::PlayerHookHolders(actor) & kC2HookBit) != 0);
         if (!held) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "c2's hold on the target was never read on the host");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c2's hold on the target was never read on the host");
             return;
         }
         Say(HostLine(r, r.blocker == Blocker::C2Grab ? "held" : "hooked"));
@@ -404,12 +421,21 @@ void HostStep(coop::net::Session* s) {
         return;
     }
     case HStage::AwaitDone: {
+        // The destroy commit processed (c1's, or c2's in the row where c2 takes c1's disc): the host's fan-out of it
+        // is sent, and this line follows it on the same ordered Default lane (session_lanes.h LaneForKind, FIFO), so a client that reads it has taken the destroy. The
+        // clients decide on it: a copy that still stands then is the failing event.
+        const bool c2Destroys = r.blocker == Blocker::C2Takes;   // that row's destroy is c2's commit, fanned out to c1's disc
+        if (!g_fannedSaid && Since(PAH::CommitsOf(c2Destroys ? kSlotC2 : kSlotC1, PAH::internal::CommitStep::Destroy),
+                                   c2Destroys ? g_base.destroy2 : g_base.destroy1) > 0) {
+            g_fannedSaid = true;
+            Say(HostLine(r, "fanned"));
+        }
         bool failed = false;
         const bool c1 = DoneOk(r, kSlotC1, &failed);
         const bool c2 = failed || !C2SaysDone(r.blocker) || DoneOk(r, kSlotC2, &failed);
         if (failed) return;
         if (!c1 || !c2) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "a client never said it was done");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "a client never said it was done");
             return;
         }
         ClearGrab();
@@ -420,7 +446,7 @@ void HostStep(coop::net::Session* s) {
         std::string why;
         switch (Judge(r, g_eid, &why)) {
         case Judged::Wait:
-            if (HExpired(kJudgeBoundMs)) HostFail(&r, "still waiting: " + why);
+            if (HExpired(kJudgeBoundMs)) HostInvalid(&r, "still waiting: " + why);
             return;
         case Judged::Fail:
             HostFail(&r, why);
@@ -432,6 +458,7 @@ void HostStep(coop::net::Session* s) {
                 HEnter(kRaceRows[g_hrow].act.target == Target::Client ? HStage::AwaitKey : HStage::Spawn);
                 return;
             }
+            HostEnds(End::Pass, "all steps held");
             UE_LOGI("%s host race PASS -- all %u steps held", kTag, static_cast<unsigned>(kRaceRowCount));
             g_hs = HStage::Done;
             return;

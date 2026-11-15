@@ -6,23 +6,23 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/watoy_sync.obj" "/Fe$output/watoy_sync.exe" agent/tests/watoy_sync_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/watoy_sync.obj" "/Fe$output/watoy_sync.exe" "$PSScriptRoot/watoy_sync_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Watoy controller test compile failed'}
     & "$output/watoy_sync.exe"
     if($LASTEXITCODE -ne 0){throw 'Watoy controller test failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/watoy_budget.obj" "/Fe$output/watoy_budget.exe" agent/tests/watoy_budget_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/watoy_budget.obj" "/Fe$output/watoy_budget.exe" "$PSScriptRoot/watoy_budget_test.cpp" /link /OPT:REF
     if($LASTEXITCODE){throw 'Watoy budget compile failed'}
     & "$output/watoy_budget.exe"
     if($LASTEXITCODE){throw 'Watoy budget failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/watoy_lifetime.obj" "/Fe$output/watoy_lifetime.exe" agent/tests/watoy_lifetime_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/toy_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/watoy_lifetime.obj" "/Fe$output/watoy_lifetime.exe" "$PSScriptRoot/watoy_lifetime_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Watoy lifetime test compile failed'}
     & "$output/watoy_lifetime.exe"
     if($LASTEXITCODE -ne 0){throw 'Watoy lifetime test failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/watoy_wrapper.obj" "/Fe$output/watoy_wrapper.exe" agent/tests/watoy_wrapper_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/watoy_wrapper.obj" "/Fe$output/watoy_wrapper.exe" "$PSScriptRoot/watoy_wrapper_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Watoy wrapper test compile failed'}
     & "$output/watoy_wrapper.exe"
     if($LASTEXITCODE -ne 0){throw 'Watoy wrapper test failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/watoy_wrapper_lifetime.obj" "/Fe$output/watoy_wrapper_lifetime.exe" agent/tests/watoy_wrapper_lifetime_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/watoy_wrapper_lifetime.obj" "/Fe$output/watoy_wrapper_lifetime.exe" "$PSScriptRoot/watoy_wrapper_lifetime_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Watoy wrapper lifetime compile failed'}
     & "$output/watoy_wrapper_lifetime.exe"
     if($LASTEXITCODE -ne 0){throw 'Watoy wrapper lifetime failed'}
@@ -53,7 +53,7 @@ try {
             [IO.File]::WriteAllText($path,$mutant)
             $header=Join-Path $output ($name+'.h')
             [IO.File]::WriteAllText($header,('#define WATOY_SYNC_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/watoy_lifetime_test.cpp /link /OPT:REF
+            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/toy_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/watoy_lifetime_test.cpp" /link /OPT:REF
             if($LASTEXITCODE){throw "Watoy control compile failed: $name"}
             $saved=$ErrorActionPreference
             try{$ErrorActionPreference='Continue';$report=& "$output/$name.exe" $control.Name 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}
@@ -92,7 +92,7 @@ try {
             [IO.File]::WriteAllText($path,$mutant)
             $header=Join-Path $output ($name+'.h')
             [IO.File]::WriteAllText($header,('#define WATOY_WRAPPER_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/watoy_wrapper_lifetime_test.cpp /link /OPT:REF
+            & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/watoy_wrapper_lifetime_test.cpp" /link /OPT:REF
             if($LASTEXITCODE){throw "Watoy wrapper control compile failed: $name"}
             $saved=$ErrorActionPreference
             try{$ErrorActionPreference='Continue';$report=& "$output/$name.exe" $control.Name 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}

@@ -83,6 +83,9 @@ uintptr_t ScopeBits(void*) { return 0; }
 void MarkScope(const Call&,uintptr_t) {}
 bool IsBodyActive(void*,void*) { return false; }
 }
+namespace coop::orb_authority {
+ue_wrap::script_gate::Verdict OnTouchPre(void*, void*) { return ue_wrap::script_gate::Verdict::Run; }
+}
 namespace coop::players {
 bool Registry::IsPuppetBody(void* actor) { return PeerIdOfBody(actor) != kPeerIdUnknown; }
 uint8_t Registry::PeerIdOfBody(void* actor) {

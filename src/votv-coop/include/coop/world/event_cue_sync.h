@@ -53,4 +53,11 @@ void OnDisconnect();
 // [dev] How many cue emitters this peer has replayed, for the event drill. Any thread.
 unsigned ReplayCount();
 
+// [dev] How many cues this peer, as host, has sent (to every peer or to one slot), for the plant drill. Any thread.
+unsigned SentCount();
+
+// [dev] The place of this peer's latest sent / replayed cue, for the plant drill. Game thread.
+void LastSentAt(float (&xyz)[3]);
+void LastReplayAt(float (&xyz)[3]);
+
 }  // namespace coop::event_cue_sync

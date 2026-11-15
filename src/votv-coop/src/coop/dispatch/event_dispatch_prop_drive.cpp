@@ -1,23 +1,39 @@
 // coop/dispatch/event_dispatch_prop_drive.cpp -- the driven prop's reliable kinds: PropDriveEnd (the
 // close of a prop's stream, the host's to all or a syncing client's to the host) and the prop
-// syncer's pair, PropSyncClaim (client to host) and PropSyncAnswer (host to one client), and the developer
+// syncer's pair, PropSyncClaim (client to host) and PropSyncAnswer (host to one client), the host's refusal of
+// a second hold of one prop (PropHoldRefused, host to every client), and the developer
 // filler DevLoadFiller (host to one client), DevParityReport (a joiner's pose report to the host) and
 // DevContainerParity (a joiner's container content report to the host). Each case
+// PropToolFlags (a toolgun's final prop flags). Each case
 // validates at the trust boundary and hands off to its module. The switch below is the family's
 // membership declaration; nothing re-lists it. Family contract per coop/dispatch/event_dispatch.h:
 // returns true iff msg.kind is in this family.
 
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
+#include "coop/creatures/ambient_creature_sync.h"
+#include "coop/creatures/walker_gaze_host.h"
+#include "coop/creatures/walker_state_client.h"
+#include "coop/world/ambient_fixture_sync.h"
 #include "coop/dev/container_parity.h"     // the container join drill's report receiver
 #include "coop/dev/prop_syncer_drill.h"    // the drill's filler receiver
 #include "coop/dev/pile_defer_report.h"    // the pile deferral drill's report receiver
 #include "coop/element/registry.h"
+#include "coop/props/roomba_sync.h"  // a robot cleaner's switch, the host's
+#include "coop/world/plant_edit_gate.h"
+#include "coop/world/plant_sync.h"
+#include "coop/interactables/woodchipper_sync.h"
+#include "coop/interactables/atv_host_judge.h"
+#include "coop/interactables/atv_host_sync.h"
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
+#include "coop/props/prop_hold_claim.h"    // the client's receiver of a refused hold
+#include "coop/props/prop_food_sync.h"     // a world food's condition and a client's bite
 #include "coop/props/prop_syncer.h"        // the client's answer receiver
 #include "coop/props/prop_syncer_host.h"   // the host's claim judge and a client's End
 #include "coop/props/prop_tool_flags.h"
 
+#include "coop/world/spill_sync.h"
+#include "coop/world/sus_hole_intent.h"
 #include "ue_wrap/core/log.h"
 
 #include <cmath>
@@ -115,6 +131,15 @@ bool HandlePropDriveEvent(net::Session& session,
         ::coop::prop_syncer::OnAnswer(p);
         break;
     }
+    case net::ReliableKind::PropHoldRefused: {
+        if (session.role() == net::Role::Host || msg.payloadLen < sizeof(net::PropHoldRefusedPayload)) break;
+        net::PropHoldRefusedPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.key.len > sizeof(p.key.data) || p.holdGen == 0 || p.slot < 1 || p.slot >= net::kMaxPeers ||
+            p.holder >= net::kMaxPeers || p.holder == p.slot) break;
+        ::coop::prop_hold_claim::OnRefused(p);
+        break;
+    }
     case net::ReliableKind::PropToolFlags: {
         if (msg.payloadLen != sizeof(net::PropToolFlagsPayload)) {
             UE_LOGW("event_feed: PropToolFlags payload size %zu, expected %zu -- dropping",
@@ -198,6 +223,177 @@ bool HandlePropDriveEvent(net::Session& session,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         ::coop::dev::container_parity::OnChunk(chunk, slot);
+        break;
+    }
+    case net::ReliableKind::PlantState:
+    case net::ReliableKind::PlantEdit: {
+        const bool edit = msg.kind == net::ReliableKind::PlantEdit;
+        if (edit != (session.role() == net::Role::Host) || msg.payloadLen < sizeof(net::PlantStatePayload)) break;
+        net::PlantStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.alive > 1 || p.hideDirt > 1 || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+            !std::isfinite(p.pitch) || !std::isfinite(p.yaw) || !std::isfinite(p.roll) || !std::isfinite(p.grow) ||
+            !std::isfinite(p.fertilizer) || !std::isfinite(p.water) || !std::isfinite(p.fruitGrow) ||
+            !std::isfinite(p.dryness)) break;
+        if (edit) ::coop::plant_edit_gate::OnEdit(static_cast<uint8_t>(msg.senderPeerSlot), p);
+        else ::coop::plant_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::RoombaState:
+    case net::ReliableKind::RoombaIntent: {
+        const bool intent = msg.kind == net::ReliableKind::RoombaIntent;
+        if (intent != (session.role() == net::Role::Host) || msg.payloadLen != sizeof(net::RoombaPayload)) break;
+        net::RoombaPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.active > 1) break;
+        if (intent) ::coop::roomba_sync::OnIntent(msg.senderPeerSlot, p);
+        else ::coop::roomba_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::WoodchipperState:
+    case net::ReliableKind::WoodchipperIntent: {
+        const bool intent = msg.kind == net::ReliableKind::WoodchipperIntent;
+        if (intent != (session.role() == net::Role::Host) || msg.payloadLen < sizeof(net::WoodchipperPayload)) break;
+        net::WoodchipperPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.active > 1 || p.op > net::kWoodchipperOpActiveOnly || !std::isfinite(p.fuel)) break;
+        if (intent) ::coop::woodchipper_sync::OnIntent(msg.senderPeerSlot, p);
+        else ::coop::woodchipper_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::AtvHostState:
+    case net::ReliableKind::AtvRequest: {
+        const bool request = msg.kind == net::ReliableKind::AtvRequest;
+        if (request != (session.role() == net::Role::Host) || msg.payloadLen < sizeof(net::AtvHostPayload)) break;
+        net::AtvHostPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (request) ::coop::atv_host_judge::OnRequest(msg.senderPeerSlot, p);
+        else if (std::isfinite(p.fuel) && std::isfinite(p.health) && p.moduleCount <= sizeof(p.modules))
+            ::coop::atv_host_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::SpillState:
+    case net::ReliableKind::SpillIntent: {
+        // SpillState HOST->ALL, SpillIntent CLIENT->HOST.
+        const bool intent = msg.kind == net::ReliableKind::SpillIntent;
+        if (intent != (session.role() == net::Role::Host)) {
+            UE_LOGW("event_feed: a spill message the wrong way from slot %d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::SpillPayload)) {
+            UE_LOGW("event_feed: spill payload too short (%zu < %zu)", static_cast<size_t>(msg.payloadLen),
+                    sizeof(net::SpillPayload));
+            break;
+        }
+        net::SpillPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (intent) ::coop::spill_sync::OnIntent(msg.senderPeerSlot, p);
+        else ::coop::spill_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::SpillPour:
+    case net::ReliableKind::SpillPourIntent: {
+        // SpillPour HOST->ALL, SpillPourIntent CLIENT->HOST.
+        const bool intent = msg.kind == net::ReliableKind::SpillPourIntent;
+        if (intent != (session.role() == net::Role::Host) || msg.payloadLen < sizeof(net::SpillPourPayload)) {
+            UE_LOGW("event_feed: a malformed or misdirected pour from slot %d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        net::SpillPourPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (intent) ::coop::spill_sync::OnPourIntent(msg.senderPeerSlot, p);
+        else ::coop::spill_sync::OnPour(p);
+        break;
+    }
+    case net::ReliableKind::AmbientTreeState: {
+        // HOST->ALL.
+        if (session.role() == net::Role::Host) {
+            UE_LOGW("event_feed: AmbientTreeState from slot %d -- dropping (host-authored)", msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::AmbientTreeStatePayload)) {
+            UE_LOGW("event_feed: AmbientTreeState payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AmbientTreeStatePayload));
+            break;
+        }
+        net::AmbientTreeStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.landed > 1 || !std::isfinite(p.scale) || p.scale <= 0.f) {
+            UE_LOGW("event_feed: AmbientTreeState malformed -- dropping");
+            break;
+        }
+        ::coop::ambient_creature_sync::OnTreeState(p);
+        break;
+    }
+    case net::ReliableKind::AmbientFixtureState: {
+        // HOST->ALL.
+        if (session.role() == net::Role::Host) {
+            UE_LOGW("event_feed: AmbientFixtureState from slot %d -- dropping (host-authored)", msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::AmbientFixtureStatePayload)) {
+            UE_LOGW("event_feed: AmbientFixtureState payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AmbientFixtureStatePayload));
+            break;
+        }
+        net::AmbientFixtureStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.family > net::ambient_fixture::kCensusEnd || p.alive > 1 || p.hasNest > 1 || p.birthKey.len > sizeof(p.birthKey.data) ||
+            !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !std::isfinite(p.pitch) || !std::isfinite(p.yaw) ||
+            !std::isfinite(p.roll)) {
+            UE_LOGW("event_feed: AmbientFixtureState malformed -- dropping");
+            break;
+        }
+        ::coop::ambient_fixture_sync::OnState(p);
+        break;
+    }
+    case net::ReliableKind::SusHoleIntent: {
+        // CLIENT->HOST. The place's finiteness, the ring and the slot's range are the lane's to judge (as the spill case).
+        if (session.role() != net::Role::Host || msg.payloadLen < sizeof(net::SusHoleIntentPayload)) {
+            UE_LOGW("event_feed: a malformed or misdirected SusHoleIntent from slot %d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        net::SusHoleIntentPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        ::coop::sus_hole_intent::OnIntent(session, msg.senderPeerSlot, p);
+        break;
+    }
+    case net::ReliableKind::WalkerSeen: {
+        // CLIENT->HOST. The flag, the key, the sender's standing as the walker's target and its distance are the module's to
+        // judge, counted there.
+        if (session.role() != net::Role::Host || msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: WalkerSeen from slot %d -- dropping (a client's, to the host)", msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::WalkerSeenPayload)) {
+            UE_LOGW("event_feed: WalkerSeen payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::WalkerSeenPayload));
+            break;
+        }
+        net::WalkerSeenPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        ::coop::walker_gaze_host::OnSeen(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::WalkerState: {
+        // HOST->ALL.
+        if (session.role() == net::Role::Host) {
+            UE_LOGW("event_feed: WalkerState from slot %d -- dropping (host-authored)", msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::WalkerStatePayload)) {
+            UE_LOGW("event_feed: WalkerState payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::WalkerStatePayload));
+            break;
+        }
+        net::WalkerStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        if (p.looking > 1 || p.key.len == 0 || p.key.len > sizeof(p.key.data) ||
+            (p.target >= net::kMaxPeers && p.target != 0xFF)) {
+            UE_LOGW("event_feed: WalkerState malformed -- dropping");
+            break;
+        }
+        ::coop::walker_state_client::OnState(p);
         break;
     }
     default:

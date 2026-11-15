@@ -88,9 +88,9 @@ void OnFinishSpawn(void* /*context*/, void* /*srcObj*/, void* result) {
 
 // Authority shape. MTA lets only an element's syncer simulate it: the server picks one client per
 // unoccupied vehicle (reference/mtasa-blue/Server/mods/deathmatch/logic/
-// CUnoccupiedVehicleSync.cpp:171-203), and a client that is not the syncer does not simulate it but
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:171-203), and a client that is not the syncer does not simulate it but
 // drives it to the syncer's reports (reference/mtasa-blue/Client/mods/deathmatch/logic/
-// CClientVehicle.cpp:3715-3733). Source's client physics prop has no physics object at all
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CClientVehicle.cpp:3715-3733). Source's client physics prop has no physics object at all
 // (reference/source-sdk-2013/src/game/client/c_physicsprop.h:17-33).
 // Here the host syncs an unbound native until the joiner binds it, so the joiner holds its body
 // still: the pose it was loaded at is its identity key, and any local motion before the bind loses it.

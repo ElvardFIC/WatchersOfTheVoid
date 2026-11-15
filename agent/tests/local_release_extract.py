@@ -1,5 +1,6 @@
 """Compile the production release edge with deterministic transport and engine boundaries."""
 from pathlib import Path
+import re
 import sys
 
 root = Path(__file__).resolve().parents[2]
@@ -14,5 +15,8 @@ def function(signature):
         end += 1
     return source[start:end]
 
-Path(sys.argv[1]).write_text('\n'.join(function(s) for s in (
-    'void SendHeldRelease(', 'void ArmKerfurTakeRelease(')), encoding='utf-8')
+body = '\n'.join(function(s) for s in (
+    'void SendHeldRelease(', 'void ArmKerfurTakeRelease('))
+body = re.sub(r'(?<![:\w])coop::', '::coop::', body)
+body = re.sub(r'(?<![:\w])ue_wrap::', '::ue_wrap::', body)
+Path(sys.argv[1]).write_text(body, encoding='utf-8')

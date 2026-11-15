@@ -12,21 +12,21 @@
 namespace coop::chat_rate {
 namespace {
 
-// Source's convar defaults (player.cpp:98-101), constants here: a server-tunable limit is the server settings' to add.
+// Source's convar defaults (reference/source-sdk-2013/src/game/server/player.cpp:98-101), constants here: a server-tunable limit is the server settings' to add.
 constexpr float    kTier1Bucket        = 4.0f;
 constexpr float    kTier1SecondsPerMsg = 3.0f;
 constexpr float    kTier2Bucket        = 30.0f;
 constexpr float    kTier2SecondsPerMsg = 10.0f;
-constexpr uint64_t kTalkIntervalMs     = 660;  // CanPlayerTalk's talk_interval, 0.66 s (player.cpp:8811)
+constexpr uint64_t kTalkIntervalMs     = 660;  // CanPlayerTalk's talk_interval, 0.66 s (reference/source-sdk-2013/src/game/server/player.cpp:8811)
 
 coop::roster_ledger::PerSlotState<TalkBudget> g_budget;
 
 // One attempt on `b`, which it advances: the single place the two tests live, so Attempt and Allows cannot drift.
 TalkVerdict Judge(TalkBudget& b, uint64_t nowMs) {
-    // CanPlayerTalk (player.cpp:8809-8818): the interval, then the bucket, both on every attempt.
+    // CanPlayerTalk (reference/source-sdk-2013/src/game/server/player.cpp:8809-8818): the interval, then the bucket, both on every attempt.
     const bool intervalOk = b.lastTalkMs == 0 || b.lastTalkMs + kTalkIntervalMs < nowMs;
 
-    // ArePlayerTalkMessagesAvailable (player.cpp:8771-8804), in its order and in float. Two divergences: the clock is
+    // ArePlayerTalkMessagesAvailable (reference/source-sdk-2013/src/game/server/player.cpp:8771-8804), in its order and in float. Two divergences: the clock is
     // the host's steady milliseconds, not the map's float curtime, so the elapsed time is the integer difference turned
     // into seconds and the floats stay small however long the machine has run; and 0 stands for never (Source starts
     // both times at 0, :613-614), which on a clock counted from the machine's boot gives a slot's first attempt full
@@ -46,7 +46,7 @@ TalkVerdict Judge(TalkBudget& b, uint64_t nowMs) {
 
     if (!intervalOk) return TalkVerdict::Interval;
     if (!bucketOk) return TalkVerdict::Bucket;
-    b.lastTalkMs = nowMs;  // NotePlayerTalked, after Host_Say (client.cpp:850-851)
+    b.lastTalkMs = nowMs;  // NotePlayerTalked, after Host_Say (reference/source-sdk-2013/src/game/server/client.cpp:850-851)
     return TalkVerdict::Talk;
 }
 

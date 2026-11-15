@@ -11,12 +11,12 @@ try {
  if($first -lt 0 -or $last -le $first){throw 'Grab-state function boundaries missing'}
  [IO.File]::WriteAllText((Join-Path $output 'grab_state.h'),$source.Substring($first,$last-$first))
  if(-not $OnlySpawn){
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/physics_gun.obj" "/Fe$output/physics_gun.exe" agent/tests/physics_gun_2158_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/physics_gun.obj" "/Fe$output/physics_gun.exe" "$PSScriptRoot/physics_gun_2158_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Physics gun test compile failed'}
  & "$output/physics_gun.exe"
  if($LASTEXITCODE -ne 0){throw 'Physics gun test failed'}
  }
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/floor_stubs /I src/votv-coop/include "/Fo$output/birth.obj" "/Fe$output/birth.exe" agent/tests/floor_host_2132_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/floor_stubs" /I src/votv-coop/include "/Fo$output/birth.obj" "/Fe$output/birth.exe" "$PSScriptRoot/floor_host_2132_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Finished birth test compile failed'}
  & "$output/birth.exe"
  if($LASTEXITCODE -ne 0){throw 'Finished birth test failed'}

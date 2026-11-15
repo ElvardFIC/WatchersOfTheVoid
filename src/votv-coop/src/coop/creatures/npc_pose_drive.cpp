@@ -9,10 +9,13 @@
 // as the player puppet). The mirror's CMC tick is parked at spawn (npc_mirror) so this drive
 // is authoritative -- no integration fight.
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/npc.h"
 
 #include "coop/net/protocol.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/character_floor.h"  // Refresh -- the floor a floor mirror's own tick reads
 #include "ue_wrap/actors/fossilhound.h"  // DriveBodyYaw -- the hound's body facing
 #include "ue_wrap/actors/kerfur.h"   // DriveKerfurState -- host-authoritative command and spooky flag
 #include "ue_wrap/devices/floppy_slot.h"  // kSlotTypeCount -- the seven disc types floppyFromType indexes
@@ -50,6 +53,9 @@ float OffsetDegrees(float fromDeg, float toDeg) {
 constexpr int   kInterpWindowMs  = 75;     // same as RemotePlayer (the proven jitter window)
 constexpr float kSnapBaseCm      = 1000.f; // > one window's legal motion -> a real teleport, snap
 constexpr float kSnapPerSpeedSec = 0.5f;
+// A floor mirror's floor is asked for again once it has moved this far from where it was last asked: a sweep per 25 cm of
+// travel while it walks, none while it stands.
+constexpr float kFloorRefreshCm  = 25.f;
 
 }  // namespace
 
@@ -192,6 +198,21 @@ bool Npc::SameAsApplied(void* actor) const {
 void Npc::RememberApplied(void* actor) {
     applied_ = Applied{actor, curPos_, curLookAt_, curYaw_, curPitch_, curRoll_, curSpeed_, curBodyYaw_, curStateBits_,
                        kerfState_, hasLookAt_, hasBodyYaw_, hasKerfState_, kerfSpooky_};
+}
+
+void Npc::RefreshFloor(void* actor) {
+    if (hasFloorAt_) {
+        const float dx = curPos_.X - floorAt_.X, dy = curPos_.Y - floorAt_.Y, dz = curPos_.Z - floorAt_.Z;
+        if (dx * dx + dy * dy + dz * dz < kFloorRefreshCm * kFloorRefreshCm) return;
+    }
+    // The creature drill's red arm: a floor mirror's floor is never refreshed, so the drill's lean term must FAIL.
+    static const bool s_redNoDeerFloor =
+        coop::config::ResolveEnum(coop::config_registry::rows::ambient_creature_red) == "no_deer_floor";
+    if (s_redNoDeerFloor) return;
+    // The location write has landed, so the capsule is where the sweep starts: an ACharacter's capsule is its root.
+    if (!ue_wrap::character_floor::Refresh(actor, curPos_)) return;  // not taken: asked again at the next pose
+    floorAt_ = curPos_;
+    hasFloorAt_ = true;
 }
 
 bool Npc::ApplyToEngine() {

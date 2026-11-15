@@ -4,11 +4,11 @@
 // I/O, so the selftest drives it on in-memory files. The token set is gettext's: `msgctxt`, `msgid`,
 // `msgid_plural`, `msgstr`, `msgstr[n]`, adjacent string lines concatenated, comment lines ignored, a
 // `#, fuzzy` entry skipped (a line a translator has not confirmed -- msgfmt skips it too, where
-// tinygettext reads it: dictionary_manager.cpp:45), the header read for its plural rule, charset and
+// tinygettext reads it: reference/mtasa-blue/vendor/tinygettext/dictionary_manager.cpp:45), the header read for its plural rule, charset and
 // translators. A defect in one entry refuses that entry; a defect no entry boundary can contain (a
 // string that never closes, a charset we do not read, bytes that are not UTF-8, a file over 1 MiB)
 // refuses the file. An unknown escape refuses its entry where tinygettext warns and keeps it
-// (po_parser.cpp:126-139): what a translator meant by it is not ours to guess.
+// (reference/mtasa-blue/vendor/tinygettext/po_parser.cpp:126-139): what a translator meant by it is not ours to guess.
 #pragma once
 
 #include <string>

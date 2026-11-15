@@ -4,7 +4,7 @@
 // pawn/controller/camera-related functions in `namespace ue_wrap::engine`.
 //
 // Covers:
-//   - APawn: GetController, SpawnDefaultController
+//   - APawn: GetController, MakePawnInert
 //   - AActor: DestroyActor (sharing the same resolver cache as pawn)
 //   - AController: GetControlRotation, SetControlRotation (direct field write)
 //   - APlayerController: SetViewTargetWithBlend
@@ -33,13 +33,11 @@ void* g_pawnClass = nullptr;
 void* g_actorClass = nullptr;  // shared by destroy + checks; engine_actor caches its own
 void* g_getControllerFn = nullptr;
 void* g_destroyActorFn = nullptr;
-void* g_spawnDefControllerFn = nullptr;
 
 bool ResolvePawnFns() {
     if (!g_pawnClass) g_pawnClass = R::FindClass(P::name::PawnClassName);
     if (g_pawnClass) {
         if (!g_getControllerFn) g_getControllerFn = R::FindFunction(g_pawnClass, P::name::GetControllerFn);
-        if (!g_spawnDefControllerFn) g_spawnDefControllerFn = R::FindFunction(g_pawnClass, P::name::SpawnDefaultControllerFn);
     }
     if (!g_actorClass) g_actorClass = R::FindClass(P::name::ActorClassName);
     if (g_actorClass && !g_destroyActorFn) g_destroyActorFn = R::FindFunction(g_actorClass, P::name::DestroyActorFn);
@@ -154,19 +152,52 @@ FRotator GetCameraRotation() {
     return rot;
 }
 
+PawnInertResult MakePawnInert(void* deferredPawn) {
+    if (!deferredPawn) return PawnInertResult::NotAPawn;
+    if (!g_pawnClass) g_pawnClass = R::FindClass(P::name::PawnClassName);
+    if (!g_pawnClass) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            UE_LOGW("engine: MakePawnInert: the Pawn class did not resolve -- no pawn is made inert");
+        }
+        return PawnInertResult::Unresolved;
+    }
+    void* const cls = R::ClassOf(deferredPawn);
+    if (!cls || !R::IsDescendantOfAny(cls, &g_pawnClass, 1)) return PawnInertResult::NotAPawn;
+
+    // Zeroing AutoPossessPlayer keeps the pawn from grabbing a second player controller (which stole the local
+    // player's input and view); zeroing AutoPossessAI keeps BeginPlay from spawning an AI controller for it. Plain
+    // data fields, so direct writes.
+    auto* a = reinterpret_cast<uint8_t*>(deferredPawn);
+    a[P::off::APawn_AutoPossessPlayer] = 0;   // no PLAYER controller (no input/view hijack)
+    a[P::off::APawn_AutoPossessAI] = 0;        // no AI controller either
+    a[P::off::AActor_AutoReceiveInput] = 0;    // EAutoReceiveInput::Disabled
+    a[P::off::AActor_bBlockInput] = 1;         // swallow any stray input
+    // Also null the AI controller class: AutoPossessAI blocks the automatic spawn of an AI controller but not later
+    // code (other blueprint systems iterating pawns and calling SpawnDefaultController) acquiring one from the class
+    // default. Nulling the class closes that path.
+    *reinterpret_cast<void**>(a + P::off::APawn_AIControllerClass) = nullptr;
+
+    // One INFO line per class: the set of pawn classes a session spawns is small and fixed, so a full table
+    // (past kInertLoggedCap distinct classes) stops logging and nothing else.
+    constexpr size_t kInertLoggedCap = 32;
+    static void* logged[kInertLoggedCap] = {};
+    static size_t loggedCount = 0;
+    bool seen = false;
+    for (size_t i = 0; i < loggedCount && !seen; ++i) seen = (logged[i] == cls);
+    if (!seen && loggedCount < kInertLoggedCap) {
+        logged[loggedCount++] = cls;
+        UE_LOGI("engine: MakePawnInert '%ls' -> no player possess, no AI possess, AIControllerClass=null, bBlockInput=1",
+                R::ClassNameOf(deferredPawn).c_str());
+    }
+    return PawnInertResult::Made;
+}
+
 bool DestroyActor(void* actor) {
     if (!actor || !ResolvePawnFns()) return false;
     ParamFrame f(g_destroyActorFn);  // K2_DestroyActor: no params
     return Call(actor, f);
-}
-
-bool SpawnDefaultController(void* pawn) {
-    if (!pawn || !ResolvePawnFns() || !g_spawnDefControllerFn) {
-        UE_LOGE("engine: SpawnDefaultController unresolved (fn=%p)", g_spawnDefControllerFn);
-        return false;
-    }
-    ParamFrame f(g_spawnDefControllerFn);  // no params; spawns AIControllerClass + possesses
-    return Call(pawn, f);
 }
 
 }  // namespace ue_wrap::engine

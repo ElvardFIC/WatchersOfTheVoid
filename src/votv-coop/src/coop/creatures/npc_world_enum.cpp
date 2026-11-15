@@ -117,7 +117,7 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     // then the others' elements to the joiner alone
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1426, :1459).
     // Nothing is sent, and nothing logged, when no other peer is world-ready: the sender asks the
-    // fan-out's own gate first, where MTA filters inside its fan-out (CPlayerManager.cpp:162-170).
+    // fan-out's own gate first, where MTA filters inside its fan-out (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:162-170).
     // MTA registers an element at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39);
     // a creature that loaded with the level, or that no watched spawn source made, is enrolled here.
     bool spawnSent = false;
@@ -166,6 +166,8 @@ constexpr ExSpawnSource kExSpawnSources[] = {
     {L"ticker_yellowWispSpawner_C", nullptr},       // native EX_CallMath killerwisp spawn
     {L"ticker_fossilhoundSpawner_C", nullptr},      // native EX_CallMath fossilhound spawn
     {L"ticker_egSpawner_C",      nullptr},          // the ambient night eggs, one eg_C per roll
+    {L"ticker_deerSpawner_C",    nullptr},          // the ambient deer
+    {L"ticker_treeSpawner_C",    nullptr},          // the walking trees
     {L"prop_coingun_C",          nullptr},          // the sell gun's coin mint
     {L"jellyfishPath_C",         nullptr},          // the space jellyfish's seven (world-actor lane)
     {L"trigger_eventer_C",       nullptr},          // the scheduler's dispatcher
@@ -178,6 +180,7 @@ constexpr ExSpawnSource kExSpawnSources[] = {
     {L"grayEventController_C",   nullptr},          // graysforest: spawn() mints the grayTest_C pack
     {L"superEgger_C",            nullptr},          // eggvasion: spwn() mints the eg_C children
     {L"tentacleBallsFollower_C", nullptr},          // tentacleBalls: runTrigger() mints the pack
+    {L"blackballSpawner_C",      nullptr},          // the orb event: its ubergraph mints npc_orborb_C
 };
 
 // A source's output may be a world-actor-lane class (the pyramid): the same catch seam,

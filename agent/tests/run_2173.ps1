@@ -8,9 +8,9 @@ try {
         . (Join-Path $root '../_toolchain/env.ps1')
     }
     foreach ($test in @('laptop_power_2171_test', 'laptop_delivery_2173_test')) {
-        & cl /nologo /std:c++20 /EHsc /utf-8 /I agent/tests/laptop_2171_stubs `
+        & cl /nologo /std:c++20 /EHsc /utf-8 /I "$PSScriptRoot/laptop_2171_stubs" `
             /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" `
-            "agent/tests/$test.cpp" /link /OPT:REF
+            "$PSScriptRoot/$test.cpp" /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "$test compile failed" }
         & "$output/$test.exe"
         if ($LASTEXITCODE -ne 0) { throw "$test failed" }

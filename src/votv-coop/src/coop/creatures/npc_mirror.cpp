@@ -6,6 +6,8 @@
 #include "rufus_birth_guard.h"
 
 #include "coop/element/mirror_manager.h"
+#include "coop/element/bind_wait.h"       // GiveUp: a spawn cancelled while its class loads
+#include "coop/element/class_load_wait.h"  // ParkSpawn / Cancel: a spawn waiting on its class load
 #include "coop/element/mirror_managers.h"  // PropMirrors/NpcMirrors/WaMirrors
 #include "coop/element/npc.h"
 #include "coop/element/registry.h"
@@ -22,6 +24,7 @@
 #include "coop/creatures/npc_sync.h"
 #include "coop/world/creature_event_relay.h"  // OnMirrorBound: the host's event count for a new mirror
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/kerfur.h"  // NeutralizeAiTimers
@@ -30,7 +33,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/sdk_profile.h"  // NpcClass_Wisp, NpcClass_GeomOcta (the mirrors that keep their actor tick)
+#include "ue_wrap/core/sdk_profile.h"  // NpcClass_Wisp, NpcClass_GeomOcta, NpcClass_Deer (the mirrors that keep their actor tick)
 #include "ue_wrap/core/types.h"
 
 #include <cmath>
@@ -75,12 +78,26 @@ void ArmWispLanding(coop::element::ElementId eid) {
     }
 }
 
+// The deer's floor: its ReceiveTick turns the mesh's SpringArm by the floor under it (CharacterMovement's CurrentFloor),
+// which a parked movement tick never refreshes, so the pose drive asks the engine for it as the mirror moves.
+void ArmDeerFloor(coop::element::ElementId eid) {
+    if (coop::element::Npc* el = NpcMirrors().Get(eid)) {
+        el->MarkFloorMirror();
+    } else {
+        // Unreachable after a successful install; a silent miss would be a mirror whose body keeps the lean of the
+        // floor it spawned on.
+        UE_LOGW("npc-sync[client OnSpawn]: deer mirror eid=%u not retrievable post-install -- floor refresh NOT armed", eid);
+    }
+}
+
 // What the mirror install parks, by the spawned class's name. A class with a row may keep its actor tick (the
 // movement tick is always parked: an ACharacter mirror whose movement ticks falls under gravity between pose packets)
 // and may arm something on its mirror; every other class takes both ticks off. The wisp keeps its actor tick: its
 // ReceiveTick is per-viewer cosmetics (fade-in, bob, the shy despawn), not AI. The Octa keeps it for its turn toward
 // the target and its charge rings (its decisions are parked by npc_mirror_brain); it needs no landing replay, since
-// the mirror spawns at the host's current pose and the pose stream carries it down.
+// the mirror spawns at the host's current pose and the pose stream carries it down. The deer keeps it for its dissolve
+// (the camera's nearness, each viewer's own) and for the lean of its body on the floor; the floor the tick reads is
+// the pose drive's to refresh.
 struct MirrorTickRow {
     const wchar_t* cls;
     bool           keepActorTick;
@@ -89,6 +106,7 @@ struct MirrorTickRow {
 constexpr MirrorTickRow kMirrorTicks[] = {
     {ue_wrap::profile::name::NpcClass_Wisp,     true, &ArmWispLanding},
     {ue_wrap::profile::name::NpcClass_GeomOcta, true, nullptr},
+    {ue_wrap::profile::name::NpcClass_Deer,     true, &ArmDeerFloor},
 };
 
 constexpr size_t kMirrorTickCount = sizeof(kMirrorTicks) / sizeof(kMirrorTicks[0]);
@@ -199,12 +217,23 @@ void OnEntitySpawn(const coop::net::EntitySpawnPayload& payload) {
                 payload.elementId);
         return;
     }
-    // The actor class. NPC classes load with the level; unloaded, the packet is dropped and this
-    // spawn is gone.
-    void* actorClass = R::FindClass(classW.c_str());
+    // The actor class: loaded from its asset when this client has not loaded it, inside the per-tick load
+    // budget (past it the spawn is parked and runs again next tick). The allowlist is the family: a class the
+    // resolver loads must be an NPC; one that exists nowhere here drops the packet.
+    const ue_wrap::class_resolve::Resolved resolved = ue_wrap::class_resolve::ResolveClass(
+        classW.c_str(), coop::npc_sync::NpcFamily(), ue_wrap::class_resolve::Load::Budgeted);
+    if (resolved.state == ue_wrap::class_resolve::ClassState::Pending) {
+        // The spawn waits for its class (coop/element/class_load_wait, which marks the eid in bind_wait): it ends bound
+        // (the mirror stands), given up, or cancelled by this eid's EntityDestroy.
+        const uint32_t eid = payload.elementId;
+        coop::element::class_load_wait::ParkSpawn(
+            "EntitySpawn", classW, eid, [payload] { OnEntitySpawn(payload); },
+            [eid] { return NpcMirrors().Get(eid) != nullptr; });
+        return;
+    }
+    void* actorClass = resolved.cls;
     if (!actorClass) {
-        UE_LOGW("npc-sync[client OnSpawn]: class '%ls' not found in GUObjectArray -- dropping "
-                "(BP class not loaded? eid=%u)",
+        UE_LOGW("npc-sync[client OnSpawn]: class '%ls' is not resolvable on this peer -- dropping (eid=%u)",
                 classW.c_str(), payload.elementId);
         return;
     }
@@ -318,9 +347,9 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
     // written here, before the finish runs the class's BeginPlay on it.
     if (!ue_wrap::spawner_stamp::Stamp(actorClass, spawned)) {
         // The drop: Source warns and skips an entity it cannot spawn (reference/source-sdk-2013/src/game/server/
-        // mapentities.cpp:585, "Can't init %s"); MTA keeps an element whose game entity it cannot create, for the
+        // reference/source-sdk-2013/src/game/server/mapentities.cpp:585, "Can't init %s"); MTA keeps an element whose game entity it cannot create, for the
         // streamer to retry (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientStreamElement.cpp:107), and
-        // drops the connection on a packet it cannot read (its CPacketHandler.cpp:5648). Here the spawn is dropped, not retried: a mirror whose
+        // drops the connection on a packet it cannot read (its reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:5648). Here the spawn is dropped, not retried: a mirror whose
         // guard constant is unknown would run the class's BeginPlay unstamped, and that quits this machine's game. A
         // game that changed the constant's path changes it for every later attempt too, so a retry would only
         // repeat the drop.
@@ -341,6 +370,25 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
                     "LEAKS (Install gating invariant violated)", spawned);
         }
         return false;
+    }
+    // A mirror is driven by the host's pose and never thinks: it takes no controller, so no path following, perception
+    // or control-rotation update runs on a body the stream drives (a possessed deer mirror had its yaw overwritten by
+    // its AI controller). MTA's remote ped is the same shape: it has no local brain, and its controller state is the
+    // one the owner's keysync set (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPed.cpp:876-921,
+    // GetControllerState reads the pad only for the local ped; :961-972, AddKeysync takes a remote ped only). The
+    // AnimBPs read the pawn's velocity, which the pose drive writes, and need no controller.
+    // A non-pawn class is left as spawned; a pawn that could not be judged is said once per class.
+    if (E::MakePawnInert(spawned) == E::PawnInertResult::Unresolved) {
+        constexpr size_t kInertWarnCap = 32;
+        static void* warned[kInertWarnCap] = {};
+        static size_t warnedCount = 0;
+        bool seen = false;
+        for (size_t i = 0; i < warnedCount && !seen; ++i) seen = (warned[i] == actorClass);
+        if (!seen && warnedCount < kInertWarnCap) {
+            warned[warnedCount++] = actorClass;
+            UE_LOGW("npc-sync[client OnSpawn]: '%ls' could not be made inert (the Pawn class did not resolve) -- "
+                    "its mirror keeps the AI controller the engine gives it", classW.c_str());
+        }
     }
     // A mirror of a parked family is marked before the finish runs its BeginPlay, which the graph watches refuse.
     if(!coop::npc_mirror_brain::PrepareBirth(spawned)) {
@@ -441,6 +489,13 @@ void OnEntityDestroy(const coop::net::EntityDestroyPayload& payload) {
     }
     const coop::element::ElementId eid =
         static_cast<coop::element::ElementId>(payload.elementId);
+    // A spawn still waiting on its class's load for this eid ends here: it is never spawned.
+    if (coop::element::class_load_wait::Cancel("EntitySpawn", payload.elementId)) {
+        UE_LOGI("npc-sync[client OnDestroy]: eid=%u -- its spawn was waiting on a class load and is cancelled; it "
+                "will never spawn", payload.elementId);
+        coop::element::bind_wait::GiveUp(payload.elementId, "destroyed while its class was loading");
+        return;
+    }
     // The mirror is drained from the table under the manager's mutex (released before Take
     // returns), then K2_DestroyActor runs, then the unique_ptr destructor unregisters from the
     // Registry under its own mutex: never both mutexes at once.

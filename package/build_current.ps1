@@ -54,7 +54,9 @@ try {
   })
   $identity | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root $release.qualification) -Encoding UTF8
  }else{
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check_current.ps1') -EvidenceDirectory $evidence
+  $buildDirectory=Split-Path -Parent $release.dll
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check_current.ps1') `
+   -BuildDirectory $buildDirectory -EvidenceDirectory $evidence
   if($LASTEXITCODE){throw 'Full release qualification failed'}
  }
  foreach($entry in $snapshot){if((Get-FileHash -LiteralPath (Join-Path $root $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256){throw "Release input changed: $($entry.path)"}}

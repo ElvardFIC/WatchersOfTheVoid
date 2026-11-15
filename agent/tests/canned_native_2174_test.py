@@ -3,16 +3,16 @@ from pathlib import Path
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = next((p for p in (checkout / "_research", checkout.parent / "_research")
+evidence_root = next((p for p in (checkout / "_research", checkout.parent / "_research")
                  if (p / "kismet_dis.py").is_file()
                  and (p / "assets/VotV__Content__objects__prop_cannedFood.uasset").is_file()), None)
-if research is None:
+if evidence_root is None:
     raise SystemExit("UNAVAILABLE: extracted canned-food and prop assets plus local disassembler required")
-sys.path.insert(0, str(research))
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package, Dis, find_script
 
-can = Package(str(research / "assets/VotV__Content__objects__prop_cannedFood.uasset"))
-base = Package(str(research / "assets/VotV__Content__objects__prop.uasset"))
+can = Package(str(evidence_root / "assets/VotV__Content__objects__prop_cannedFood.uasset"))
+base = Package(str(evidence_root / "assets/VotV__Content__objects__prop.uasset"))
 
 def body(pkg, name):
     export = next(e for e in pkg.exports if e["name"] == name and pkg.class_of_export(e) == "Function")

@@ -44,6 +44,10 @@ inline bool ValidCondition(float temperature, float ripeness, int32_t uses,float
            (cookProgress==-1.f || (cookProgress>=0 && cookProgress<=1'000'000.f));
 }
 void ForgetPublished(const std::wstring& key);
+namespace dev {
+bool StateSentFor(const std::wstring& key);
+bool StateWaiting(const std::wstring& key);
+}
 // Called after a host birth/snapshot row, on the same ordered lane as that row.
 bool PublishSpawnState(coop::net::Session& session, void* actor, int slot);
 

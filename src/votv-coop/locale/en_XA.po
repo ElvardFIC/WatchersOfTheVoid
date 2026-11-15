@@ -151,10 +151,22 @@ msgid "%1$s left the game"
 msgstr "[[%1$s left the game]]"
 
 #, c-format
+msgid "%1$s saved the game"
+msgstr "[[%1$s saved the game]]"
+
+#, c-format
+msgid "%1$s saved the game, but the save may not have taken"
+msgstr "[[%1$s saved the game, but the save may not have taken]]"
+
+#, c-format
 msgid "%1$s sold it for %2$lld point (the host's price)"
 msgid_plural "%1$s sold it for %2$lld points (the host's price)"
 msgstr[0] "[[%1$s sold it for %2$lld point (the host's price)]]"
 msgstr[1] "[[%1$s sold it for %2$lld points (the host's price)]]"
+
+#, c-format
+msgid "%1$s tried to save the game, but it cannot be saved during an event"
+msgstr "[[%1$s tried to save the game, but it cannot be saved during an event]]"
 
 #, c-format
 msgid "%1$s was turned away: Game version mismatch: server plays VOTV %2$s, client has VOTV %3$s. [%4$s]"
@@ -279,6 +291,9 @@ msgstr "[[Administration]]"
 
 msgid "Allow other builds"
 msgstr "[[Allow other builds]]"
+
+msgid "Allow the backrooms"
+msgstr "[[Allow the backrooms]]"
 
 msgid "Also refuse their address"
 msgstr "[[Also refuse their address]]"
@@ -457,6 +472,9 @@ msgstr ""
 "[[Dr. Kel\n"
 "(default)]]"
 
+msgid "Drop the camera or put it away to close this view."
+msgstr "[[Drop the camera or put it away to close this view.]]"
+
 msgid "Duplicate settings with different values"
 msgstr "[[Duplicate settings with different values]]"
 
@@ -531,6 +549,9 @@ msgstr "[[Joining %s]]"
 msgid "Keep line %1$d: %2$s"
 msgstr "[[Keep line %1$d: %2$s]]"
 
+msgid "Kerfur commands are not available right now."
+msgstr "[[Kerfur commands are not available right now.]]"
+
 msgid "LAN"
 msgstr "[[LAN]]"
 
@@ -543,6 +564,9 @@ msgstr "[[Last seen: %ds ago]]"
 
 msgid "Left the session."
 msgstr "[[Left the session.]]"
+
+msgid "Let a player's clip through the world take them to the backrooms and the game's two secret maps, each player alone. Off, the clip does nothing for anyone in the session, and a player already there stays until their visit ends."
+msgstr "[[Let a player's clip through the world take them to the backrooms and the game's two secret maps, each player alone. Off, the clip does nothing for anyone in the session, and a player already there stays until their visit ends.]]"
 
 msgid "Let players whose Multivoid build differs from this server's join -- an unofficial build when this server runs the official one, the official build when this server runs a modified one. Applies to the next joins; players already in stay."
 msgstr "[[Let players whose Multivoid build differs from this server's join -- an unofficial build when this server runs the official one, the official build when this server runs a modified one. Applies to the next joins; players already in stay.]]"
@@ -683,6 +707,9 @@ msgstr "[[No tools here yet -- coming soon.]]"
 
 msgid "Nobody in the registry yet (players are recorded when they join)."
 msgstr "[[Nobody in the registry yet (players are recorded when they join).]]"
+
+msgid "Not changeable right now"
+msgstr "[[Not changeable right now]]"
 
 msgid "Not enough space."
 msgstr "[[Not enough space.]]"
@@ -963,6 +990,9 @@ msgstr "[[That can't be done right now.]]"
 msgid "That can't go in there."
 msgstr "[[That can't go in there.]]"
 
+msgid "That cannot take kerfur commands."
+msgstr "[[That cannot take kerfur commands.]]"
+
 msgid "That container is locked."
 msgstr "[[That container is locked.]]"
 
@@ -977,6 +1007,15 @@ msgstr "[[That item is gone.]]"
 
 msgid "That item is too far away."
 msgstr "[[That item is too far away.]]"
+
+msgid "That kerfur is busy with a task."
+msgstr "[[That kerfur is busy with a task.]]"
+
+msgid "That kerfur is no longer there."
+msgstr "[[That kerfur is no longer there.]]"
+
+msgid "That kerfur will not take orders."
+msgstr "[[That kerfur will not take orders.]]"
 
 msgid "That line is too long."
 msgstr "[[That line is too long.]]"
@@ -1038,6 +1077,9 @@ msgstr "[[The host could not send its challenge.]]"
 msgid "The host did not answer through the signaling server. It may be offline, or reconnecting -- try again in a minute."
 msgstr "[[The host did not answer through the signaling server. It may be offline, or reconnecting -- try again in a minute.]]"
 
+msgid "The host does not allow the properties tool"
+msgstr "[[The host does not allow the properties tool]]"
+
 msgid "The host does not allow the remover"
 msgstr "[[The host does not allow the remover]]"
 
@@ -1080,6 +1122,9 @@ msgstr "[[The host stopped sending the world it owed, or the connection stopped 
 msgid "The host was busy, and this connection was the slowest to prove itself."
 msgstr "[[The host was busy, and this connection was the slowest to prove itself.]]"
 
+msgid "The host will run that kerfur command in a moment."
+msgstr "[[The host will run that kerfur command in a moment.]]"
+
 msgid "The host's world arrived damaged and could not be used."
 msgstr "[[The host's world arrived damaged and could not be used.]]"
 
@@ -1091,6 +1136,9 @@ msgstr "[[The identity proof did not arrive in time.]]"
 
 msgid "The join failed before it started. The log has the error."
 msgstr "[[The join failed before it started. The log has the error.]]"
+
+msgid "The properties tool cannot change that in multiplayer"
+msgstr "[[The properties tool cannot change that in multiplayer]]"
 
 msgid "The remover cannot remove that in multiplayer"
 msgstr "[[The remover cannot remove that in multiplayer]]"
@@ -1187,11 +1235,17 @@ msgstr "[[Tidied: %1$d duplicate line(s) merged, %2$d setting(s) placed under th
 msgid "Tidy up multivoid.ini"
 msgstr "[[Tidy up multivoid.ini]]"
 
+msgid "To stop, look at the camera and press Alt+E. A click or E alone only pauses it."
+msgstr "[[To stop, look at the camera and press Alt+E. A click or E alone only pauses it.]]"
+
 msgid "Too many actions at once, try again."
 msgstr "[[Too many actions at once, try again.]]"
 
 msgid "Too many connections from you in a short time. Try again shortly."
 msgstr "[[Too many connections from you in a short time. Try again shortly.]]"
+
+msgid "Too many kerfur commands at once, try again."
+msgstr "[[Too many kerfur commands at once, try again.]]"
 
 msgid "Too many password attempts. Try again in ten minutes."
 msgstr "[[Too many password attempts. Try again in ten minutes.]]"
@@ -1338,6 +1392,12 @@ msgstr "[[Wrong password.]]"
 msgid "You are banned from this server."
 msgstr "[[You are banned from this server.]]"
 
+msgid "You are not holding a toolgun"
+msgstr "[[You are not holding a toolgun]]"
+
+msgid "You are too far from that kerfur."
+msgstr "[[You are too far from that kerfur.]]"
+
 msgid "You can play anyway. This message will not show again for this game version."
 msgstr "[[You can play anyway. This message will not show again for this game version.]]"
 
@@ -1346,6 +1406,9 @@ msgstr "[[You can't do that with this item.]]"
 
 msgid "You can't see that from there"
 msgstr "[[You can't see that from there]]"
+
+msgid "You were sent to the crematorium."
+msgstr "[[You were sent to the crematorium.]]"
 
 #, c-format
 msgid "Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again."
@@ -1504,6 +1567,10 @@ msgstr "[[written by a build with another log format]]"
 msgid "your name"
 msgstr "[[your name]]"
 
+msgctxt "cremate"
+msgid "Send to the crematorium"
+msgstr "[[Send to the crematorium]]"
+
 msgctxt "f1"
 msgid "Apply"
 msgstr "[[Apply]]"
@@ -1539,6 +1606,10 @@ msgstr "[[Refresh]]"
 msgctxt "f1"
 msgid "Reset"
 msgstr "[[Reset]]"
+
+msgctxt "f1"
+msgid "Send to the crematorium"
+msgstr "[[Send to the crematorium]]"
 
 msgctxt "f1"
 msgid "Teleport"

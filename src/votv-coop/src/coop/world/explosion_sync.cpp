@@ -160,7 +160,7 @@ void DescribeRoot(void* actor, char* out, size_t cap) {
 // unfinished actor is destroyed by a posted task, never inside the callback (the native call is still on the
 // stack). The task validates by the slot, since an unfinished deferred actor can fail a serial test.
 //
-// MTA cancels the same way and then requests the explosion its own player owns (CClientExplosionManager.cpp:148,188):
+// MTA cancels the same way and then requests the explosion its own player owns (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientExplosionManager.cpp:148,188):
 // here a rocket or sticky bomb born inside its launcher's fire body is noted before the filter, and an explosion's
 // birth sends its request (coop/world/explosion_request_client.cpp) before the dissolve nulls the result.
 void OnBirth(void* /*context*/, void* sourceObject, void* result) {
@@ -240,7 +240,7 @@ SG::Verdict OnCapturePre(const SG::Call& c) {
     }
     ++g_counters.captured;
     // Declared divergence from MTA, which relays an explosion only to the players within MAX_EXPLOSION_SYNC_DISTANCE
-    // (CGame.cpp:2932-2943): here every client gets it. The victim computes its own damage on its own copy and the
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2932-2943): here every client gets it. The victim computes its own damage on its own copy and the
     // host has no camera to cull by, and COOP_scope syncs the whole map with events broadcast unconditionally (Source
     // culls its explosion effect by PAS too). The session leaves out a peer whose world is not ready, and the
     // capture does not run without a ready peer, so a false return is a real refusal. A send that fails is a
@@ -396,7 +396,7 @@ bool OnSpawnReceived(const uint8_t* data, size_t len) {
 }
 
 // MTA resolves the position against the client's copy of the origin and warps the victim back by the latency when
-// there is none (CPacketHandler.cpp:4620-4670); here the position is the host's, absolute, with no compensation.
+// there is none (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:4620-4670); here the position is the host's, absolute, with no compensation.
 void Apply(const coop::net::ExplosionSpawnPayload& p) {
     if(p.classId == static_cast<uint8_t>(X::Cls::Pc))return;
     if (!coop::spawn_authority::IsActiveClientSession() || InLaneSpawnScope()) return;

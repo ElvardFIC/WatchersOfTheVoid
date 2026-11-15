@@ -131,7 +131,7 @@ bool IsOwnPlayer(void* obj) {
            !coop::players::Registry::Get().IsPuppet(obj);
 }
 
-// MTA lets the game damage a remote copy and then restores the owner's state (CClientGame.cpp:4509, CNetAPI.cpp:895);
+// MTA lets the game damage a remote copy and then restores the owner's state (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:4509, reference/mtasa-blue/Client/mods/deathmatch/logic/CNetAPI.cpp:895);
 // VOTV has no owner-state restore, so this lane refuses the write at the verb instead.
 bool PrivatePc(void* actor) {
     bool byName=false;

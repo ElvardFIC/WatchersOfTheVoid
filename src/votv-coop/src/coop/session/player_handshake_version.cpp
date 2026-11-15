@@ -217,7 +217,7 @@ bool ValidateJoinVersionOrRefuse(coop::net::Session& session, int senderSlot,
     // equals its own (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1913). A non-public
     // build carries a branch id in that version (reference/mtasa-blue/Shared/sdk/version.h:119-131; its
     // note at :36 says a custom public server admits only custom clients), so a client of the other
-    // kind differs in the branch and is refused as DIFFERENT_BRANCH (CGame.cpp:2036-2039). Here the
+    // kind differs in the branch and is refused as DIFFERENT_BRANCH (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2036-2039). Here the
     // host holds the branch rule. net.allow_other_builds is a deliberate divergence: no MTA setting
     // relaxes its kind check (the nearest is minclientversion, a version floor); kept so a self-built
     // host can host friends on the official build. A client judges no host.

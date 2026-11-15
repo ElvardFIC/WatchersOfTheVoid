@@ -41,6 +41,16 @@ CFG_ENUM(pause_quit_drill, "pause_quit_drill", "dev", "off", "off|client|host",
 CFG_FLAG(quit_decision_red, "quit_decision_red", "dev", false, "VOTVCOOP_QUIT_DECISION_RED",
     "Developer: the quit decision does NOT end the session (the pause-quit drill's red: the menu "
     "world's destroys go out).")
+CFG_FLAG(pause_quit_event, "pause_quit_event", "dev", false, "VOTVCOOP_PAUSE_QUIT_EVENT",
+    "Developer (with pause_quit_drill): before it opens the pause menu the peer starts an event the way the game "
+    "counts one (lib_C::setEvent) and waits until the game says an event runs, so the Main menu press is made "
+    "during an event. The peer says `rig: VERDICT pause-quit PASS` when the press reached the menu travel and "
+    "`FAIL` when it did not.")
+CFG_FLAG(leave_in_event_red, "leave_in_event_red", "dev", false, "VOTVCOOP_LEAVE_IN_EVENT_RED",
+    "Drill red (with pause_quit_drill and pause_quit_event): the pause menu keeps the game's answer to "
+    "lib_C::getEvent, the gate of coop/player/leave_in_event switched off, so the Main menu press during the event "
+    "does nothing and the drill must say FAIL. Off = the menu's question is answered no event in a session, as "
+    "designed.")
 CFG_FLAG(save_wait_probe, "save_wait_probe", "dev", false, "VOTVCOOP_SAVE_WAIT_PROBE",
     "Probe: the host holds each save request as if its world were still loading, for a second after it is in.")
 CFG_FLAG(join_window_pos_trace, "join_window_pos_trace", "dev", false, nullptr,
@@ -64,9 +74,9 @@ CFG_FLAG(client_world_first, "client_world_first", "dev", false, "VOTVCOOP_CLIEN
 CFG_FLAG(join_at_host, "join_at_host", "dev", false, "VOTVCOOP_JOIN_AT_HOST",
     "Drill (CLIENT): the join's first appearance keeps the transferred save's player transform, which "
     "is where the host stood, instead of this player's profile pose or the start point; a respawn "
-    "still goes to the start point. For a drill that needs the client at the base: from the start "
-    "point, a 770 m route, the director does not finish the walk on the rig. Off, the client appears "
-    "at its profile's pose or at the start point.")
+    "still goes to the start point. For a drill that needs the client beside the host, not at the "
+    "start point (the KPP gate in a fresh game, the base's bed from day 3). Off, the client appears at "
+    "its profile's pose or at the start point.")
 CFG_FLAG(rehost_rejoin, "rehost_rejoin", "dev", false, "VOTVCOOP_REHOST_REJOIN",
     "Drill (CLIENT): join the host again without restarting the game. At the main menu, with no "
     "session and no join in flight, a file named multivoid-rejoin.trigger beside the game exe is "
@@ -121,3 +131,18 @@ CFG_FLAG(late_join_drill, "late_join_drill", "dev", false, "VOTVCOOP_LATE_JOIN_D
     "returns to idle, checks the staged world is in its world, prints the bind wait's tallies per message kind and in "
     "all (held, coalesced, replayed, dropped, given up, never bound) then and ten seconds later, judges the staged "
     "effects, then prints 'client DONE'. Lines tagged [LATE-JOIN].")
+
+// The join curtain's dismissal: the red of the drill that joins from a minimized window.
+CFG_FLAG(curtain_dismiss_frame_clock_off, "curtain_dismiss_frame_clock_off", "dev", false,
+    "VOTVCOOP_CURTAIN_DISMISS_FRAME_CLOCK_OFF",
+    "Drill red only, never set (CLIENT). The join curtain's dismissal reads ImGui's clock on the game thread, as "
+    "it did before it was moved into the frame. A window that has never presented a frame has no ImGui context, "
+    "so the snapshot-complete handler faults there and the reconcile window stays up: the minimized-join drill "
+    "must say FAIL.")
+CFG_FLAG(join_minimized_drill, "join_minimized_drill", "dev", false, "VOTVCOOP_JOIN_MINIMIZED_DRILL",
+    "Drill (CLIENT): at boot the client minimizes its own game window, so the join runs with no frame ever "
+    "presented and no ImGui context. On the first tick after the join completed it says `rig: VERDICT "
+    "join-minimized FAIL` when the reconcile window is still up, INVALID when a frame was presented first. Else it "
+    "restores the window and says PASS once the first presented frame has lifted the join curtain (then prints "
+    "`join-minimized: DONE on client`), FAIL when that frame left the cover up. On a host it does nothing. Its red "
+    "is curtain_dismiss_frame_clock_off.")

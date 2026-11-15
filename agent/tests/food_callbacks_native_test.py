@@ -3,14 +3,14 @@ from pathlib import Path
 import re
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
 
 def functions(name):
-    package = Package(str(research / 'current-assets' / f'VotV__Content__objects__{name}.uasset'))
+    package = Package(str(evidence_root / 'current-assets' / f'VotV__Content__objects__{name}.uasset'))
     return {e['name']: body(package, e) for e in package.exports if package.class_of_export(e) == 'Function'}
 
 

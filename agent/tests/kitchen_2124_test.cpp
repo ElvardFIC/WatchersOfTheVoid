@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/coop/interactables/kitchen_sync.cpp"
+namespace ue_wrap::engine {bool IsMainPlayerGrabbing(void*,void*){return false;}}
 #include "ue_wrap/devices/grill.h"
 #include <cstdio>
 #include <cstdlib>

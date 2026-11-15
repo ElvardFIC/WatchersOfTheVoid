@@ -11,10 +11,10 @@
 // another thread loops inside one drain (game_thread.cpp:277-286) and is not guarded.
 
 // Also unlike the precedents: the ini is written on every accepted set (MTA's server: only when
-// bSavable && bSave, CMainConfig.cpp:1479-1483; its client: every apply, CSettings.cpp:4790); a
+// bSavable && bSave, reference/mtasa-blue/Server/mods/deathmatch/logic/CMainConfig.cpp:1479-1483; its client: every apply, reference/mtasa-blue/Server/mods/deathmatch/logic/CSettings.cpp:4790); a
 // live set beats the launch pin so a change holds for the run (MTA: command line wins,
-// CMainConfig.cpp:1050-1081); Source clamps an out-of-range value and calls back only on a change
-// (convar.cpp:794-798, 843-853), we refuse it and notify every set and reset (CMainConfig.cpp:1485).
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CMainConfig.cpp:1050-1081); Source clamps an out-of-range value and calls back only on a change
+// (reference/source-sdk-2013/src/tier1/convar.cpp:794-798, 843-853), we refuse it and notify every set and reset (reference/mtasa-blue/Server/mods/deathmatch/logic/CMainConfig.cpp:1485).
 
 #include "coop/config/config.h"
 
@@ -178,13 +178,13 @@ SetResult SetValueAt(const std::wstring& iniPath, const Row* row, const char* va
 }
 
 // ResetValue's precedents: MTA's client "Load defaults" re-applies a copy of the default literals
-// (CSettings.cpp:2835-2861); Source's ConVar::Revert is a set to the default
-// (convar.cpp:1076-1081). Ours removes the stored line instead, so a later change of the default,
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CSettings.cpp:2835-2861); Source's ConVar::Revert is a set to the default
+// (reference/source-sdk-2013/src/tier1/convar.cpp:1076-1081). Ours removes the stored line instead, so a later change of the default,
 // or an environment twin, answers rather than a frozen copy. It notifies even when no line was
-// stored: MTA's "Load defaults" re-applies every value unconditionally (CSettings.cpp:2837-2858)
-// and every MTA Set bumps a revision counter that consumers poll (CClientVariables.h:78-112,
-// CGUI.cpp:303-305, CChat.cpp:161-164) -- the same always-notify shape, read by polling where ours
-// is pushed; Source's Revert skips the callbacks when the value is unchanged (convar.cpp:843-853).
+// stored: MTA's "Load defaults" re-applies every value unconditionally (reference/mtasa-blue/Server/mods/deathmatch/logic/CSettings.cpp:2837-2858)
+// and every MTA Set bumps a revision counter that consumers poll (reference/mtasa-blue/Client/core/CClientVariables.h:78-112,
+// reference/mtasa-blue/Client/core/CGUI.cpp:303-305, reference/mtasa-blue/Client/core/CChat.cpp:161-164) -- the same always-notify shape, read by polling where ours
+// is pushed; Source's Revert skips the callbacks when the value is unchanged (reference/source-sdk-2013/src/tier1/convar.cpp:843-853).
 // Ours always notifies: it compares no values, and a subscriber re-resolves the row rather than
 // trusting what it saw before.
 SetResult ResetValueAt(const std::wstring& iniPath, const Row* row) {

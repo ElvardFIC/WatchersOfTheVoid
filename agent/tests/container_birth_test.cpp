@@ -7,6 +7,7 @@ bool InFlight(){return false;}
 bool Pending(void*){return false;}
 }
 #include "facts_test_support.h"
+namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return nullptr; } }
 #include <cstdio>
 #include <cstdlib>
 #include <thread>

@@ -75,7 +75,7 @@ void EraseEntry(std::unordered_map<void*, Watched>::iterator it) {
 // The post hook on UPrimitiveComponent::SetCollisionEnabled. It runs inside the engine call and on every component's
 // call in the game, so its first statements are the cheap rejects and a miss returns at once. A hit reads the box as the
 // engine now holds it: a change of the armed state marks the container dirty, so the next sweep publishes it. MTA
-// broadcasts an element's data to its peers when the server changes it (CStaticFunctionDefinitions.cpp:1005,
+// broadcasts an element's data to its peers when the server changes it (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1005,
 // SetElementData); here the game's own Blueprint makes the change, and the native it ends in is where it is caught.
 void OnSetCollision(void* component, void*, void*) {
     if (g_byComponent.empty()) return;

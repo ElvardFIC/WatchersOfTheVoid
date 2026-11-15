@@ -16,11 +16,11 @@ namespace coop::net {
 //   High      a kind that names nothing: the link probe and its echo, the join beacon, the vitals restore.
 //   Default   a kind that names an element or the world. MTA carries every element message on one ordered
 //             channel, PACKET_ORDERING_DEFAULT (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/
-//             CPacket.h:43), so a message that names a prop meets that prop's spawn by FIFO order.
+//             reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CPacket.h:43), so a message that names a prop meets that prop's spawn by FIFO order.
 //   Transfer  a payload that can exceed the blob ceiling, in MTA's latent shape: a channel of its own at low
 //             priority and a capped rate (reference/mtasa-blue/Shared/mods/deathmatch/logic/
-//             CLatentSendQueue.cpp:46-81,129-130), the whole message wrapped into one buffer
-//             (CLatentTransferManager.cpp:123-150).
+//             reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentSendQueue.cpp:46-81,129-130), the whole message wrapped into one buffer
+//             (reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentTransferManager.cpp:123-150).
 // connection_tuning's TuneConnection hard-codes the count to 3, and session.cpp pins the two together with a
 // static_assert on Lane::Count.
 enum class Lane : int {
@@ -37,7 +37,7 @@ enum class Lane : int {
 //
 // A divergence from MTA, which sends explosions, damage and element RPCs at HIGH priority on its DEFAULT
 // channel (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CExplosionSyncPacket.h:41,
-// CElementRPCPacket.h:23): a GNS lane fuses order and priority, so ours are ordered on Default at the
+// reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CElementRPCPacket.h:23): a GNS lane fuses order and priority, so ours are ordered on Default at the
 // middle priority. Element kinds stay off lane 0 because the link probe and the join beacon must never
 // queue behind the ordered element backlog (the LinkProbe and JoinPhaseNote arms). They wait behind what
 // that peer's Default lane holds, and on a joiner until its join gate closes.
@@ -90,9 +90,9 @@ inline Lane LaneForKind(ReliableKind k) {
     // The lane is built, MTA's latent shape is not: the save stream is paced by save_transfer's pump, and only
     // the dev filler rides it beside. The first Transfer kind to take that shape owes five properties the lane
     // does not enforce: dispatch on completion, dropped if its element is gone or not yet added
-    // (CLatentReceiver.cpp:160-186); an owner token cancelled when the peer leaves or the owner is destroyed
-    // (CLatentTransferManager.cpp:85-115,188-210); one transfer in flight per peer (CLatentReceiver.cpp:121-123);
-    // a size bound (:121-126); and its own rate cap (CLatentSendQueue.cpp:62-70).
+    // (reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentReceiver.cpp:160-186); an owner token cancelled when the peer leaves or the owner is destroyed
+    // (reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentTransferManager.cpp:85-115,188-210); one transfer in flight per peer (reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentReceiver.cpp:121-123);
+    // a size bound (:121-126); and its own rate cap (reference/mtasa-blue/Shared/mods/deathmatch/logic/CLatentSendQueue.cpp:62-70).
     case ReliableKind::SaveTransferBegin: return Lane::Transfer;
     case ReliableKind::SaveTransferChunk: return Lane::Transfer;
     case ReliableKind::DevLoadFiller:     return Lane::Transfer;

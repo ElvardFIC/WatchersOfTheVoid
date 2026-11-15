@@ -2,7 +2,7 @@
 // commit and is killed by the rig (--rejoin), so the host holds a reservation for a slot that left; the newcomer in
 // that slot forges the dead life's commit and then takes the prop honestly. See coop/dev/prop_act_drill.h.
 //
-//   HOST -- spawns a crowbar, sees c1 reserve it, sees the departure release the reservation and tally it, says the
+//   HOST -- spawns a crowbar, sees c1 reserve it, sees the departure release the reservation (its own event), says the
 //           newcomer line once slot 1 is world-ready again, tallies the forged commit as bad with the crowbar
 //           standing, and judges the honest take as one destroy commit.
 //   c1   -- life 1 pockets the crowbar with its commit held and prints the rig's marker. Life 2 forges the commit,
@@ -48,7 +48,7 @@ constexpr int kSlot = kClientSlot;   // the one client, in both lives
 // ---- host (judge) ------------------------------------------------------------------------------------------------
 
 struct HBase {
-    uint32_t heldAtDisconnect = 0, badCommit = 0, destroys = 0;
+    uint32_t badCommit = 0, destroys = 0;
 };
 
 enum class HStage : uint8_t { Arm, Spawn, Announce, AwaitReserved, AwaitGone, AwaitNewcomer, AwaitBad, AwaitDone,
@@ -59,6 +59,22 @@ ue_wrap::CachedObjRef g_target;
 EL::ElementId g_eid = EL::kInvalidId;
 HBase g_base;
 
+// The departure, as the host's OnPeerGone said it (the seam of prop_act_host): how many reservations a leaving slot held
+// and the eid of the last. Not the session-wide tally, which the same tick's DisconnectAll clears.
+struct Departure {
+    uint32_t count = 0;
+    uint32_t eid = 0;
+};
+Departure g_departure;
+// The host's session, kept from its ticks: the reset tells the last client's departure (the session lives on) from its end.
+const coop::net::Session* g_hostSession = nullptr;
+
+void OnHeldDeparture(uint8_t slot, uint32_t eid) {
+    if (slot != kSlot) return;
+    ++g_departure.count;
+    g_departure.eid = eid;
+}
+
 void HEnter(HStage s) {
     g_hs = s;
     g_hsMs = NowMs();
@@ -68,14 +84,28 @@ bool HExpired(uint64_t bound) { return NowMs() - g_hsMs > bound; }
 
 void HostFail(const std::string& why) {
     UE_LOGW("%s host %s FAIL -- %s", kTag, kDepartRow.name, why.c_str());
+    HostEnds(End::Fail, why);
     g_hs = HStage::Done;
+}
+
+// A bound ran out with no event to decide on: INVALID, never a verdict on the lane.
+void HostInvalid(const std::string& why) {
+    UE_LOGW("%s host %s INVALID -- %s", kTag, kDepartRow.name, why.c_str());
+    HostEnds(End::Invalid, why);
+    g_hs = HStage::Done;
+}
+
+// What c1 said when its step ended other than ok: its FAIL stays a FAIL, its INVALID stays INVALID.
+void HostReported(const std::string& said) {
+    if (said.compare(0, 8, "invalid ") == 0) HostInvalid("c1 reported: " + said.substr(8));
+    else HostFail("c1 reported: " + said);
 }
 
 // c1 said its step failed: the phase ends there rather than on a bound.
 bool ClientFailed() {
     std::string rest;
     if (!ClientSaid(kSlot, DoneHead(kDepartRow), &rest) || rest == "ok") return false;
-    HostFail("c1 reported: " + rest);
+    HostReported(rest);
     return true;
 }
 
@@ -103,7 +133,7 @@ void HostStep(coop::net::Session* s) {
     case HStage::Spawn: {
         void* actor = nullptr;
         if (const char* why = SpawnTarget(kDepartRow, 0.f, &actor)) {
-            HostFail(why);
+            if (const char* bad = InvalidText(why)) HostInvalid(bad); else HostFail(why);
             return;
         }
         g_target.Set(actor);
@@ -118,10 +148,11 @@ void HostStep(coop::net::Session* s) {
         }
         g_eid = EL::Registry::Get().EidForActor(actor);
         if (g_eid == EL::kInvalidId) {
-            if (HExpired(kAnnounceBoundMs)) HostFail("the spawned prop was never announced");
+            if (HExpired(kAnnounceBoundMs)) HostInvalid("the spawned prop was never announced");
             return;
         }
-        g_base.heldAtDisconnect = PAH::TallyOf(Tally::HeldAtDisconnect);
+        g_departure = Departure{};
+        PAH::dev::SetOnHeldAtDeparture(&OnHeldDeparture);
         Say(ReadyHead(kDepartRow) + std::to_string(static_cast<unsigned>(g_eid)));
         UE_LOGI("%s host depart said ready: eid %u", kTag, static_cast<unsigned>(g_eid));
         HEnter(HStage::AwaitReserved);
@@ -130,33 +161,36 @@ void HostStep(coop::net::Session* s) {
     case HStage::AwaitReserved:
         if (ClientFailed()) return;
         if (coop::prop_hold::ReservedEid(kSlot) != static_cast<uint32_t>(g_eid)) {
-            if (HExpired(kDoneBoundMs)) HostFail("c1 never reserved the target");
+            if (HExpired(kDoneBoundMs)) HostInvalid("c1 never reserved the target");
             return;
         }
         UE_LOGI("%s host depart: c1 holds the reservation, waiting for it to leave", kTag);
         HEnter(HStage::AwaitGone);
         return;
     case HStage::AwaitGone: {
-        // The rig kills c1 on its marker; the host sees the slot go, tally it and release the reservation.
-        const uint32_t left = PAH::TallyOf(Tally::HeldAtDisconnect) - g_base.heldAtDisconnect;
+        // The rig kills c1 on its marker; the host's OnPeerGone releases the reservation and says so through the seam.
+        const uint32_t left = g_departure.count;
         if (left == 0) {
-            if (HExpired(kDoneBoundMs)) HostFail("the departure never tallied a reservation held at disconnect");
+            if (HExpired(kDoneBoundMs)) HostInvalid("the departure never released a reservation held at disconnect");
             return;
         }
-        if (left != 1 || coop::prop_hold::ReservationCount(kSlot) != 0 || !TargetStands()) {
-            HostFail("the departure tallied " + std::to_string(left) + " reservations, left " +
-                     std::to_string(coop::prop_hold::ReservationCount(kSlot)) + " standing, or the target is gone");
+        if (left != 1 || g_departure.eid != static_cast<uint32_t>(g_eid) || coop::prop_hold::ReservationCount(kSlot) != 0 ||
+            !TargetStands()) {
+            HostFail("the departure released " + std::to_string(left) + " reservations (the last of eid " +
+                     std::to_string(g_departure.eid) + "), left " +
+                     std::to_string(coop::prop_hold::ReservationCount(kSlot)) +
+                     " standing, or it was not the target's, or the target is gone");
             return;
         }
-        UE_LOGI("%s host depart: the departure released the reservation (held_at_disconnect +1), the target stands",
-                kTag);
+        UE_LOGI("%s host depart: the departure released the reservation of eid %u, the target stands", kTag,
+                static_cast<unsigned>(g_departure.eid));
         HEnter(HStage::AwaitNewcomer);
         return;
     }
     case HStage::AwaitNewcomer:
         if (!s->HasPeerConn(kSlot) || !s->IsSlotWorldReady(kSlot) || !coop::prop_snapshot::IsBracketClosed(kSlot) ||
             coop::join_window_baseline::IsLateWindowOpen(kSlot)) {
-            if (HExpired(kDoneBoundMs)) HostFail("no newcomer reached world-ready in the slot");
+            if (HExpired(kDoneBoundMs)) HostInvalid("no newcomer reached world-ready in the slot");
             return;
         }
         g_base.badCommit = PAH::TallyOf(Tally::BadCommit);
@@ -169,7 +203,7 @@ void HostStep(coop::net::Session* s) {
         if (ClientFailed()) return;
         const uint32_t bad = PAH::TallyOf(Tally::BadCommit) - g_base.badCommit;
         if (bad == 0) {
-            if (HExpired(kDoneBoundMs)) HostFail("the newcomer's forged commit was never tallied bad");
+            if (HExpired(kDoneBoundMs)) HostInvalid("the newcomer's forged commit was never tallied bad");
             return;
         }
         if (bad != 1 || !TargetStands() ||
@@ -185,11 +219,11 @@ void HostStep(coop::net::Session* s) {
     case HStage::AwaitDone: {
         std::string rest;
         if (!ClientSaid(kSlot, DoneHead(kDepartRow), &rest)) {
-            if (HExpired(kDoneBoundMs)) HostFail("the newcomer never said it was done");
+            if (HExpired(kDoneBoundMs)) HostInvalid("the newcomer never said it was done");
             return;
         }
         if (rest != "ok") {
-            HostFail("c1 reported: " + rest);
+            HostReported(rest);
             return;
         }
         HEnter(HStage::Judge);
@@ -200,14 +234,19 @@ void HostStep(coop::net::Session* s) {
         const bool settled = destroys == 1 && EL::LivePropActor(g_eid) == nullptr &&
                              coop::prop_hold::ReservationCount(kSlot) == 0;
         if (!settled) {
-            if (HExpired(kJudgeBoundMs))
+            // The host's commit handler counts, destroys and releases in one call: once a commit is counted the state is
+            // final, and a wrong count, a live target or a standing reservation is the failure. Only no commit yet waits.
+            if (destroys != 0)
                 HostFail("the honest take left " + std::to_string(destroys) + " destroy commits, a live target or a reservation");
+            else if (HExpired(kJudgeBoundMs))
+                HostInvalid("the honest take's commit never reached the host");
             return;
         }
         if (PAH::TallyOf(Tally::BadCommit) - g_base.badCommit != 1) {
             HostFail("the honest take was tallied bad");
             return;
         }
+        HostEnds(End::Pass, "the departure released the reservation, the forged commit was bad, the honest take destroyed the prop once");
         UE_LOGI("%s host depart PASS -- the departure released the reservation, the forged commit was bad and "
                 "destroyed nothing, the honest take destroyed the prop once", kTag);
         g_hs = HStage::Done;
@@ -240,15 +279,25 @@ bool CExpired(uint64_t bound) { return NowMs() - g_csMs > bound; }
 
 void Fail(const std::string& why) {
     UE_LOGW("%s c%d depart FAIL -- %s", kTag, kSlot, why.c_str());
+    RigSay(End::Fail, why);
     PAR::dev::HoldCommits(false);
     g_sayLine = DoneHead(kDepartRow) + "fail " + why.substr(0, 120);
+    CEnter(CStage::Say);
+}
+
+// A bound ran out with no event to decide on: INVALID, said to the host as such.
+void Invalid(const std::string& why) {
+    UE_LOGW("%s c%d depart INVALID -- %s", kTag, kSlot, why.c_str());
+    RigSay(End::Invalid, why);
+    PAR::dev::HoldCommits(false);
+    g_sayLine = DoneHead(kDepartRow) + "invalid " + why.substr(0, 120);
     CEnter(CStage::Say);
 }
 
 void Resolve() {
     void* const mirror = EL::LivePropActor(g_ceid);
     if (!mirror) {
-        if (CExpired(kMirrorBoundMs)) Fail("the host's prop never reached this client");
+        if (CExpired(kMirrorBoundMs)) Invalid("the host's prop never reached this client");
         return;
     }
     g_invBefore = InventoryCount(kDepartRow.leaf);
@@ -328,7 +377,7 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
         // The host's record is replayed to a joiner, so the first life's ready line reaches the newcomer as history.
         // Life 1 acts only on a ready line that arrived live; the newcomer waits for its own line. A life 1 that
         // first reads the ready line after the feed has retired it from the live tier (11 s) would wait for a line
-        // that never comes, and the bound below FAILs it: loud, never a pass.
+        // that never comes, and the bound below says INVALID: loud, never a pass.
         if (!poll) return;
         std::string rest;
         if (HostSaid(NewcomerHead(), &rest)) {
@@ -342,7 +391,7 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
             CEnter(CStage::Resolve);
             return;
         }
-        if (CExpired(kReadyBoundMs)) Fail("neither a live ready line nor the newcomer line came from the host");
+        if (CExpired(kReadyBoundMs)) Invalid("neither a live ready line nor the newcomer line came from the host");
         return;
     }
     case CStage::Forge: {
@@ -360,7 +409,7 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
     case CStage::AwaitBad:
         if (!poll) return;
         if (!HostSaid(BadSeenLine(), nullptr)) {
-            if (CExpired(kReadyBoundMs)) Fail("the host never said it tallied the forged commit");
+            if (CExpired(kReadyBoundMs)) Invalid("the host never said it tallied the forged commit");
             return;
         }
         CEnter(CStage::Resolve);
@@ -373,7 +422,7 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
         if (st == 0) return;
         g_walk.reset();
         if (st == 2) {
-            Fail("the walk to the mirror did not arrive");
+            Invalid("the walk to the mirror did not arrive");
             return;
         }
         CEnter(CStage::AwaitGather);
@@ -383,14 +432,14 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
         // A host mirror still driven is parked with physics off, and a take of it bails: act when a press could gather it.
         if (!poll) return;
         if (g_mirror.Get() && !MirrorGatherable(g_mirror.Get(), kDepartRow.verb)) {
-            if (CExpired(kGatherBoundMs)) Fail("the mirror never became gatherable here (the host's drive did not end)");
+            if (CExpired(kGatherBoundMs)) Invalid("the mirror never became gatherable here (the host's drive did not end)");
             return;
         }
         Act(player);
         return;
     case CStage::AwaitReply:
         if (PAR::dev::PendingId() != 0) {
-            if (CExpired(kReplyBoundMs)) Fail("the request was still pending");
+            if (CExpired(kReplyBoundMs)) Invalid("the request was still pending");
             return;
         }
         ReadReply();
@@ -411,6 +460,7 @@ void ClientStep(coop::net::Session* s, void* player, uint64_t now) {
 }  // namespace
 
 void DepartHostTick(coop::net::Session* s) {
+    g_hostSession = s;
     if (g_hs == HStage::Done) return;
     const uint64_t now = NowMs();
     if (now < g_hNextMs) return;
@@ -420,12 +470,23 @@ void DepartHostTick(coop::net::Session* s) {
 
 void DepartClientTick(coop::net::Session* s) {
     if (g_cs == CStage::Done) return;
+    if (HostEnded()) {   // the host decided: no bound of this client says a second verdict
+        PAR::dev::HoldCommits(false);
+        g_cs = CStage::Done;
+        return;
+    }
     void* const player = coop::players::Registry::Get().Local();
     if (!player) return;
     ClientStep(s, player, NowMs());
 }
 
 void DepartReset() {
+    // The host's last client leaving runs the session-wide reset while the session lives on: the departure this phase is
+    // measuring, and the host's stage and baseline outlive it. Only a session that has stopped ends the phase's state.
+    if (g_hostSession && g_hostSession->running()) return;
+    g_hostSession = nullptr;
+    PAH::dev::SetOnHeldAtDeparture(nullptr);
+    g_departure = Departure{};
     g_hs = HStage::Arm;
     g_hsMs = g_hNextMs = 0;
     g_target.Reset();

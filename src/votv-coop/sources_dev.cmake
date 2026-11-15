@@ -10,6 +10,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/store_table_probe.cpp
     src/coop/dev/order_selftest.cpp
     src/coop/dev/bind_wait_selftest.cpp
+    src/coop/dev/prop_tool_park_selftest.cpp
     src/coop/dev/meadow_selftest.cpp
     src/coop/dev/meadow_selftest_rows.cpp
     src/coop/dev/order_probe.cpp
@@ -17,6 +18,9 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/spawn_order_probe.cpp
     src/coop/dev/prop_birth_key_probe.cpp
     src/coop/dev/impact_damage_probe.cpp
+    src/coop/dev/feedback_probe.cpp
+    src/coop/dev/kerfur_seat_probe.cpp
+    src/coop/dev/requester_feedback_exercise.cpp
     src/coop/dev/host_settle_drill.cpp
     src/coop/dev/spawn_match_probe.cpp
     src/coop/dev/native_text_probe.cpp
@@ -83,11 +87,20 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/bug_report_drill.cpp
     src/coop/dev/grants_drill.cpp
     src/coop/dev/pause_quit_drill.cpp
+    src/coop/dev/vidcam_hint_drill.cpp
+    src/coop/dev/pause_menu_probe.cpp
+    src/coop/dev/pause_menu_probe_rows.cpp
+    src/coop/dev/pause_menu_probe_tree.cpp
+    src/coop/dev/pause_menu_probe_bind.cpp
+    src/coop/dev/pause_menu_probe_wire.cpp
     src/coop/dev/game_window.cpp
     src/coop/dev/desk_verb_drill.cpp
     src/coop/dev/desk_verb_drill_desk.cpp
     src/coop/dev/desk_verb_drill_refiner.cpp
     src/coop/dev/kerfur_serve_drill.cpp
+    src/coop/dev/kerfur_serve_drill_disc.cpp
+    src/coop/dev/kerfur_serve_drill_disc_judge.cpp
+    src/coop/dev/kerfur_serve_drill_steps.cpp
     src/coop/dev/load_reroll_watch.cpp
     src/coop/dev/radio_tower_probe.cpp
     src/coop/dev/container_selftest.cpp
@@ -96,6 +109,11 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/drive_selftest.cpp
     src/coop/dev/rack_birth_drill.cpp
     src/coop/dev/burn_revive_drill.cpp
+    src/coop/dev/cremator_dev_support.cpp
+    src/coop/dev/cremator_probe.cpp
+    src/coop/dev/cremator_probe_host.cpp
+    src/coop/dev/cremator_drill.cpp
+    src/coop/dev/cremator_drill_g2.cpp
     src/coop/dev/hand_drop_census.cpp
     src/coop/dev/hand_drop_selftest.cpp
     src/coop/dev/run_and_wait_selftest.cpp
@@ -163,16 +181,22 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/drill_props.cpp
     src/coop/dev/prop_act_drill.cpp
     src/coop/dev/prop_act_drill_client.cpp
+    src/coop/dev/prop_act_drill_client_steps.cpp
     src/coop/dev/prop_act_drill_depart.cpp
     src/coop/dev/prop_act_drill_edge.cpp
     src/coop/dev/prop_act_drill_edge_client.cpp
     src/coop/dev/prop_act_drill_honest.cpp
+    src/coop/dev/prop_act_drill_mre.cpp
     src/coop/dev/prop_act_drill_race.cpp
     src/coop/dev/prop_act_drill_race_client.cpp
+    src/coop/dev/prop_act_drill_snack.cpp
     src/coop/dev/prop_syncer_drill.cpp
     src/coop/dev/prop_syncer_drill_host.cpp
     src/coop/dev/prop_syncer_drill_observer.cpp
     src/coop/dev/sack_drill.cpp
+    src/coop/dev/equip_drill.cpp
+    src/coop/dev/hook_retrieve_drill.cpp
+    src/coop/dev/nametag_drill.cpp
     src/coop/dev/fall_drill.cpp
     src/coop/dev/atv_spawn_drill.cpp
     src/coop/dev/atv_health_drill.cpp
@@ -230,6 +254,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/tower_drill_radio.cpp
     src/coop/dev/tower_drill_radio_arms.cpp
     src/coop/dev/dependency_dump.cpp
+    src/coop/dev/rig_verdict_selftest.cpp
     src/coop/dev/end_play_probe.cpp
     src/coop/dev/death_seam_census.cpp
     src/coop/dev/damage_probe.cpp
@@ -249,6 +274,10 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/event_drill.cpp
     src/coop/dev/settings_drill.cpp
     src/coop/dev/mannequin_drill.cpp
+    src/coop/dev/mannequin_walker_drill.cpp
+    src/coop/dev/mannequin_walker_geometry.cpp
+    src/coop/dev/mannequin_walker_statue.cpp
+    src/coop/dev/mannequin_walker_steps_b.cpp
     src/coop/dev/toggle_drill.cpp
     src/coop/dev/swinger_drill.cpp
     src/coop/dev/swinger_drill_join.cpp
@@ -265,6 +294,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/recycled_slot_drill.cpp
     src/coop/dev/rehost_rejoin.cpp
     src/coop/dev/join_abort_drill.cpp
+    src/coop/dev/join_minimized_drill.cpp
     src/coop/dev/puppet_head_probe.cpp
     src/coop/dev/puppet_reg_probe.cpp
     src/coop/dev/pi0_selftest.cpp
@@ -285,6 +315,11 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/pile_defer_drill_host.cpp
     src/coop/dev/client_model_probe.cpp
     src/coop/dev/atv_eject_drill.cpp
+    src/coop/dev/atv_gate_drill.cpp
+    src/coop/dev/atv_gate_drill_forged.cpp
+    src/coop/dev/atv_gate_drill_joiner.cpp
+    src/coop/dev/atv_gate_drill_acts.cpp
+    src/coop/dev/atv_gate_drill_steps.cpp
     src/coop/dev/atv_probe.cpp
     src/coop/dev/atv_seat.cpp
     src/coop/dev/atv_tire_probe.cpp
@@ -300,10 +335,15 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/dev_gate.cpp
     src/coop/dev/director/player_context.cpp
     src/coop/dev/director/control_manager.cpp
+    src/coop/dev/director/stage.cpp
     src/coop/dev/director/detour.cpp
+    src/coop/dev/director/leg_blocker.cpp
+    src/coop/dev/director/blocker_delete.cpp
+    src/coop/dev/director/body_floor.cpp
     src/coop/dev/director/proc_walkgrab.cpp
     src/coop/dev/director/director_run.cpp
     src/coop/dev/director/container_take_probe.cpp
+    src/coop/dev/director/grab_race_probe.cpp
     src/coop/dev/director/dup_verifier.cpp
     src/coop/dev/director/container_take_judge.cpp
     src/coop/dev/director/door_approach.cpp

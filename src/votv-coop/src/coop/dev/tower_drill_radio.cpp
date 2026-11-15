@@ -159,6 +159,8 @@ const char* ArmName() {
     case Arm::RadioResetRed: return "radioresetred";
     case Arm::RadioFuse:     return "radiofuse";
     case Arm::RadioFuseRed:  return "radiofusered";
+    case Arm::RadioFuseForge: return "radiofuseforge";
+    case Arm::RadioFuseSameTick: return "radiofusesametick";
     case Arm::RadioJoin:     return "radiojoin";
     case Arm::RadioJoinRed:  return "radiojoinred";
     default:                 return "radio";
@@ -168,6 +170,8 @@ const char* ArmName() {
 // The name an arm's verdict lines carry: a control prints its green arm's name, so one fail marker serves both.
 const char* VerdictName() {
     if (IsRadioReset(ArmOf())) return "radioreset";
+    if (ArmOf() == Arm::RadioFuseForge) return "radiofuseforge";
+    if (ArmOf() == Arm::RadioFuseSameTick) return "radiofusesametick";
     if (IsRadioFuse(ArmOf())) return "radiofuse";
     if (IsRadioJoin(ArmOf())) return "radiojoin";
     return "radio";
@@ -208,7 +212,7 @@ void HostTick(coop::net::Session& s) {
     }
     if (IsRadioFuse(ArmOf())) {
         // The fuse arms want a fuse blown and the tower whole: one scramble blows the first good fuse
-        // (radiotower.cpp:1496-1520); a scramble past the last good fuse breaks the tower, which they cannot use.
+        // (CXXHeaderDump/radiotower.cpp:1496-1520); a scramble past the last good fuse breaks the tower, which they cannot use.
         if (g_hostFuseCount != st.fuseCount || std::memcmp(g_hostFuses, st.fuses, st.fuseCount) != 0) {
             g_hostFuseCount = st.fuseCount;
             std::memcpy(g_hostFuses, st.fuses, st.fuseCount);

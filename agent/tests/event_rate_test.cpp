@@ -49,6 +49,7 @@ WorldKind CurrentWorldKind(){return WorldKind::Gameplay;}
 }
 namespace coop::net::session_serial {uint32_t Current(){return test::serial;}}
 namespace coop::config {float ResolveFloat(int){return test::rate;}}
+namespace coop::config {float ResolveFloat(const config_registry::FloatRow&){return test::rate;}}
 namespace ue_wrap::game_thread {bool IsDefinitelyOffGameThread(){return false;}}
 namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;}unsigned long long CallerRva(const void*){return 0;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}

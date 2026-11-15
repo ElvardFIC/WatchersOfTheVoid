@@ -4,16 +4,16 @@ import re
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = checkout.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = checkout.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
 
 def package(asset):
-    path = research / 'assets' / ('VotV__Content__' + asset + '.uasset')
+    path = evidence_root / 'assets' / ('VotV__Content__' + asset + '.uasset')
     if not path.exists():
-        path = research / 'current-assets' / ('VotV__Content__' + asset + '.uasset')
+        path = evidence_root / 'current-assets' / ('VotV__Content__' + asset + '.uasset')
     if not path.exists():
         raise SystemExit('UNAVAILABLE: extract native entity evidence: ' + str(path))
     return Package(str(path))
@@ -260,7 +260,7 @@ allowlist = profile.split('kNpcAllowlist[] = {', 1)[1].split('};', 1)[0]
 classes = [constants[name] for name in re.findall(r'^\s*(NpcClass_\w+),', allowlist, re.M)]
 parents = {}
 for cls in classes:
-    for path in (research / 'assets').glob('*__' + cls[:-2] + '.uasset'):
+    for path in (evidence_root / 'assets').glob('*__' + cls[:-2] + '.uasset'):
         p = Package(str(path))
         e = next((e for e in p.exports if e['name'] == cls and e['sup']), None)
         if e:

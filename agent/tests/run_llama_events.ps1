@@ -5,7 +5,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $checkout
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/llama_timer_stubs /I agent/tests/state_2145_stubs /I src/votv-coop/include "/Fo$output/test.obj" "/Fe$output/test.exe" agent/tests/llama_events_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/llama_timer_stubs" /I "$PSScriptRoot/state_2145_stubs" /I src/votv-coop/include "/Fo$output/test.obj" "/Fe$output/test.exe" "$PSScriptRoot/llama_events_test.cpp" /link /OPT:REF
     if($LASTEXITCODE){throw 'Llama event fixture compile failed'}
     & "$output/test.exe"
     if($LASTEXITCODE){throw 'Llama event fixture failed'}

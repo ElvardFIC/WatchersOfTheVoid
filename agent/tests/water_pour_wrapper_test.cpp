@@ -103,9 +103,9 @@ bool TryGetActorLocation(void* actor,FVector& out){CHECK(actor==test::At(test::A
 bool TryGetActorRotation(void* actor,FRotator& out){CHECK(actor==test::At(test::Actor));out=test::expected.rotation;return true;}
 bool SetActorLocation(void* actor,const FVector& at){CHECK(actor==test::At(test::Actor) && at.X==test::expected.location.X);test::constructedAt=at;++test::locationWrites;return true;}
 bool SetActorRotation(void* actor,const FRotator& value){CHECK(actor==test::At(test::Actor) && value.Yaw==test::expected.rotation.Yaw);++test::rotationWrites;return true;}
-void* BeginDeferredSpawn(void* cls,const FVector& at,const FRotator& rotation){using namespace test;CHECK(cls==At(shot?IgnoredClass:PourClass) && at.X==100 && rotation.Pitch==expected.rotation.Pitch && rotation.Yaw==expected.rotation.Yaw);
+void* BeginDeferredSpawn(void* cls,const FVector& at,const FRotator& rotation,uint8_t,const FVector*){using namespace test;CHECK(cls==At(shot?IgnoredClass:PourClass) && at.X==100 && rotation.Pitch==expected.rotation.Pitch && rotation.Yaw==expected.rotation.Yaw);
     ++begins;constructedAt=at;objects[Actor].live=true;Run(onBegin);return beginOk?At(Actor):nullptr;}
-bool FinishDeferredSpawn(void* actor,const FVector& at,const FRotator&){using namespace test;CHECK(actor==At(Actor) && at.X==100 && (shot || objects[Actor].soap==expected.soap));
+bool FinishDeferredSpawn(void* actor,const FVector& at,const FRotator&,const FVector*){using namespace test;CHECK(actor==At(Actor) && at.X==100 && (shot || objects[Actor].soap==expected.soap));
     constructedAt.Z+=25;++finishes;Run(onFinish);return finishOk;}
 void* GetStaticMeshComponent(void* actor){CHECK(actor==test::At(test::Actor));return test::meshOk?test::At(test::Mesh):nullptr;}
 bool SetComponentLinearVelocity(void* component,float x,float y,float z){using namespace test;CHECK(component==At(Mesh) && x==expected.velocity.X && y==expected.velocity.Y && z==expected.velocity.Z);

@@ -2,6 +2,19 @@
 
 Development target: **0.9.2164**. Last qualified offline package: **0.9.2163 / b2217**. Implementation backlog: [TODO.md](TODO.md) and [WORK.md](WORK.md). Maintained test coverage: [tests/README.md](tests/README.md).
 
+## Laptop seat trace probe (UG4)
+
+Added an observe-only script-gate probe for `stabilizeSeat` and relevant
+`setPropProps` calls. It captures the actual actor/key, caller, before/after
+physics flags, `active` argument when readable, and stationary-laptop lease
+context; it does not change gameplay or network state.
+
+PASS Windows Release build: `cmake --build build/votv-coop-2164 --config
+Release` with the configured MSVC 14.50 and Windows SDK 10.0.26100.0 paths.
+The post-build DLL dependency scan reported that dumpbin/llvm-objdump/objdump
+is unavailable. Two-peer runtime capture is still required before implementing
+the host-owned seat reservation; UG4 remains open.
+
 ## Owner disposition (11 November 2026)
 
 The joined-client prop jitter/support-penetration report was considered resolved
@@ -462,132 +475,6 @@ Each ID below is a separate completed fix in the indicated wrapper.
 | CW31<br>CW34 | RW31<br>RW34 | Restore owned look-at state during exception unwinding.<br>Validate audio component binding through playback callbacks. | CW32<br>CW35 | RW32<br>RW35 | Bind insert dispatch to the fuse incarnation through frame construction.<br>Guard lever dispatch and its completion against retired bindings. | CW33<br>CW36 | RW33<br>RW36 | Guard parameterless painters against lookup/frame-time retirement.<br>Reject invalid button/fuse indices in ReadLookAt without publishing output. |
 | CW37 | RW37 | Reject invalid fuse indices in ReadFuseLook without publishing output. | — | RW38 | Resolve the radio tower from the current gamemode binding while the previous tower remains live; validate field extent and both incarnations through resolution. |  |  |  |
 
-## Release 0.9.2163 qualified offline (28 October 2026)
-
-This is the retained package selected by `package/release.json`, separately from current development. PASS fresh package qualification: **124/124 groups**, Release/ABI, unchanged source/release inputs and a **32-member** manager archive with matching manifest, loader, branding, models and DLL. Rejection controls refuse incomplete/focused/failed suites, stale UI labels and mismatched DLL bytes.
-
-- Archive: `dist/ElvardFIC-WatchersOfTheVoid-0.9.2163.zip`.
-- DLL SHA-256: `5d1e5de9db22a3a3bcc3f82d3c3854a8bfdebe768ee96f827a5204f6c3078a8e`.
-- Archive SHA-256: `dba1cbdfcf84d5d605da82f52430589c332f4f7cdfb621f1acfc41d8730aa147`.
-- Checksums: `dist/SHA256SUMS-current.txt`.
-- Qualification: `build/qualification-current/verification.json`.
-- Package evidence: `build/package-current/verification.json`.
-
-TwoPlayerGameplayVerified=false; archiveStartupVerified=false. Cleanup targets and retained hashes are in `package/cleanup-inventory.json`.
-
-## Prop-drive lifetime and failed-marker cleanup (5 November 2026)
-
-Actual marker wrapper, prop-drive receiver/host, bind-wait code and interpolation primitive are exercised against native/transport doubles. Coverage includes every native end seam, first/steady pose reentry, same-generation revisions, mesh/world/ body replacement, nested ticks, input mutation, failed cleanup and hand transfers. The current verification and retained 15 control results cover these boundaries.
-
-- [x] LM1: Pump failed-marker deletion from the game-thread frame tail at most four times per second while debt exists, without waiting for another spawn.
-- [x] LM2: Retain refused cleanup across disconnect and retry outside a running network session; only bodies created by this wrapper are eligible.
-- [x] LM3: Refuse nested marker creation during construction or cleanup; keep cleanup guards through native callback reentry.
-- [x] LM4: Retire cleanup on actor/class/world replacement, retain it while the current world is temporarily absent, and cancel it after verified adoption.
-- [x] PD1: Detach an ending drive and close its generation before native calls; no live-map iterator crosses final transform, physics or child-release callbacks.
-- [x] PD2: Use the same generation/watermark admission for host releases and client ends, rejecting older/duplicate host releases and old in-flight poses.
-- [x] PD3: Stop final-pose continuations after disconnect, world/body/component replacement, a new hand, or a successor drive/end.
-- [x] PD4: Validate direct pose/end input for finite bounded transforms, generation, key length, reserved bytes and defined end flags before changing stream state.
-- [x] PD5: Own input packets and drained transport batches through native reentry; a caller mutation or disconnect cannot change the in-flight packet's values.
-- [x] PD6: Traverse a snapshot of drive identities and apply owned records, with no live-map references across native interpolation/query/park callbacks.
-- [x] PD7: Reconcile a replacement mesh even while its predecessor is still live; bind velocity and render continuations to the current component incarnation.
-- [x] PD8: Exclude recursive drive ticks with a stack-owned guard; new input stays queued for the next outer tick, including callbacks that disconnect.
-- [x] PD9: Bind pose/tick completion to its application revision, preserving a newer packet even when it has the same stream generation.
-- [x] PD10: Use the canonical grab/gravity/holding/last-held/hand-axis predicate and commit hand-yield watermarks before callbacks can install a successor.
-
-## Tower row ownership audit (4 November 2026)
-
-T01-T45 / K01-K30 are implemented and included in the current joint verification. Rows retain recipient-generation/revision debt; delivery rotates at eight packets per pump. Apply receipts distinguish native effects from declarative repaint debt. Native solvers fill their puzzle arrays: canonical fuse values are staged before repair and exact cells reasserted afterwards. Radio setBroken emits stateChanged and starts its timer, so it is admitted once rather than replayed on repaint.
-
-PASS actual row/kind coordinators, compiled RefusedTold/FIFO and cooked contracts; 18 independently compiled fault controls are rejected. Native execution, reflection and transport are doubled. Evidence: `build/tower-2164/fault-controls-final.log`. Host operation queue/claim/spend/refund, lower-level timeline schemas and native multiplayer acceptance remain UP4 follow-ups. Tower wrappers are recorded above.
-
-| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
-| --- | --- | --- | --- | --- | --- |
-| T01: Clear tower rows when the installed Session pointer changes.<br>T07: Clear delivery debt and diagnostics for all 32 slots independently of roster teardown. | T02: Clear tower rows on same-pointer session serial replacement.<br>T08: Accept rows only for the installed running connected client. | T03: Clear tower rows on a changed session stop counter.<br>T09: Validate row admission inside OnRows, independently of its router. | T04: Clear tower discovery/state on world-generation replacement.<br>T10: Reject oversized row payload counts before indexing. | T05: Clear tower host/client state on role replacement.<br>T11: Reject flags that the specified tower kind does not own. | T06: Clear the installed tower-row session pointer at disconnect.<br>T12: Reject negative coordinate tower identities. |
-| T13: Reject nonzero radio tower identities.<br>T19: Own discovery output across callback-driven state reset. | T14: Reject light bits outside the declared puzzle width.<br>T20: Discard discovery results invalidated by session/world replacement. | T15: Discard duplicate kind/id rows deterministically.<br>T21: Commit class-version/discovery cache metadata only for its captured scope. | T16: Reclaim kept entries omitted from a newer full snapshot.<br>T22: Own the tower list while reading native rows. | T17: Validate cached tower incarnations by slot/serial instead of probing old raw pointers.<br>T23: Refuse a row read whose tower incarnation changed. | T18: Clamp discovery counts before reading a native discovery buffer.<br>T24: Commit host row snapshots only after all captured authority checks pass. |
-| T25: Keep broadcast retry debt when the transport refuses the packet.<br>T31: Wait for connected world-ready peers before delivering join state. | T26: Do not clear a successor session dirty latch after an old send.<br>T32: Do not clear newly queued join debt after an older successful send. | T27: Exclude recursive host sends without losing newly requested work.<br>T33: Bind refused-claim answer delivery to sender generation. | T28: Preserve a dirty revision created while an earlier send is running.<br>T34: Consume only the refused sequence actually carried by a successful send. | T29: Prevent an older broadcast result from replacing a newer sent snapshot.<br>T35: Bound and fairly rotate per-tick refused-answer sends. | T30: Bind join delivery debt to the intended sender generation.<br>T36: Preserve new answer debt created inside an older transport callback. |
-| T37: Own kept row/apply-context data through native callbacks.<br>T43: Bind panel retry clocks to tower identity rather than payload row position. | T38: Do not complete a newer kept revision from an older apply result.<br>T44: Refuse stale panel player/tower/results after native callbacks. | T39: Retain pending rows after refused reads or declarative writes.<br>T45: Reconcile session/world scope before exposing drill state. | T40: Prevent recursive application and cancel stale native continuations.<br>K01: Refuse coordinate state reads invalidated by actor retirement. | T41: Keep the apply guard scoped through disconnect/reset and exceptions.<br>K02: Bound coordinate light/fuse counts before local array access. | T42: Commit application counters/warnings only into their captured scope.<br>K03: Retain retry debt after a coordinate light-write refusal. |
-| K04: Admit the coordinate repair native effect once per target revision.<br>K10: Consume the coordinate pull sound before native dispatch. | K05: Stop coordinate repair painters after authority retires.<br>K11: Consume the coordinate insert sound before native dispatch. | K06: Stop coordinate break painters after authority retires.<br>K12: Consume the coordinate failed-lever sound before native dispatch. | K07: Admit a coordinate click sound once across interrupted retries.<br>K13: Admit a coordinate lever movement once per target revision. | K08: Stop coordinate fuse writes at the first refused or retired operation.<br>K14: Guard the final coordinate lever-moving field update. | K09: Stop coordinate fuse painters after authority retires.<br>K15: Refuse radio tower reads invalidated by actor retirement. |
-| K16: Bound radio cell/fuse counts before local array access.<br>K22: Consume the radio pull sound before native dispatch. | K17: Retain retry debt after a radio cell-write refusal.<br>K23: Consume the radio insert sound before native dispatch. | K18: Admit radio repair completion once and retain declarative convergence.<br>K24: Consume the radio damaged-fuse alert before native dispatch. | K19: Consume the radio broken alert before native dispatch.<br>K25: Guard radio confirm/failure sounds against stale continuation. | K20: Stop radio puzzle/fuse painters at refusal or authority retirement.<br>K26: Admit the radio confirm timeline once per target revision. | K21: Stop radio fuse writes at the first refused or retired operation.<br>K27: Consume the radio reset-lever sound before native dispatch. |
-| K28: Admit the radio reset timeline once per target revision. | K29: Guard the final radio animation field update. | K30: Bind panel convergence to the captured row, tower and player scope. | ? |  |  |
-
-## Optional EmoteWheel integration (4 November 2026)
-
-Implemented optional native adapter; supplied mod scripts/assets are unchanged. Current joint verification includes run_emote, adjacent hand/ragdoll/seat suites and reliable routing. Three emote fault controls are rejected; additional native held-item regression evidence: `build/emote-held-regression-final.log` and `build/emote-check/results.log`.
-
-- [x] EW1: all 316 emotes / 442 manifest-order phases and variants, with exact animation lengths, loops and sound associations; metadata only.
-- [x] EW2: actual local Mesh montage/SpawnSound2D observation. The orbit camera can stop the first-person mesh ticking, so the source uses Mesh first.
-- [x] EW3: a 64-byte kind 267 payload, owner/occupant/generation validation, finite bounded values, canonical host sequences and no blind relay.
-- [x] EW4: exact remote phases/variants, current playback positions, drift correction and independent spatial music clocks. Missing animation and music channels commit separately instead of restarting the successful channel.
-- [x] EW5: refused-send retries, current-state join replay and bounded 32-peer delivery; solo-host observation survives the first connection edge.
-- [x] EW6: owned montage/audio cleanup, source lease expiry, body and animation instance replacement, world/session/stop/role/occupant retirement.
-- [x] EW7: missing-pak and missing-resource caching, ordinary player/hand fallback and forwarding through a host without EmoteWheel resources.
-- [x] EW8: production-controller/native-wrapper fixtures, injected faults and stable-source Release/ABI verification.
-- [x] EW9: generation-matched visible held-component bone pose. The display actor moves while preserving its component-relative transform. Retired native continuations cannot fall through into ordinary puppet dereferences.
-
-Reflection, roster, transport and engine execution are doubled. Function signatures are derived from declarations and captured encoding controls; no fresh live census is established. Mixed installations, model/hand/cigarette, ATV/ragdoll/sleep and phase/audio behavior require native acceptance.
-
-## Radio ownership audit (4 November 2026)
-
-R01-R45 / M01-M30 are implemented and included in the current joint verification. Bounds remain 256 discovery/dirty/cache entries, 64 requests/UI notes, 10000 catalogue entries, 256 reflected bytes, 32768 UTF-16 path units and one-day playback. A full dedupe cache does not prevent broadcasting an admitted state.
-
-PASS controller, actual wrapper/ParamFrame, cooked contract and slot-31/32 cases; four retained and 18 additional fault controls are rejected. Scoped compiler/hash evidence: `build/radio-ownership-check/qualification.log` and `build/radio-ownership-check/production-compile.json`. The newer complete linked DLL verification is recorded above. Native playback/rendered acceptance is pending.
-
-| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
-| --- | --- | --- | --- | --- | --- |
-| R01: Fill canonical radio acknowledgements for all 32 peers.<br>R07: Retain actor incarnation while capturing a radio key. | R02: Clear every peer acknowledgement/attempt on world replacement.<br>R08: Reject identity captures invalidated while resolving element IDs. | R03: Clear every peer acknowledgement/attempt at disconnect.<br>R09: Refuse conflicting key and element-ID actor resolutions. | R04: Accept valid request senders 4 through 31 and reject slot 32.<br>R10: Retire state on installed Session pointer replacement. | R05: Consume host acknowledgements for local peer IDs 4 through 31.<br>R11: Retire state on same-pointer session serial replacement. | R06: Reject empty/None/non-ASCII/embedded-null malformed wire keys.<br>R12: Retire state on session stop-count replacement. |
-| R13: Retire state when the session role changes.<br>R19: Retain the resolved actor incarnation through reach authorization. | R14: Retire callback results across world replacement.<br>R20: Refuse application after authorization retires sender/controller authority. | R15: Disable all radio hooks immediately at disconnect.<br>R21: Carry controller authority through the complete native radio apply. | R16: Require a running host and a connected world-ready request sender.<br>R22: Own host attempt snapshots across native callbacks. | R17: Bind acknowledgements and pending host attempts to sender transport generation.<br>R23: Prevent recursive admission of an in-flight request from the same slot. | R18: Revalidate sender scope after native body-availability queries.<br>R24: Keep receive exclusion active through occupant/controller replacement. |
-| R25: Prevent an old apply result from acknowledging a successor occupant.<br>R31: Own canonical paint snapshots across recursive receives. | R26: Prevent an old publish result from replacing a newer sent-state cache.<br>R32: Cancel an older paint when a newer canonical revision arrives. | R27: Keep sent-cache references out of transport callbacks.<br>R33: Snapshot tick work instead of retaining map iterators through native calls. | R28: Bound discovered radio entries without evicting a live owner.<br>R34: Exclude recursive Tick while preserving admission through reset. | R29: Bound locally dirty radio entries without evicting a live edit.<br>R35: Own the pending request packet across transport callbacks. | R30: Bound sent-state cache entries.<br>R36: Never stamp a successor pending head with an old send result. |
-| R37: Refuse cumulative acknowledgements newer than any offered request sequence.<br>R43: Validate the radio resolved from a UI widget before marking it dirty. | R38: Do not reset a newer host retry attempt with an older request.<br>R44: Discard cancelled UI permissions and validate scope after end-track queries. | R39: Keep the host retry deadline tied to its owned request across callbacks.<br>R45: Clamp canonical playback extrapolation before signed tick arithmetic. | R40: Track user-radio body permission by a live script invocation.<br>M01: Validate actor incarnation throughout radio-class classification. | R41: Preserve outer user-radio invocations through nested callbacks.<br>M02: Validate resolved radio-class incarnations before classification succeeds. | R42: Refuse stale widget/function/session observations in UI POST.<br>M03: Keep ATV radio exclusion closed while its class is unresolved. |
-| M04: Refuse object-field reads after their source actor retires.<br>M10: Use overflow-safe link/url/stride bounds for radio data. | M05: Validate an object-valued field before exposing it to callers.<br>M11: Reject malformed local FString lengths/capacities before hashing. | M06: Bind reflected radio layout to the actor class incarnation.<br>M12: Reject unterminated or embedded-null catalog paths. | M07: Bind reflected radio layout to the data struct incarnation.<br>M13: Retain gamemode/catalog-owner incarnation through catalog lookup. | M08: Bind reflected radio layout to the openLink function incarnation.<br>M14: Own the selected catalog bytes instead of returning an engine-array pointer. | M09: Commit layout metadata atomically after native resolution.<br>M15: Use a per-operation layout snapshot through nested class resolution. |
-| M16: Retain the media query target through dispatch-function lookup.<br>M22: Stop radio reads when its mediaPlayer binding changes during a query. | M17: Retain media query class/function incarnations through ParamFrame preparation.<br>M23: Commit a complete read State only while actor/player/controller remain current. | M18: Check caller authority immediately before each media query dispatch.<br>M24: Prepare every openLink argument before changing pause/mode fields. | M19: Leave query output unchanged when the target retires during dispatch.<br>M25: Own the selected path string through openLink frame preparation and dispatch. | M20: Free a returned GetUrl FString even when authority retires.<br>M26: Refuse a malformed openLink frame without changing the actor pause/mode. | M21: Validate returned GetUrl FString capacity and terminator.<br>M27: Guard Seek through player/function/class/caller retirement. |
-| M28: Do not run Play/Pause after a Seek callback retires ownership. | M29: Validate playback-command ownership after its native attempt. | M30: Bound playback ticks before seeking and comparing native times. | ? |  |  |
-
-## Queue and coffee ownership audit (4 November 2026)
-
-The 75 reviewed boundaries below are included in the current joint verification. Q01-Q12, C01-C23, W01-W06 and A01-A07 were retained implementations verified by production fixtures; S01-S27, the final C20 key check and function-incarnation capture were completed in this audit. These are review boundaries rather than 75 separate newly reproduced defects.
-
-Actual queue/bucket, coffee intent/state and coffee/appliance wrappers with real ParamFrame pass; 11 independent fault controls are rejected: `build/coffee-2164/fault-controls.log`. Publication retains at most 128 debts, retries eight per tick after 250 ms and preserves successor revisions. Native transport/roster/reflection are doubled; simultaneous presses, bag/cup fill, join, disconnect and world replacement still need multiplayer acceptance.
-
-| Completed item | Completed item | Completed item | Completed item | Completed item | Completed item |
-| --- | --- | --- | --- | --- | --- |
-| Q01: initialize a token bucket exactly once even when its first clock is zero.<br>Q07: do not pop a successor occupant's head when an old callback returns Done. | Q02: do not move the refill clock backwards and credit the same elapsed interval twice.<br>Q08: do not refund an old Wait into the successor occupant's bucket. | Q03: apply a reduced burst ceiling before a same-clock spend.<br>Q09: cancel service when its clock callback replaces the queued head. | Q04: reject non-finite/negative token budgets instead of admitting a NaN stream.<br>Q10: consume an uncertain callback attempt on exception, without replaying it next tick. | Q05: prevent recursive service of the same pending intent.<br>Q11: release the service guard on callback/copy/clock exceptions. | Q06: own the served payload across occupant reset and native callbacks.<br>Q12: keep service admission closed through in-callback queue replacement. |
-| C01: reject coffee press frames with null function/locals.<br>C07: reject malformed incoming device keys at the handler boundary. | C02: bound the action parameter read by the function frame.<br>C08: require the installed, running host and a world-ready connected sender at ingress. | C03: refuse unreadable client action frames instead of brewing locally.<br>C09: bind queued presses to the sender's transport generation. | C04: cancel a client press if key lookup retires its actor.<br>C10: clear coffee intents when the installed Session pointer changes. | C05: cancel a client send after session/world retirement during key lookup.<br>C11: clear them on same-pointer session serial changes. | C06: reject non-ASCII, empty, None and oversized outgoing device keys.<br>C12: clear them on world changes. |
-| C13: clear the coffee intent session pointer at disconnect.<br>C19: refuse a recycled puppet incarnation after reach callbacks. | C14: clear queued presses at disconnect independently of roster teardown order.<br>C20: refuse a rekeyed/rebound device before native action admission. | C15: refuse a Tick argument belonging to another session.<br>C21: do not write old action results into successor-session counters. | C16: stop the slot drain after a callback retires the host scope.<br>C22: do not clear a successor occupant's wait state after an old callback. | C17: retain the authorized device incarnation through native action preparation.<br>C23: expire a press waiting indefinitely for the sender's body. | C18: pass the same puppet body that supplied the reach verdict.<br>S01: match coffee PRE/POST notes by invocation, not actor address alone. |
-| S02: preserve an outer brew/hit note across nested watched calls.<br>S08: reject notes after a host/client role change. | S03: reject notes whose actor incarnation changed before POST.<br>S09: retire PRE snapshots invalidated by native flag/other-actor reads. | S04: reject notes whose UFunction incarnation changed before POST.<br>S10: consume a POST note before callbacks so duplicate POST cannot publish twice. | S05: reject notes from an earlier installed session pointer.<br>S11: retain the bag's exact incarnation while capturing PRE amounts. | S06: reject notes from an earlier same-pointer session serial.<br>S12: own the POST snapshot across recursive publication. | S07: reject notes from an earlier world.<br>S13: cancel publication when POST maker-flag reads retire the actor. |
-| S14: stop the bag branch after maker publication retires the session.<br>S20: drop retry debt whose actor/session/world ownership expired. | S15: do not update new-session publication counters from an old callback.<br>S21: clear old notes and retry debt on Install context replacement. | S16: guard the publisher's key read against actor retirement.<br>S22: disable coffee state callbacks immediately at disconnect. | S17: reject rekeyed actors during publication/retry.<br>S23: bound cancelled-hit diagnostics and distinguish recycled maker addresses. | S18: keep controller authority through record capture/chunk delivery.<br>S24: bound class tallies and distinguish recycled class addresses. | S19: retain bounded retry debt for refused guarded publications.<br>S25: settle refused coffee state watch registrations once. |
-| S26: validate OtherActor frame bounds before reading its pointer.<br>W05: cancel bag-field reads invalidated during offset resolution. | S27: bind awaited client-record admission to the current host/sender/actor scope.<br>W06: retry missing coffee bool metadata without requiring a new class address. | W01: guard coffee classification through class lookup and actor replacement.<br>A01: refuse appliance actions when the player parameter write fails. | W02: invalidate hasCup offsets on class serial replacement.<br>A02: refuse appliance actions when the action parameter write fails. | W03: invalidate hasCoffee offsets on class serial replacement.<br>A03: validate the appliance actor incarnation through function lookup. | W04: invalidate coffeeReady offsets on class serial replacement.<br>A04: validate the player incarnation through frame preparation. |
-| A05: validate class/function incarnations through frame preparation. | A06: check the caller's authority immediately before native dispatch. | A07: report caller retirement after an attempted native action without replaying it. | ? |  |  |
-
-## Real upstream history merge (4 November 2026)
-
-Merge `a3632a687` has parents `353debaff` and upstream `4fbf1acf0e0ec7d14350132cd3de01d6a86aa552`, recording the formerly missing 436-commit ancestry. Eighty conflicts were reconciled while retaining fork wire IDs, 16-bit reliable kinds, 32 peers and transaction/lifetime guarantees. The fork cord owner remains authoritative; the alternate upstream cord lane was excluded to avoid duplicate ownership. Container acts retain IDs 264/265/266; EmoteState uses 267, with compile-time table coverage through that final ID. The earlier claim that source transfer alone completed history integration is superseded by this merge. UP2/UP4/UP5/UP6 semantic reviews remain open.
-
-Historical verification retained for provenance:
-
-| Evidence | Original scope |
-| --- | --- |
-| `build/upstream-history-2164/verification-final/verification.json` | b2219; 133 groups, Release/ABI and 1232 entries. |
-| `build/coffee-2164/verification/verification.json` | b2219; 134 groups and stable source/Release verification. |
-| `build/tower-2164/verification-complete/verification.json` | b2220 before the 5 November physics/marker changes; 137 groups. |
-
-Their original DLL/source hashes remain in those JSON records; the latest build identity is stated only in Current development verification above.
-
-## Integration error audit (30 October 2026)
-
-UP1 documentation conflict reconciliation and UP7 fixture/build repairs are complete. The formerly failed supplemental fixtures were repaired; run_2134 is an alias of run_2136, not an independent suite. Their old failure lists and interrupted/combined qualification totals are superseded by the current full run. Original audit evidence: `build/work-todo-audit/recheck/audit-summary.json` and `build/work-todo-audit/server-tests.log` (132 server tests at that audit). The later source-sync server check also passed 132 tests; this cleanup reruns neither the server nor engine tests.
-
-## Upstream integration b2215 (25 October 2026)
-
-Retained reference for the test catalogue's integration boundaries. Published fork reliable IDs, coin admission, checked container writes, hold arbitration, server delivery, laptop/screen leases and native/extraction ownership were preserved through the later imports and real history merge. The current full run covers maintained upstream integration/refresh/container fixtures. Remaining semantic work belongs to UP2/UP4/UP5/UP6 in WORK.
-
-## Joined-client prop physics report (29 October 2026)
-
-The host appears stable while a joining client sees objects vibrate, launch or penetrate boxes, desks and workbenches. Exact versions, other mods, network conditions and whether client displacement reaches the host remain unknown. This has not been reproduced or closed. Prop-drive lifetime/end repairs do not establish the report's root cause; no dedicated stack-physics setting is present.
-
-- [ ] Capture matching host/client builds, mod lists, network conditions and logs.
-- [ ] Compare resting objects/stacks, pickup/drop and late join on both roles;
-  trace pose/drive/park/end ownership and native simulation state.
-
 ## Open reports and unique diagnostic evidence
 
 These remain open despite passing offline fixtures. Implementation constraints stay in TODO/WORK; the table retains report identity, observations and evidence.
@@ -655,4 +542,10 @@ Eleven pinned archives were statically inspected with recorded SHA-256 values; `
 
 ## Documentation check
 
-Recheck: `build/omega-command-verification/prebuild/public_prose_gate.log`. 14 counters remain above baseline; other.agent is 290. TESTLOG remains below its 600-line cap (575 lines). The 267 comment-document rows, 23 uncalled declarations and 156 unswept source files remain open. This failing gate is separate from passing regression groups; its baseline has not been changed.
+The 15 November 2165 recheck is `build/qualification-2165/prebuild/public_prose_gate.log`. `fact_rows_gate` passes (720 rows / 243 files); public prose fails 13 counters, including 322 source comment citations, 44 dead declarations and 192 unswept files. The TODO dead link and local EmoteWheel filename findings are cleared; the baseline was not changed. All 163 regression groups pass, but this gate blocks Release compilation.
+
+## Source and fork integration — 15 November 2026
+
+Merged upstream `bb54bd7b5` as `16fa501a8` (parents: local `17fbab814`, upstream `bb54bd7b5`). The merge kept local versions on conflicting hunks, preserved removed Kerfur radial-input files, and combined PropToolFlags dispatch comments with the upstream event list. `kdp80` Cremator hatch owner/grab work remains source-only. Seventy of 71 inventoried fork heads refreshed; `Marlore/temp-mail-generator` remained unavailable. KindaPlus main is already in merged ancestry; its b2142 snapshot adds no missing source paths. Details: [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md#main-and-fork-refresh--15-november-2026).
+
+2165 release preparation: the cleanup retained the qualified 0.9.2163 archive by its recorded SHA256, removed 2,818 generated files (2,481.8 MiB), and recorded the run in `package/cleanup-inventory.json`. `check_current.ps1 -ChecksOnly` completed all 163 groups with zero failures at `build/qualification-2165`; `fact_rows_gate` passed, `public_prose_gate` failed, and the workflow correctly did not start a Release build. The old 2164 DLL is b2222 and does not qualify the current b2223 source. No 2165 DLL/archive or gameplay acceptance exists yet.

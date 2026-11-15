@@ -65,7 +65,7 @@ int32_t Processed();             // this profile's signals_processed, -1 when it
 void* Button(int leg);
 bool CapOpened(void* desk);      // the desk's own cap over DELETE is open
 
-// Whether this machine's profile glossary (gamemode.save_main.signalsGlossary, lib.cpp:3472-3477) holds `name`:
+// Whether this machine's profile glossary (gamemode.save_main.signalsGlossary, CXXHeaderDump/lib.cpp:3472-3477) holds `name`:
 // 1, 0, or -1 when it does not read.
 int GlossaryHas(const std::wstring& name);
 

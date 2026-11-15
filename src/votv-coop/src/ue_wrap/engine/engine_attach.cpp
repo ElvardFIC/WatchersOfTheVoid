@@ -142,9 +142,6 @@ bool SetActorRootCollisionEnabled(void* actor, uint8_t collisionType) {
     return SetComponentCollisionEnabled(PrimitiveRootOf(actor), collisionType);
 }
 
-int GetActorRootCollisionEnabled(void* actor) {
-    return GetComponentCollisionEnabled(PrimitiveRootOf(actor));
-}
 
 bool SetComponentCollisionEnabled(void* component, uint8_t collisionType) {
     if (!IsPrimitiveComponent(component)) return false;
@@ -440,5 +437,7 @@ bool TryGetRootLocationRaw(void* actor, FVector& loc) {
     FRotator rot{};
     return TryGetRootPoseRaw(actor, loc, rot);
 }
+
+
 
 }  // namespace ue_wrap::engine

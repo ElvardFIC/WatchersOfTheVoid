@@ -2,12 +2,17 @@
 
 #include "coop/props/prop_sound.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/engine/world_identity.h"
+
+#include <chrono>
+#include <cstdint>
 
 namespace coop::prop_sound {
 namespace {
@@ -143,6 +148,32 @@ void PlayUseClick(void* propActor) {
     UE_LOGI("prop_sound: use click at (%.0f, %.0f, %.0f)", loc.X, loc.Y, loc.Z);
 }
 
+namespace {
+// The faucet's click asset, held as a cached ref and found by a press: a search of the object array is a hitch, so a
+// press asks at most once per five seconds while the ref is dead, and a new world forgets the old one's asset.
+void* FaucetClickSound() {
+    constexpr std::chrono::seconds kAskGap{5};
+    static ue_wrap::CachedObjRef sSound;
+    static uint32_t sWorld = 0;
+    static std::chrono::steady_clock::time_point sNextAsk{};
+    const uint32_t world = ue_wrap::world_identity::Generation();
+    if (world != sWorld) {
+        sWorld = world;
+        sSound.Reset();
+        sNextAsk = {};
+    }
+    if (!sSound.Alive()) {
+        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        if (now >= sNextAsk) {
+            sNextAsk = now + kAskGap;
+            sSound.Set(R::FindObject(L"door0_open", P::name::SoundWaveClass));
+        }
+    }
+    return sSound.Get();
+}
+}  // namespace
+
+
 void PlayThrowWhoosh(void* propActor) {
     if (!propActor || !R::IsLive(propActor)) return;
     // SoundWave /Game/audio/effects/swing -- THE native throw whoosh, played
@@ -214,6 +245,47 @@ void PlayDenyClick(void* playerActor) {
     UE_LOGI("prop_sound: deny click at (%.0f, %.0f, %.0f)", loc.X, loc.Y, loc.Z);
 }
 
+void PlaySpillSplashAt(void* worldCtx, const ue_wrap::FVector& loc) {
+    if (!worldCtx || !R::IsLive(worldCtx)) return;
+    // SoundCue water_splash_Cue and att_small: what grimeProjectile_C's tick plays where it lands. Latched resolves.
+    static void* sCue = nullptr;
+    static void* sAtt = nullptr;
+    if (!sCue) sCue = R::FindObject(L"water_splash_Cue", L"SoundCue");
+    if (!sAtt) sAtt = R::FindObject(L"att_small", L"SoundAttenuation");
+    if (!sCue) {
+        UE_LOGW("prop_sound: 'water_splash_Cue' not resolved yet -- no spill splash");
+        return;
+    }
+    ue_wrap::engine::PlaySoundAtLocation(worldCtx, sCue, loc, sAtt ? sAtt : ResolveAttenuation(), 0.5f, 1.25f);
+}
+
+void PlayMreOpenAt(void* worldCtx, const ue_wrap::FVector& loc) {
+    if (!worldCtx || !R::IsLive(worldCtx)) return;
+    // mreOpen_Cue at att_small: what prop_food_mre_C's actionOptionIndex plays at its mesh. Latched resolves.
+    static void* sCue = nullptr;
+    static void* sAtt = nullptr;
+    if (!sCue) sCue = R::FindObject(L"mreOpen_Cue", L"SoundCue");
+    if (!sAtt) sAtt = R::FindObject(L"att_small", L"SoundAttenuation");
+    if (!sCue) {
+        UE_LOGW("prop_sound: 'mreOpen_Cue' not resolved yet -- no MRE opening");
+        return;
+    }
+    ue_wrap::engine::PlaySoundAtLocation(worldCtx, sCue, loc, sAtt ? sAtt : ResolveAttenuation(), 1.0f, 1.0f);
+}
+
+void PlayBottlePourAt(void* worldCtx, const ue_wrap::FVector& loc) {
+    if (!worldCtx || !R::IsLive(worldCtx)) return;
+    // fuel1 at att_default: what prop_snack_beer_C's tick plays beside each pour. Latched resolve.
+    static void* sCue = nullptr;
+    if (!sCue) sCue = R::FindObject(L"fuel1", L"SoundCue");
+    if (!sCue) sCue = R::FindObject(L"fuel1", P::name::SoundWaveClass);
+    if (!sCue) {
+        UE_LOGW("prop_sound: 'fuel1' not resolved yet -- no bottle pour");
+        return;
+    }
+    ue_wrap::engine::PlaySoundAtLocation(worldCtx, sCue, loc, ResolveAttenuation(), 0.5f, 1.0f);
+}
+
 void PlayInventoryBlipAt(void* worldCtx, const ue_wrap::FVector& loc) {
     if (!worldCtx || !R::IsLive(worldCtx)) return;
     // SoundCue /Game/audio/effects/inventory_Cue -- THE native collect blip
@@ -232,5 +304,7 @@ void PlayInventoryBlipAt(void* worldCtx, const ue_wrap::FVector& loc) {
     ue_wrap::engine::PlaySoundAtLocation(worldCtx, sCue, loc, att, 1.0f, 1.1f);
     UE_LOGI("prop_sound: inventory blip at (%.0f, %.0f, %.0f)", loc.X, loc.Y, loc.Z);
 }
+
+
 
 }  // namespace coop::prop_sound

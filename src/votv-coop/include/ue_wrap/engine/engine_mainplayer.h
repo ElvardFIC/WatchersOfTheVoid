@@ -66,6 +66,12 @@ struct MainPlayerGrabState {
 
 bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out);
 
+// AmainPlayer_C::holding_actor, written as a field: the hand of a pawn the host holds for a remote player, which runs
+// no updateHold of its own (updateHold reads the LOCAL save's hold slot). The caller owns what it writes and restores
+// what it replaced; `actor` may be null. False on a null or dead pawn or an unresolved field, with nothing written. Game
+// thread.
+bool WriteMainPlayerHoldingActor(void* mainPlayer, void* actor);
+
 // mainPlayer_C's input_run, the run key's flag (a packed bitfield bool), which prop_container_C's playerUsedOn reads
 // to tell a put from a look. False on a null or dead pawn or an unresolved field. Game thread.
 bool ReadInputRun(void* mainPlayer, bool& out);
@@ -82,6 +88,10 @@ bool CallMainPlayerUpdateHoldWhile(void* mainPlayer, const std::function<bool()>
 // the interaction trace hit (hitResult's actor). A dev drill's press, below that gating. False when the
 // function does not resolve or the call fails. Game thread.
 bool CallMainPlayerUseSelectedAction(void* mainPlayer);
+
+// The player's setActionIndex: the radial menu's selected entry, the index useSelectedAction's names list is read at.
+// False when the function does not resolve or the call fails. Game thread.
+bool CallMainPlayerSetActionIndex(void* mainPlayer, int32_t index);
 
 // Whether useSelectedAction would act now: the player's own selectedAction, true once its look-at actor
 // answers lookAt and the player's look flag holds -- the look took that actor, which the game settles
@@ -188,9 +198,8 @@ struct MainPlayerLookAtLocals {
 bool ReadMainPlayerLookAtLocals(void* lookAtFunction, const uint8_t* locals,
                                 MainPlayerLookAtLocals& out);
 
-// The radial-menu confirm state, releaseEToUse and actionIndex, the index into getActionOptions.
-// Both reflection-resolved. The kerfur radial verb is relayed from these because the actionName
-// dispatch is internal to the Blueprint and invisible to ProcessEvent. Game thread.
+// The radial-menu confirm state, releaseEToUse and actionIndex, the index into getActionOptions: read by the
+// dev kerfur_seat_probe. Game thread.
 bool ReadMainPlayerRadialSelect(void* mainPlayer, bool& releaseEToUse, int32_t& actionIndex);
 
 // Write grabbing_actor and grabbing_component in one dispatch (the autotest's synthetic grab keeps

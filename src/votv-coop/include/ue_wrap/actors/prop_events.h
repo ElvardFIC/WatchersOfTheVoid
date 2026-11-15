@@ -12,7 +12,6 @@ namespace ue_wrap::prop {
 // `touched` broadcast, and awakeUnfreeze when it is frozen or asleep. The base body never reads its
 // player, so none is passed. False for a null prop or when the class or the event did not resolve.
 // Game thread.
-bool CallBaseGrabPrelude(void* prop);
 
 // The receiver's native prelude: glowsticks release their constraint through
 // prop_glowstick_C.releaseGlowstick instead of running prop_C's prelude. Other
@@ -37,5 +36,6 @@ bool CallPropThrown(void* prop, void* player);
 
 bool ReadIgnoreSave(void* prop, bool& out);
 bool ReadCanPickup(void* prop, bool& out);
+
 
 }  // namespace ue_wrap::prop

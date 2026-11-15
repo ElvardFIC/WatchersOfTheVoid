@@ -2,13 +2,13 @@
 from pathlib import Path
 import struct
 import sys
-research=Path(__file__).resolve().parents[3]/"_research"
-sys.path.insert(0,str(research))
+evidence_root=Path(__file__).resolve().parents[3]/"_research"
+sys.path.insert(0,str(evidence_root))
 from kismet_dis import Package,Reader
 from dump_2135 import body
 
 def package(asset):
-    return Package(str(research/"current-assets"/f"VotV__Content__{asset}.uasset"))
+    return Package(str(evidence_root/"current-assets"/f"VotV__Content__{asset}.uasset"))
 
 def functions(p):
     return {e["name"]:"\n".join(line for _,line in body(p,e)) for e in p.exports if p.class_of_export(e)=="Function"}

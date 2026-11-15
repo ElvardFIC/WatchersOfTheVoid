@@ -45,7 +45,7 @@ inline constexpr uint8_t           kSlot = 1;               // the one slot the 
 // Every other arm acts on the ATV the host spawns (SpawnStep) under the key it says in the lobby chat.
 inline constexpr const wchar_t*    kWorldAtvKey = L"ATV";
 inline constexpr uint8_t           kNoSeat = 0xFF;
-inline constexpr auto              kFailBound = std::chrono::seconds(180);      // a failure bound, never a wait
+inline constexpr auto              kFailBound = std::chrono::seconds(180);      // a bound: INVALID when it passes, never a wait
 inline constexpr auto              kHostFirstBound = std::chrono::seconds(360); // the client's walk and its act
 inline constexpr int               kWalkDeadlineS = 300;
 inline constexpr float             kSitReachCm = 400.f;     // the director's walk ends this close to the ATV's root
@@ -64,8 +64,10 @@ void Enter(Run& r, int phase, const char* name);
 bool Past(const Run& r, std::chrono::seconds bound);
 long long Ms(Clock::time_point from, Clock::time_point to);
 
-// The verdict lines. Both end the role's run.
+// The verdict lines. Each ends the role's run. A PASS and a FAIL are decided by an event; a bound that runs out with no
+// event is INVALID (and says the rig's `rig: VERDICT atv-health-drill INVALID` line).
 void Fail(const char* role, Arm a, Run& r, const std::string& what, const std::string& got, const std::string& want);
+void Invalid(const char* role, Arm a, Run& r, const std::string& what, const std::string& got, const std::string& want);
 void Pass(const char* role, Arm a, Run& r, const std::string& numbers);
 
 // The lobby-chat lines: the client's ready line (the host's start), the host's phase edges (the client's) and the
@@ -91,6 +93,20 @@ struct SpawnStep {
 // where the host acts (`occupied`, `synced`: atv_health_drill_host.cpp).
 enum class HP : int { Wait, First, Left, Back, Silenced, Yielded, Walk, Act, Judge, Spawn, Park };
 
+// The run of idle-stream blocks at rest since a baseline. Counted not clocked: the stream sends a block every 50 ms
+// (kDriveSendMs), the rest rule needs kRestMs = 1 s of rest and its pass runs once a second, so an at-rest hand-back lands
+// 1.05-2.05 s after the first still block; 70 still ones in a row (3.5 s) cover that whole span, so a hand-back that did not
+// happen is known there. A block is still under kRestCmS, the lane's own speed test (atv_authority.cpp kRestCmS). The idle
+// arm's `back` and the peers arms' release both decide on it, never on blocks that were moving.
+constexpr uint64_t kRestBlocks = 70;
+constexpr float    kRestCmS = 5.f;
+struct RestRun {
+    uint64_t seen = 0, blocks = 0;   // the lane's idle-stream blocks read so far, and the run of them at rest
+    bool     last = false;           // the last block read was at rest
+};
+// `idleSinceBase` is the lane's idle-stream count since the baseline; `lastBlockSpeed` the table's last admitted block's speed.
+void CountRest(RestRun& r, uint64_t idleSinceBase, float lastBlockSpeed);
+
 struct Host {
     Run                                             run;
     SpawnStep                                       sp;       // the ATV every edge of the arm is read on
@@ -101,6 +117,7 @@ struct Host {
     atv_seat::SitTry                                sit;
     std::unique_ptr<coop::director::AimedGrab>      grab;
     bool                                            sawSent = false, sawMuted = false, sawYielded = false;
+    RestRun                                         rest;   // `back`: the idle-stream blocks at rest
 };
 extern Host g_h;
 
@@ -160,8 +177,8 @@ bool AtvReady(const std::wstring& key, AtvAt* out);
 bool SpawnedAtvReady(SpawnedWait& w, Arm a, bool due, AtvAt* out);
 // The director's walk to within `reachCm` of the ATV's root, the ATV kept, the ready line said.
 void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm);
-// The wait for the ATV: Failed once kFailBound has passed.
-// `w` is the spawned ATV's wait (null for trap): its missing edge goes into the FAIL.
+// The wait for the ATV: Failed (with INVALID said) once kFailBound has passed.
+// `w` is the spawned ATV's wait (null for trap): its missing edge goes into the INVALID line.
 Stage WaitBound(SeatedClient& c, Arm a, const SpawnedWait* w);
 // The walk: Next once it arrived (arrivedAt set).
 Stage WalkStep(SeatedClient& c, Arm a);

@@ -332,9 +332,6 @@ bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType) 
     return owner.Current() && function.Get() && Call(term, f) && owner.Current() && function.Get();
 }
 
-bool ConsumeInput(void* term) {
-    return ConsumeInputWhile(term, [] { return true; });
-}
 
 bool ConsumeInputWhile(void* term, const std::function<bool()>& current) {
     if (!current || !current() || !LayoutCurrent() || !IsTerminal(term)) return false;
@@ -402,6 +399,12 @@ void* FindPanelByName(const std::wstring& name) {
             return owner.Current() && candidate.Get() && arr->data==snapshot.data && arr->num==snapshot.num && arr->max==snapshot.max?p:nullptr;
     }
     return nullptr;
+}
+
+
+
+bool ConsumeInput(void* term) {
+    return ConsumeInputWhile(term, [] { return true; });
 }
 
 }  // namespace ue_wrap::sat_console

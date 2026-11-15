@@ -114,8 +114,13 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_act_host.cpp
     src/coop/props/prop_act_request.cpp
     src/coop/props/prop_act_selftest.cpp
+    src/coop/props/snack_act.cpp
     src/coop/props/prop_hold.cpp
+    src/coop/props/prop_hold_claim.cpp
+    src/coop/props/prop_tool_flags.cpp
+    src/coop/props/prop_tool_park.cpp
     src/coop/props/remover_request.cpp
+    src/coop/props/toolgun_sight.cpp
     src/coop/props/remote_prop.cpp
     src/coop/props/remote_prop_drive.cpp
     src/coop/props/unresolved_pose_ledger.cpp
@@ -127,12 +132,15 @@ set(VOTVCOOP_SOURCES
     src/coop/world/daily_task_sync.cpp
     src/coop/save/save_block.cpp
     src/coop/save/save_button_disable.cpp
+    src/coop/save/save_notice.cpp
     src/ui/multiplayer_menu.cpp
     src/coop/player/nameplate.cpp
     src/coop/player/pvp.cpp
     src/coop/player/nick_color.cpp
     src/coop/player/nickname_arbiter.cpp
     src/coop/player/hand_item.cpp
+    src/coop/player/hand_item_applied.cpp
+    src/coop/player/hand_spend.cpp
     src/coop/player/hand_history.cpp
     src/coop/player/hand_history_selftest.cpp
     src/coop/player/hand_item_pose.cpp
@@ -146,16 +154,26 @@ set(VOTVCOOP_SOURCES
     src/coop/comms/peer_action_feed.cpp
     src/coop/dispatch/event_feed.cpp
     src/coop/dispatch/event_dispatch_container_act.cpp
+    src/coop/dispatch/event_dispatch_cremator.cpp
+    src/coop/dispatch/event_dispatch_cargo_lift.cpp
     src/coop/dispatch/event_dispatch_economy.cpp
     src/coop/dispatch/event_dispatch_entity.cpp
     src/coop/dispatch/event_dispatch_intent.cpp
     src/coop/dispatch/event_dispatch_prop_drive.cpp
+    src/coop/dispatch/event_dispatch_requester_feedback.cpp
+    src/coop/dispatch/event_dispatch_kerfur_command.cpp
     src/coop/dispatch/event_dispatch_signal.cpp
     src/coop/dispatch/event_dispatch_state.cpp
     src/coop/dispatch/event_dispatch_world.cpp
     src/coop/comms/chat_sync.cpp
     src/coop/comms/chat_rate.cpp
     src/coop/interactables/turbine_sync.cpp
+    src/coop/interactables/woodchipper_sync.cpp
+    src/coop/interactables/woodchipper_gate.cpp
+    src/coop/interactables/atv_gate.cpp
+    src/coop/interactables/atv_host_judge.cpp
+    src/coop/interactables/atv_drill_events.cpp
+    src/coop/interactables/atv_host_sync.cpp
     src/coop/interactables/upgrade_sync.cpp
     src/coop/interactables/interactable_sync.cpp
     src/coop/interactables/cord_sync.cpp
@@ -163,7 +181,11 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/kerfur_convert_client.cpp
     src/coop/creatures/kerfur_convert_host.cpp
     src/coop/creatures/kerfur_command.cpp
-    src/coop/creatures/kerfur_menu_input.cpp
+    src/coop/creatures/kerfur_command_answer.cpp
+    src/coop/creatures/kerfur_command_seat.cpp
+    src/coop/creatures/kerfur_command_wire.cpp
+    src/coop/creatures/kerfur_command_wire_selftest.cpp
+    src/coop/creatures/kerfur_disc_carry.cpp
     src/coop/creatures/kerfur_entity.cpp
     src/coop/creatures/kerfur_form_assembler.cpp
     src/coop/creatures/kerfur_prop_adoption.cpp
@@ -178,11 +200,14 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/keypad_verbs.cpp
     src/coop/interactables/sleepingbag_sync.cpp
     src/coop/world/time_sync.cpp
+    src/coop/world/ufo_sync.cpp
+    src/coop/props/roomba_sync.cpp
     src/coop/world/day_edge.cpp
     src/coop/world/sky_sync.cpp
     src/coop/world/ariral_ship_sync.cpp
     src/coop/world/power_decay.cpp
     src/coop/world/power_grid.cpp
+    src/coop/world/power_grid_install.cpp
     src/coop/world/power_panel.cpp
     src/coop/world/power_puzzle.cpp
     src/coop/world/power_upgrade.cpp
@@ -210,6 +235,7 @@ set(VOTVCOOP_SOURCES
     src/coop/items/order_queue_sync.cpp
     src/coop/world/firefly_sync.cpp
     src/coop/world/spawn_authority.cpp
+    src/coop/world/plant_gate.cpp
     src/coop/world/explosion_sync.cpp
     src/coop/world/explosion_request.cpp
     src/coop/world/explosion_request_atv.cpp
@@ -258,13 +284,21 @@ set(VOTVCOOP_SOURCES
     src/coop/props/grab_observer.cpp
     src/coop/player/item_activate.cpp
     src/coop/player/player_damage.cpp
+    src/coop/player/puppet_cremation.cpp
+    src/coop/player/puppet_events.cpp
+    src/coop/player/puppet_events_selftest.cpp
+    src/coop/player/puppet_hide.cpp
     src/coop/player/player_hit.cpp
+    src/coop/player/cremator_hit.cpp
     src/coop/player/hit_intent.cpp
     src/coop/player/hit_judge.cpp
     src/coop/player/ragdoll_gate.cpp
     src/coop/player/death_revive.cpp
+    src/coop/player/shelter_spot.cpp
     src/coop/player/revive_protection.cpp
     src/coop/player/run_end_travel.cpp
+    src/coop/player/leave_in_event.cpp
+    src/coop/player/vidcam_hint.cpp
     src/coop/player/skin_preview.cpp
     src/coop/player/flashlight_click_sound.cpp
     src/coop/props/prop_sound.cpp
@@ -280,6 +314,16 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/npc_mirror.cpp
     src/coop/creatures/npc_mirror_brain.cpp
     src/coop/creatures/npc_mirror_brain_table.cpp
+    src/coop/creatures/walker_brain.cpp
+    src/coop/creatures/walker_gaze.cpp
+    src/coop/creatures/walker_gaze_host.cpp
+    src/coop/creatures/walker_graph.cpp
+    src/coop/creatures/walker_lanes.cpp
+    src/coop/creatures/walker_state_client.cpp
+    src/coop/creatures/walker_state_host.cpp
+    src/coop/creatures/walker_target.cpp
+    src/coop/creatures/walker_target_rule.cpp
+    src/coop/creatures/walker_target_rule_selftest.cpp
     src/coop/creatures/creature_hit.cpp
     src/coop/creatures/hit_target_creature.cpp
     src/coop/creatures/npc_pose_drive.cpp
@@ -298,8 +342,12 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/grayboar_turn.cpp
     src/coop/creatures/piramid_sync.cpp
     src/coop/creatures/geom_octa_sync.cpp
+    src/coop/creatures/orb_authority.cpp
     src/coop/creatures/geom_octa_relay.cpp
     src/coop/creatures/roach_sync.cpp
+    src/coop/creatures/ambient_creature_sync.cpp
+    src/coop/world/ambient_births.cpp
+    src/coop/world/ambient_fixture_sync.cpp
     src/coop/creatures/owner_entity_sync.cpp
     src/coop/world/world_actor_sync.cpp
     src/coop/world/world_actor_mirror.cpp
@@ -326,6 +374,8 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_spawn_authoring.cpp
     src/coop/props/prop_snapshot.cpp
     src/coop/props/prop_save_data.cpp
+    src/coop/props/prop_nametag.cpp
+    src/coop/props/disc_record_ceiling.cpp
     src/coop/props/prop_record_gates.cpp
     src/coop/props/prop_stick_sync.cpp
     src/coop/props/prop_tool_flags.cpp
@@ -357,6 +407,8 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_park.cpp
     src/coop/props/rider_hold.cpp
     src/coop/world/weather_sync.cpp
+    src/coop/world/spill_sync.cpp
+    src/coop/world/sus_hole_intent.cpp
     src/coop/world/weather_fog.cpp
     src/coop/world/weather_lightning.cpp
     src/coop/world/weather_rain.cpp
@@ -396,6 +448,7 @@ set(VOTVCOOP_SOURCES
     src/coop/element/quiescence_drain_selftest.cpp
     src/coop/element/identity_create.cpp
     src/coop/element/bind_wait.cpp
+    src/coop/element/class_load_wait.cpp
     src/coop/element/identity_destroy.cpp
     src/coop/element/portable_identity.cpp
     src/coop/net/peer_admission.cpp
@@ -465,6 +518,7 @@ set(VOTVCOOP_SOURCES
     src/coop/session/pause_guard.cpp
     src/coop/session/connect_replay.cpp
     src/coop/session/subsystems.cpp
+    src/coop/session/desk_subsystems.cpp
     src/coop/session/world_ready_answer.cpp
     src/coop/player/local_streams.cpp
     src/coop/interactables/device_occupancy.cpp
@@ -485,7 +539,6 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/lightgroup_verbs.cpp
     src/coop/interactables/verb_lanes.cpp
     src/coop/interactables/desk_verb_intent.cpp
-    src/coop/interactables/desk_verb_effects.cpp
     src/coop/interactables/toggle_verbs.cpp
     src/coop/interactables/kitchen_sync.cpp
     src/coop/world/cargo_lift_sync.cpp
@@ -501,8 +554,13 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/tape_caddy_sync.cpp
     src/coop/interactables/coffee_intent.cpp
     src/coop/interactables/coffee_state.cpp
+    src/coop/interactables/cremator_state.cpp
+    src/coop/interactables/cremator_occupancy.cpp
+    src/coop/interactables/cremator_intent.cpp
+    src/coop/interactables/cremator_client_guard.cpp
     src/coop/interactables/laptop_sync.cpp
     src/coop/interactables/laptop_ui_sync.cpp
+    src/coop/interactables/laptop_seat_trace.cpp
     src/coop/interactables/portable_pc_lid.cpp
     src/coop/interactables/swinger_join_pose.cpp
     src/coop/interactables/laptop_buffer_sync.cpp
@@ -513,6 +571,9 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/signal_catch_sync.cpp
     src/coop/interactables/shared_screen_sync.cpp
     src/coop/player/sleep_sync.cpp
+    src/coop/player/nightmare_roll.cpp
+    src/coop/player/level_visit.cpp
+    src/coop/player/level_visit_sky.cpp
     src/coop/creatures/wisp_attack_sync.cpp
     src/coop/creatures/wisp_grab_hold.cpp
     src/coop/creatures/wisp_tear_mirror.cpp
@@ -628,6 +689,7 @@ set(VOTVCOOP_SOURCES
     src/coop/player/roster_ledger.cpp
     src/coop/moderation/ban_list.cpp
     src/coop/moderation/ban_list_selftest.cpp
+    src/coop/moderation/cremate.cpp
     src/coop/moderation/moderation.cpp
     src/coop/moderation/seen_players.cpp
     src/coop/server_profile/server_profile.cpp
@@ -676,55 +738,39 @@ set(VOTVCOOP_SOURCES
     src/harness/world_boot.cpp
     src/harness/harness_diag.cpp
     src/harness/browser_click_arm.cpp
-    src/harness/autotest/autotest_grab.cpp
-    src/harness/autotest/autotest_grabintent.cpp
-    src/harness/autotest/autotest_hostthrow.cpp
-    src/harness/autotest/autotest_pilelook.cpp
-    src/harness/autotest/autotest_broomstroke.cpp
-    src/harness/autotest/autotest_broomstroke_world.cpp
-    src/harness/autotest/autotest_chippile.cpp
-    src/harness/autotest/autotest_trashpark.cpp
-    src/harness/autotest/autotest_driveslot.cpp
-    src/harness/autotest/autotest_clump.cpp
-    src/harness/autotest/autotest_flashlight.cpp
-    src/harness/autotest/autotest_tracker_selftest.cpp
-    src/harness/autotest/autotest_weather.cpp
-    src/harness/autotest/autotest_seeddrill.cpp
-    src/harness/autotest/autotest_scanparity.cpp
-    src/harness/autotest/autotest_worldrules.cpp
-    src/harness/autotest/autotest_menuspawn.cpp
-    src/harness/autotest/autotest_config.cpp
-    src/harness/autotest/autotest_dispatch.cpp
-    src/harness/autotest/autotest_wait.cpp
-    src/harness/autotest/autotest_damage.cpp
-    src/harness/autotest/autotest_dmghazard.cpp
-    src/harness/autotest/autotest_playerdmg.cpp
-    src/harness/autotest/death_state_probe.cpp
-    src/harness/autotest/autotest_death.cpp
-    src/harness/autotest/autotest_puppetframe.cpp
-    src/harness/autotest/autotest_ragdoll.cpp
-    src/harness/autotest/autotest_ragdoll_spawn_probe.cpp
-    src/harness/autotest/autotest_ragdoll_robustness.cpp
-    src/harness/autotest/autotest_ragdoll_transition.cpp
-    src/harness/autotest/autotest_menutravel_probe.cpp
-    src/harness/autotest/autotest_reloadchurn.cpp
-    src/harness/autotest/autotest_islive_drill.cpp
-    src/harness/autotest/autotest_fog_probe.cpp
-    src/harness/autotest/autotest_hud_tint.cpp
-    src/harness/autotest/autotest_eventforce.cpp
-    src/harness/autotest/autotest_alarmforce.cpp
-    src/harness/autotest/autotest_piramidforce.cpp
-    src/harness/autotest/autotest_wisplane.cpp
-    src/harness/autotest/autotest_navprobe.cpp
-    src/harness/autotest/autotest_kwisp_probe.cpp
-    src/harness/autotest/autotest_pauseguard.cpp
-    src/harness/autotest/autotest_kickprobe.cpp
-    src/harness/autotest/autotest_floodprobe.cpp
-    src/harness/autotest/autotest_scriptgate.cpp
-    src/harness/autotest/autotest_runend.cpp
-    src/harness/autotest/autotest_slip.cpp
+    src/harness/autotest/meet.cpp
+    src/harness/autotest/autotest_seat_ragdoll.cpp
     src/harness/autotest/autotest_move_osc.cpp
+    src/harness/autotest/autotest_beam_look.cpp
+    src/harness/autotest/autotest_desk_view.cpp
+    src/harness/autotest/autotest_cap_label.cpp
+    src/harness/autotest/autotest_dish_sound.cpp
+    src/harness/autotest/autotest_save_notice.cpp
+    src/harness/autotest/autotest_vent_crawler.cpp
+    src/harness/autotest/autotest_can_state.cpp
+    src/harness/autotest/autotest_food_state.cpp
+    src/harness/autotest/autotest_plant_state.cpp
+    src/harness/autotest/autotest_plant_gate.cpp
+    src/harness/autotest/autotest_sv_request.cpp
+    src/harness/autotest/autotest_module_buy.cpp
+    src/harness/autotest/autotest_world_sound.cpp
     src/harness/autotest/autotest_saveui.cpp
+    src/harness/autotest/autotest_spill.cpp
+    src/harness/autotest/autotest_drone_hover.cpp
+    src/harness/autotest/autotest_desk_short.cpp
+    src/harness/autotest/autotest_ambient_creature.cpp
+    src/harness/autotest/autotest_ambient_field.cpp
+    src/harness/autotest/autotest_sus_hole.cpp
+    src/harness/autotest/autotest_cargo_lift.cpp
+    src/harness/autotest/autotest_woodchipper.cpp
+    src/harness/autotest/autotest_class_resolve.cpp
+    src/harness/autotest/autotest_prop_props.cpp
+    src/harness/autotest/autotest_nightmare.cpp
+    src/harness/autotest/autotest_level_visit.cpp
+    src/harness/autotest/autotest_ufo.cpp
+    src/harness/autotest/autotest_orb.cpp
+    src/harness/autotest/autotest_sky_tp.cpp
+    src/harness/autotest/autotest_roomba.cpp
     src/ui/input_focus.cpp
     src/harness/screenshot.cpp
     src/harness/mod_environment.cpp
@@ -742,5 +788,6 @@ set(VOTVCOOP_SOURCES
     src/l10n/l10n.cpp
     src/l10n/l10n_selftest.cpp
 )
+include(${CMAKE_CURRENT_LIST_DIR}/sources_autotest.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/sources_dev.cmake)
 list(APPEND VOTVCOOP_SOURCES ${VOTVCOOP_DEV_SOURCES})

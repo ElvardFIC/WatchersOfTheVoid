@@ -3,15 +3,15 @@
 // MTA lets a client ask the server to run an event only if the event was registered as remotely triggerable,
 // and checks that once, where the event arrives (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:
 // 2663-2711; the server's own events register false, :1668); a packet id only the server sends is refused by
-// its packet translator's table (CPacketTranslator.cpp:62-228). Ours is the same flag per kind, kept beside the
+// its packet translator's table (reference/mtasa-blue/Server/mods/deathmatch/logic/CPacketTranslator.cpp:62-228). Ours is the same flag per kind, kept beside the
 // lane and relay tables because our kinds are the protocol's fixed enum rather than runtime registrations: the
-// host's receive edge (session_receive.cpp) drops a Host kind, or a byte that names no kind, from a seated
+// host's receive edge (session_receive.cpp) drops a Host kind, or a value that names no kind, from a seated
 // client before it is inboxed or relayed.
 // Only the host asks the table. A Host kind reaches a client from the host alone (the host relays only Client kinds,
 // session_receive.cpp asserts it), so a client needs no sender check to trust one; a handler shared with a relayed
 // Client kind may test the slot for that kind (pile_look's look rides both), and a Host kind's slot may name an origin
 // the host stamped (a signal catch's catcher), never an authenticity test. MTA's client also refuses a server event
-// not marked remote (its CPacketHandler.cpp:5026-5040); ours does not ask: a client's one link is the host's, which
+// not marked remote (its reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:5026-5040); ours does not ask: a client's one link is the host's, which
 // relays some Client kinds besides its own (session_lanes.h).
 #pragma once
 
@@ -36,6 +36,10 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     switch (k) {
     case ReliableKind::Join:
     case ReliableKind::PropRelease:
+    case ReliableKind::FoodBite:
+    case ReliableKind::PlantEdit:
+    case ReliableKind::RoombaIntent:
+    case ReliableKind::DeskShortRequest:
     case ReliableKind::PropSpawn:
     case ReliableKind::PropDestroy:
     case ReliableKind::LightState:
@@ -105,15 +109,19 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::AuthHello:
     case ReliableKind::AuthProof:
     case ReliableKind::PropSaveDataIntent:
+    case ReliableKind::PropNametag:       // op 1 a client's tag; ops 2 and 3 are the host's, its handler checks the slot
     case ReliableKind::FloppySlotState:
     case ReliableKind::HookState:
     case ReliableKind::HookDestroy:
     case ReliableKind::HookAnchorCommit:
+    case ReliableKind::HookRetrieve:      // op 0 a client's pickup; op 1 is the host's, its handler checks the slot
     case ReliableKind::BroomStroke:
     case ReliableKind::LinkProbe:
     case ReliableKind::LinkProbeReply:
     case ReliableKind::PackTrashIntent:
     case ReliableKind::DroneFlyIntent:
+    case ReliableKind::WoodchipperIntent:
+    case ReliableKind::AtvRequest:
     case ReliableKind::UpgradeIntent:
     case ReliableKind::WindowStroke:
     case ReliableKind::DoorVerbIntent:
@@ -136,6 +144,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::StatQueryReply:
     case ReliableKind::PointSackRedeem:
     case ReliableKind::CoffeeActionIntent:
+    case ReliableKind::CrematorIntent:
+    case ReliableKind::CargoLiftIntent:
     case ReliableKind::RemoverRequest:
     case ReliableKind::HitIntent:
     case ReliableKind::ProjectileFired:
@@ -148,6 +158,9 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PropActCommit:
     case ReliableKind::ContainerActRequest:
     case ReliableKind::ContainerActCommit:
+    case ReliableKind::SpillIntent:
+    case ReliableKind::SpillPourIntent:
+    case ReliableKind::SusHoleIntent:
     case ReliableKind::CameraToggleIntent:
     case ReliableKind::LaptopTabReport:
     // Fork lanes retained at merge: their existing client senders must reach the
@@ -158,7 +171,6 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PvpHit:
     case ReliableKind::CreditIntent:
     case ReliableKind::FoodState:
-    case ReliableKind::FoodBite:
     case ReliableKind::KitchenIntent:
     case ReliableKind::CordIntent:
     case ReliableKind::PropSupport:
@@ -172,7 +184,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PropActionIntent:
     case ReliableKind::Explosion:
     case ReliableKind::DeskShortCircuit:
-    case ReliableKind::HookRetrieve:
+    case ReliableKind::CordLinkState:
     case ReliableKind::DingusMusic:
     case ReliableKind::EmoteState:
     case ReliableKind::Watoy:
@@ -194,6 +206,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PropSyncClaim:
     case ReliableKind::DevParityReport:
     case ReliableKind::DevContainerParity:
+    case ReliableKind::PropPropsIntent:
+    case ReliableKind::WalkerSeen:
         return ClientAuthorship::Client;
     // The Host row matches MTA's protected element data, which a client may not write: opt-in there
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
@@ -222,6 +236,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::SaveTransferBegin:
     case ReliableKind::SaveTransferChunk:
     case ReliableKind::TurbineState:
+    case ReliableKind::WoodchipperState:
+    case ReliableKind::AtvHostState:
     case ReliableKind::SkySignalState:
     case ReliableKind::EmailAppend:
     case ReliableKind::CompState:
@@ -292,12 +308,31 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::AriralShipState:
     case ReliableKind::AtvSetComplete:
     case ReliableKind::PropSyncAnswer:
+    case ReliableKind::WorldSaved:
+    case ReliableKind::PropHoldRefused:
+    case ReliableKind::PropPropsState:
+    case ReliableKind::PlantState:
+    case ReliableKind::RoombaState:
+    case ReliableKind::DeskShortState:
     case ReliableKind::SwingerRestPose:
     case ReliableKind::GeomOctaEvent:
     case ReliableKind::DevLoadFiller:
+    case ReliableKind::SpillState:
+    case ReliableKind::SpillPour:
+    case ReliableKind::VentCrawlState:
+    case ReliableKind::AmbientTreeState:
+    case ReliableKind::AmbientFixtureState:
+    case ReliableKind::CrematorState:
+    case ReliableKind::CargoLiftState:
+    case ReliableKind::CrematorHit:
+    case ReliableKind::RequesterFeedback:
+    case ReliableKind::KerfurCommandAnswer:
+    case ReliableKind::WalkerState:
+    case ReliableKind::OrbEvent:
+    case ReliableKind::UfoEvent:
         return ClientAuthorship::Host;
     }
-    return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host
+    return ClientAuthorship::NotAKind;  // a value that names no kind: refused like Host
 }
 
 }  // namespace coop::net

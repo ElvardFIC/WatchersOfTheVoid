@@ -233,7 +233,7 @@ void AnnounceSlot(int role, bool occupied, uint32_t eid) {
 
 // HOST: a client's line it accepted, to every other client whose world is ready; a joiner still loading gets the slot
 // in its seed. A client's line is never relayed as it arrives, since the host judges it first: MTA relays an accepted
-// element-data change to all but its source (CGame.cpp:2761-2768).
+// element-data change to all but its source (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2761-2768).
 void RelaySlot(int role, bool occupied, uint32_t eid, uint8_t sourceSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return;
@@ -245,7 +245,7 @@ void RelaySlot(int role, bool occupied, uint32_t eid, uint8_t sourceSlot) {
 }
 
 // HOST: the slot as it stands, to the source of a line it refused, whom no other client heard: MTA answers a refused
-// element-data change to its source alone (CGame.cpp:2779-2793).
+// element-data change to its source alone (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2779-2793).
 void AnswerSlot(int role, uint8_t sourceSlot, bool occupied, uint32_t eid) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return;

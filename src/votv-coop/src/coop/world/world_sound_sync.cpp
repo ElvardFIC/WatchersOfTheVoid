@@ -44,6 +44,7 @@ uint32_t g_world = 0;
 uint64_t g_epoch = 0;
 bool g_flushing = false;
 int g_nextRecipient = 1;
+Counts g_counts{};
 uint64_t Now() {
     return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -63,6 +64,7 @@ void Queue(uint32_t id, const ue_wrap::FVector& pos = {}) {
     Pending p{{id, pos.X, pos.Y, pos.Z}, Now() + 10000};
     for (int slot = 1; slot < players::kMaxPeers; ++slot) {
         if (!g_session->HasPeerConn(slot) || !g_session->IsSlotWorldReady(slot)) continue;
+        if(id==kFaucet)++g_counts.clicks;
         if (g_out[slot].size() >= 32) { UE_LOGW("world_sound: peer %d cue queue full", slot); continue; }
         g_out[slot].push_back(p);
     }
@@ -88,8 +90,8 @@ void Sound2DPost(void*, void* source, void*) {
     const int off = R::FindParamOffset(frame.function, L"EntryPoint"), size = R::FunctionFrameSize(frame.function);
     if (off < 0 || off > size || size - off < int(sizeof(int32_t))) return;
     int32_t entry = 0; std::memcpy(&entry, frame.locals + off, sizeof(entry));
-    if (entry == 5062) Queue(kEarthIn);
-    else if (entry == 437) Queue(kEarthOut);
+    if (entry == 5062) { ++g_counts.matched; Queue(kEarthIn); }
+    else if (entry == 437) { ++g_counts.matched; Queue(kEarthOut); }
 }
 // noiser.timer's sole SpawnSoundAttached uses outsideAlien_Cue, volume 2,
 // pitch 1 and zero offset on the capsule. Capture the actual host position.
@@ -159,6 +161,7 @@ void Flush() {
                 if (epoch != g_epoch || !As(net::Role::Host)) return;
                 if (peerEpoch != g_peerEpoch[slot]) break;
                 if (!sent) break;
+                ++g_counts.sent;
                 queue.pop_front();
             }
         }
@@ -169,6 +172,7 @@ void Flush() {
             const bool played = Play(p.payload);
             if (epoch != g_epoch || !As(net::Role::Client)) return;
             if (!played) break;
+            ++g_counts.played;
             g_in.pop_front();
         }
     }
@@ -194,6 +198,7 @@ void Install(net::Session* session) {
 bool OnReliable(const net::EventCuePayload& p) {
     if (p.cueId < kEarthIn || p.cueId > kFaucet) return false;
     if (!ue_wrap::game_thread::IsGameThread() || !As(net::Role::Client)) return true;
+    ++g_counts.received;
     World();
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
         std::fabs(p.x) > 2'000'000.f || std::fabs(p.y) > 2'000'000.f || std::fabs(p.z) > 2'000'000.f ||
@@ -203,5 +208,6 @@ bool OnReliable(const net::EventCuePayload& p) {
     Flush(); return true;
 }
 void OnPeerLeftSlot(int slot) { if (slot > 0 && slot < players::kMaxPeers) { g_out[slot].clear(); ++g_peerEpoch[slot]; } }
-void OnDisconnect() { g_session = nullptr; Clear(); }
+Counts GetCounts(){return g_counts;}
+void OnDisconnect() { g_session = nullptr; Clear();g_counts={}; }
 }

@@ -82,7 +82,7 @@ HostPasswordCache g_hostPw;
 // for ten minutes: the window is long because the connection cap in front of it admits at
 // most eight connections per minute per address, so a minute-long window could never fill,
 // and the slow guesser is the one this bound is for (MTA's login limit is 6 / 30 s / 60 s,
-// CAccountManager.cpp:24, with no cap in front of it). A full table stops counting, not
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CAccountManager.cpp:24, with no cap in front of it). A full table stops counting, not
 // checking: failing closed is right only when failing open would admit, and here it could
 // only deny. The collateral: peers behind one carrier NAT share an address row, and ten wrong
 // guesses between them lock it for ten minutes, far above what typing costs and far below a

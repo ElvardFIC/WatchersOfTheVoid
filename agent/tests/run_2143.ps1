@@ -11,7 +11,7 @@ try {
  }
  & "$PSScriptRoot/run_2142.ps1"
  foreach ($name in @('drone_state_2135','prop_action_2143')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_test.cpp" /link /OPT:REF
   if ($LASTEXITCODE -ne 0) { throw "Compile failed: $name" }
   & "$output/$name.exe"
   if ($LASTEXITCODE -ne 0) { throw "Test failed: $name" }

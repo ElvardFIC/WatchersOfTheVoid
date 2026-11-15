@@ -73,7 +73,7 @@ bool g_seeded[coop::net::kMaxPeers] = {};
 // The receipt's refusals before a line is read, the rate's two and a short payload on the host, a chat intent on a
 // client: said at the first after a quiet spell and summed per window (coop/net/refusal_tally.h), so a sender at the
 // edge's rate cannot make the log the cost.
-// Deliberate divergence: Source logs nothing when CanPlayerTalk refuses (client.cpp:843-862); a host owner reading the
+// Deliberate divergence: Source logs nothing when CanPlayerTalk refuses (reference/source-sdk-2013/src/game/server/client.cpp:843-862); a host owner reading the
 // log should see a flood was refused.
 coop::net::RefusalTally g_refusals{"chat_sync"};
 
@@ -305,8 +305,8 @@ void QueueSend(const std::string& utf8Text) {
             // lobby has nobody to send to, and the line still belongs in the record so the next
             // joiner is seeded with it. The line goes in raw; the commit point shapes it. Deliberate
             // divergence: Source's listen host types through the same say and meets the same
-            // CanPlayerTalk (client.cpp:843-851); ours is not counted, a bound being a client's, as
-            // Source's server console says with no rate (client.cpp:854-861).
+            // CanPlayerTalk (reference/source-sdk-2013/src/game/server/client.cpp:843-851); ours is not counted, a bound being a client's, as
+            // Source's server console says with no rate (reference/source-sdk-2013/src/game/server/client.cpp:854-861).
             AuthorAndBroadcast(0, utf8Text);
             return;
         }
@@ -338,7 +338,7 @@ void OnReliable(const uint8_t* bytes, size_t len, int senderSlot) {
     }
     // Source's chat flood guard, FIRST: every message is an attempt, judged before its length, its
     // decode or its novelty charge, as Source's say meets CanPlayerTalk before Host_Say reads the text
-    // (client.cpp:847-851; a blank say spends too, :186-199). A refused message costs a few float
+    // (reference/source-sdk-2013/src/game/server/client.cpp:847-851; a blank say spends too, :186-199). A refused message costs a few float
     // operations and a tally note, and is dropped for good, with no answer.
     using coop::chat_rate::TalkVerdict;
     const TalkVerdict verdict =

@@ -193,7 +193,7 @@ coop::roster_ledger::PerSlotState<uint32_t> g_clientApplies;
 // The host applies a client's request natively WITHOUT suppressing detection: its next poll sees the flip and
 // broadcasts to everyone, the originator included, whose re-apply is a native no-op while the host holds its newest
 // request; a sender with a request owed is shown the host's older state until it is paid. MTA leaves the source out of
-// its relay of a client's element data (CGame.cpp:2759-2771); this lane's one poll broadcast serves the host's own scan
+// its relay of a client's element data (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2759-2771); this lane's one poll broadcast serves the host's own scan
 // and every client's request alike.
 void ApplyClientRequest(int slot, bool active) {
     UE_LOGI("alarm_sync: client slot=%d requests active=%d", slot, active ? 1 : 0);
@@ -210,7 +210,7 @@ bool ReadCurrent(bool& out) {
 
 // A client's requests, the newest kept at a pace (coop/net/latest_wins.h). Its sender is one edge per 1 Hz poll
 // (kPollIntervalMs), and a request that changes the trigger runs the alarm's whole fanout: two at once, then one a
-// second. An unchanged request costs the trigger's byte. MTA applies a client's element data at once (CGame.cpp:2757);
+// second. An unchanged request costs the trigger's byte. MTA applies a client's element data at once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2757);
 // paced here for the fanout's cost.
 constexpr coop::net::IntentBudget kRequestBudget{2.0f, 1.0f};
 struct PendingAlarm {

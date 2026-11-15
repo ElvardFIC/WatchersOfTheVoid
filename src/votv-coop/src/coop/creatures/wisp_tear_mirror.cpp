@@ -106,9 +106,6 @@ bool PlayTearWhile(void* wispActor, uint32_t victimSlot, const std::function<boo
 }
 }
 
-bool PlayTearOnWisp(void* wispActor, uint32_t victimSlot) {
-    return PlayTearWhile(wispActor, victimSlot, {});
-}
 
 namespace {
 bool OwnsTear(const PendingTear& row) {
@@ -287,5 +284,7 @@ void OnDisconnect() {
     ++g_killRevision;
     coop::wisp_grab_hold::ReleaseSelf();
 }
+
+
 
 }  // namespace coop::wisp_tear_mirror

@@ -18,7 +18,7 @@ bool ReadDaysTotal(int32_t& out);
 bool AddDaysTotal(int32_t n);
 
 // save_main.stats' signals_found, the signals this machine's player has found, which a catch in the renderer's
-// gatherSignal adds to on the machine that rolled it (spaceRenderer.cpp:843-849). False as ReadDaysTotal is. Game
+// gatherSignal adds to on the machine that rolled it (CXXHeaderDump/spaceRenderer.cpp:843-849). False as ReadDaysTotal is. Game
 // thread.
 bool ReadSignalsFound(int32_t& out);
 
@@ -36,12 +36,12 @@ bool AddStat(std::wstring_view name, int32_t n);
 
 // The key this machine's player bound to the input setting `name` (as "coord_ping"), as the game displays it:
 // save_main.keybinds_keys at the index `name` has in keybindsNames, the pair the game fills together
-// (mainGamemode.cpp:1757-1765). False when `name` is not bound or a member does not resolve. Game thread.
+// (CXXHeaderDump/mainGamemode.cpp:1757-1765). False when `name` is not bound or a member does not resolve. Game thread.
 bool KeybindDisplayName(const wchar_t* name, std::wstring& out);
 
-// save_main_C::progressAchievement(name, popup, autosave = false), which lib_C's own entry forwards to:
+// save_main_C::progressAchievement(name, popup = true, autosave), which lib_C's own entry forwards to:
 // the achievement progresses on this machine's profile, with its popup. False when it does not resolve.
 // Game thread.
-bool ProgressAchievement(const wchar_t* name);
+bool ProgressAchievement(const wchar_t* name, bool autosave = false);
 
 }  // namespace ue_wrap::profile

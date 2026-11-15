@@ -1,511 +1,351 @@
+## 0.9.2165
+- Merge the current upstream and selected fork updates while preserving local multiplayer behavior and assigning non-colliding reliable message IDs. - Guard late class loading
+  during save recovery and tighten Kerfur command, sleep/rest, event-cue and actor-lifetime synchronization paths. - Restore the measured woodchipper native fingerprints and align
+  hand-item payload state with the shared applied-state implementation. - Internal network protocol: b2223. All peers must use this package and the same game version; matching
+  package labels alone are insufficient. - Offline qualification and package verification are pending. Rendered gameplay and multiplayer acceptance are not established by the
+  source or offline tests.
+
+## 0.9.2164
+- Integrate selected upstream and fork fixes while retaining this fork's multiplayer behavior and protocol compatibility checks. - Preserve wall-attachment support identity and
+  retire attachments when their support is destroyed; replicate toolgun static/frozen state changes. - Add guarded prop, container, item, creature and presentation recovery paths,
+  with exact actor/world lifetimes and late-join handling where implemented. - Internal network protocol: b2223. All peers must use this package and the same game version; matching
+  public package labels alone are insufficient. - Offline qualification does not replace two-peer gameplay testing. Laptop occupied-seat protection, red-phone ring ownership, desk
+  virusEvent, signal-born prop ownership and runtime 3D-print mesh synchronization remain open.
+
 ## 0.9.2163
-- Preserve native Tutorial placement on client joins and respawns instead of
-  importing a Story-map/profile position that can reach the native fatal exit.
-- Repair empty inventory item-icon cache files before non-Tutorial loads,
-  reject null texture tables and retry incomplete quick-slot refreshes.
-- Bind killer-wisp capture, tears, host destruction and NPC death watches to
-  exact source/victim bodies, world and request lifetimes; bound native retries
-  and require admitted victim delivery before committing the host kill deadline.
-- Register transformer watches against the native generator_C class.
-- Synchronize movable props pushed by host/player puppet bodies through the
-  existing host coasting stream, preserving held/static/frozen/hand exclusions.
-- Admit the chest's arirSlapper_C through the NPC lane with exact summoner output
-  filtering; attacks, item ownership and effects remain unfinished.
-- Let a laptop/shared-screen operator regain control after three persistently
-  refused inherited repaints on a readable UI; preserve loading seeds and leases.
-- Retain protocol 2217. The eleven requested third-party mods are not qualified
-  as multiplayer-compatible; this package does not install or bundle them.
-- Includes selected adaptations from gxrxrt/WatchersOfTheVoid by garar; source
-  commit attribution is recorded in agent/WORK.md and agent/FORK_AUDIT_20261022.md.
+- Preserve native Tutorial placement on client joins and respawns instead of importing a Story-map/profile position that can reach the native fatal exit. - Repair empty inventory
+  item-icon cache files before non-Tutorial loads, reject null texture tables and retry incomplete quick-slot refreshes. - Bind killer-wisp capture, tears, host destruction and NPC
+  death watches to exact source/victim bodies, world and request lifetimes; bound native retries and require admitted victim delivery before committing the host kill deadline. -
+  Register transformer watches against the native generator_C class. - Synchronize movable props pushed by host/player puppet bodies through the existing host coasting stream,
+  preserving held/static/frozen/hand exclusions. - Admit the chest's arirSlapper_C through the NPC lane with exact summoner output filtering; attacks, item ownership and effects
+  remain unfinished. - Let a laptop/shared-screen operator regain control after three persistently refused inherited repaints on a readable UI; preserve loading seeds and leases. -
+  Retain protocol 2217. The eleven requested third-party mods are not qualified as multiplayer-compatible; this package does not install or bundle them. - Includes selected
+  adaptations from gxrxrt/WatchersOfTheVoid by garar; source commit attribution remains in the local fork audit.
 
 ## 0.9.2162
-- Add Tutorial, Story, Infinite, Ambience, Sandbox and Solar choices to both host
-  menus; preserve existing-save modes and use the native Tutorial entry map.
-- Read flashlight state through reflected offsets/bit masks, allow crank lights
-  and reapply received on/off state after remote pawn or light replacement.
-- Explicitly enable physics-to-pose blending and skeletal-component ticking
-  during ragdoll startup; real-peer T-pose acceptance remains open.
-- Bind held-toy captures to their dispatch function, input size/span and local
-  user; limit native state/squeak presentations per tick.
-- Share watoy presentation leases across copied and independent views; prevent
-  duplicate/stale cleanup and retain original hand/occupant/connection provenance.
-- Bound watoy native activation, cues and state work; cap reliable retries and
-  rotate refused state delivery fairly across recipients.
-- Capture original window brush material/size at the native draw, including
-  thrown sponges, instead of sampling the held item at a later tick.
-- Extract missing map headers and inventory level scripts for continuing event
-  work. Complete event routes and rendered multiplayer acceptance remain open.
+- Add Tutorial, Story, Infinite, Ambience, Sandbox and Solar choices to both host menus; preserve existing-save modes and use the native Tutorial entry map. - Read flashlight state
+  through reflected offsets/bit masks, allow crank lights and reapply received on/off state after remote pawn or light replacement. - Explicitly enable physics-to-pose blending and
+  skeletal-component ticking during ragdoll startup; real-peer T-pose acceptance remains open. - Bind held-toy captures to their dispatch function, input size/span and local user;
+  limit native state/squeak presentations per tick. - Share watoy presentation leases across copied and independent views; prevent duplicate/stale cleanup and retain original
+  hand/occupant/connection provenance. - Bound watoy native activation, cues and state work; cap reliable retries and rotate refused state delivery fairly across recipients. -
+  Capture original window brush material/size at the native draw, including thrown sponges, instead of sampling the held item at a later tick. - Extract missing map headers and
+  inventory level scripts for continuing event work. Complete event routes and rendered multiplayer acceptance remain open.
 
 ## 0.9.2161
-- Replace the old versioned cover with the supplied MULTIPLAYER MOD artwork and
-  update the package icon while preserving the full composition.
-- Select visible registered remote players for llama activation; preserve native
-  launch direction/velocity and stream both remote and local-host jumps.
-- Retain llama motion until the prop lane accepts it, with bounded retries and
-  hand/Kerfur ownership checks; finish admitted effects without repeating impulses.
-- Preserve llama sound lifetimes and quiet joins across heartbeat/retries, retain
-  ordering history and recover temporary Begin flags across session changes.
-- Pause pre-existing client llama timers without rearming them; restore owned
-  timers and suppressed Sphere/Begin initialization through checked native paths.
-- Synchronize the native llamaSoul save marker through the existing PlacedSave
-  route, with keyed adoption and host-only marker mutation.
-- Separate remote llama visuals from native event bookkeeping; remove only
-  verified local sender contributions and guard legacy absent-sender debits.
-- Synchronize llama event light/state and expiring sound cues from the host;
-  use quiet snapshots for players joining during the effect.
-- Keep native base prop initialization while suppressing independent client
-  jumps; restore the original jump-setting flag after initialization.
-- Retain scoped llama delivery/readiness retries, validate native effect bindings
-  and consume each admitted sound once across retries and nested updates.
-- Route Rufus/thiccfus console births through NPC identity/pose with exact output
-  filtering and scoped, deduplicated deferred enrollment.
-- Park Rufus mirrors before their native AI/HUD/damage/child branches run; require
-  a ready graph guard before allocation, finish and adoption.
-- Restore the native mesh/animation binding and stream visible body yaw; retry
-  failed preparation while stationary and preserve model pitch/roll.
-- Guard Maxwell/variant music reads and phase seeks with current toy/component/
-  class/function identity and coherent sound duration, looping and pitch.
-- Validate native audio parameters, preserve caller state across callbacks and
-  retain newer playback during nested updates without restarting unchanged music.
-- Bound and deduplicate indexed toy collection; protect touch/toggle/squeak
-  preparation and keep failed pitch reads from overwriting valid output.
-- Recover Madness music/HUD through session/world changes, readiness loss,
-  stopped components and refused cleanup; preserve newer state during callbacks.
-- Bind Madness sends to recipient identity, retain join retries and compensate
-  event age only while music is playing.
-- Validate current native factory/query bindings and return layouts; update HUD
-  text/count directly without replaying addCount's enemy-spawn callback.
-- Keep companion creation scoped to the host/world and checked ATV instances;
-  restart settling after movement, rotation, riding, carrying or count uncertainty.
-- Permit an existing coop-key rig as the sole source, bound saved-body waiting
-  and recover creation after a rejected third ATV or refused cleanup.
-- Protect companion index/key ownership, preserve current driver state during
-  publication/rebinding and retry refused spawn announcements.
-- Retain chair placement while the sender's first pose loads; validate anchor
-  distance, world and current local occupancy before applying it.
-- Preserve adjacent sitting/IK flags, recover reloaded animation metadata and
-  support mesh-shift restoration for all 32 players.
-- Keep authored mesh offsets through failed writes and nested cleanup; apply
-  full parent rotation and vertical forward motion on tilted seats.
-- Refresh head look and flashlight world aim after final seat placement, with
-  checked native rotation calls and no raw rotation fallback.
-- Guard ATV driver poses by rig/seat/player identity, readable finite transforms
-  and accepted writes; give the ATV seat priority over an old chair anchor.
-- Stream small seated-player movements and every chair rotation axis at up to
-  20 Hz; interpolate the chair and body together through wrapped angles.
-- Admit a chair before placing its rider, retry late chair discovery, cancel
-  placement on stand/laptop/sleep/ragdoll and retire stale session/peer work.
-- Keep stand-up packets from rotating released chairs and preserve fresh seating
-  state through refused sends, replaced objects and nested callbacks.
-- Validate finite/frozen ATV spawn inputs and current class/key layout, native
-  services and original world/context through deferred creation and finish.
-- Refuse foreign deferred returns and failed whole-rig placement; clean up only
-  the captured rig incarnation. Stop garage queries on source retirement or movement.
-- Hold lamp/ambient source and exact ambient-component identity through native
-  preparation/completion; reject retired or replaced bindings.
-- Bound and copy switch-audio parameters, verify the hooked callee, recover spatial
-  resources and reject invalid audio/positions while preserving nested replay context.
-- Recover replaced/incomplete light-root and switch metadata without fixed offset
-  fallbacks; read live state, switch position and breaker through separate bool masks.
-- Bound switch-to-group array lookup, check group-call arguments and retain
-  object/function/world/layout identity through group and switch replay calls.
-- Retry refused flashlight join seeds and cached host relays for the original
-  recipient/source connection. Replay current ON/OFF state with owned packet bytes.
-- Preserve newer light state through nested sends; pace targeted replay through
-  one rotating 64-attempt budget and wait for active, ready recipient links.
-- Recover incomplete ATV hit-guard installation so a temporary startup refusal
-  cannot permanently block companion creation; retry honk/mount watches independently.
-- Validate impulse-frame bounds, companion yaw, deferred spawn/finish results and
-  rig-teleport arguments; clean up failed deferred bodies before publication.
-- Retry initially refused light-group watches and stop network light guards when
-  the session stops. Remove merged duplicate console code that blocked compilation.
-- Guard console atlas/factory/init/command/log preparation by current object,
-  class, function and layout bindings. Reject malformed parameter/panel-array bounds.
-- Preserve newer command fields and stop retired clear/input operations; validate
-  both console backing-log fields before starting display-only clearing.
-- Guard remote flashlight clicks by current peer/body/session identity, retain
-  transitions through unavailable resources/positions and recover replaced assets.
-- Preserve newer states through nested preparation, refuse non-finite positions
-  and wait for spatial attenuation instead of playing an unattenuated click.
-- Freeze held-toy sound identity and action before native use; bind deferred
-  music/squeaks to exact sender/recipient connections through reconnect and reentry.
-- Preserve overflow retries and fresh join debt, own incoming packets, share a
-  64-send budget and enforce transient expiry/clock retirement.
-- Guard native watoy state/audio/effect preparation by current source, component,
-  mesh/template and service identities; refuse unreadable or non-finite outputs.
-- Keep requester/presentation checks through activation/audio, validate spawned
-  particles and preserve fresh View ownership during Apply/Clear reentry.
-- Guard watoy session, activation invocation and requester/recipient connection
-  ownership; preserve current rows/queues through nested sends and cleanup.
-- Reserve activation capture capacity, retain overflow cue retries and copy
-  incoming packets before native authorization. Wire layout remains unchanged.
-- Retire world toy music/squeak work across session restarts and transport
-  replacement; keep exact PRE/POST ownership through nested native callbacks.
-- Preserve overflow retries, own received packets, share a 64-send tick budget,
-  expire transient sounds across callbacks and validate keys consistently.
-- Keep ongoing sponge-foam fixes in public version 2161. Scope effects to their
-  session, invocation, original prop/hand and exact player/recipient connection.
-- Preserve queue admission and ordered retries, bound per-tick work and expiry,
-  and guard native hit-result ownership without replaying stock consumption.
+- Replace the old versioned cover with the supplied MULTIPLAYER MOD artwork and update the package icon while preserving the full composition. - Select visible registered remote
+  players for llama activation; preserve native launch direction/velocity and stream both remote and local-host jumps. - Retain llama motion until the prop lane accepts it, with
+  bounded retries and hand/Kerfur ownership checks; finish admitted effects without repeating impulses. - Preserve llama sound lifetimes and quiet joins across heartbeat/retries,
+  retain ordering history and recover temporary Begin flags across session changes. - Pause pre-existing client llama timers without rearming them; restore owned timers and
+  suppressed Sphere/Begin initialization through checked native paths. - Synchronize the native llamaSoul save marker through the existing PlacedSave route, with keyed adoption and
+  host-only marker mutation. - Separate remote llama visuals from native event bookkeeping; remove only verified local sender contributions and guard legacy absent-sender debits. -
+  Synchronize llama event light/state and expiring sound cues from the host; use quiet snapshots for players joining during the effect. - Keep native base prop initialization while
+  suppressing independent client jumps; restore the original jump-setting flag after initialization. - Retain scoped llama delivery/readiness retries, validate native effect
+  bindings and consume each admitted sound once across retries and nested updates. - Route Rufus/thiccfus console births through NPC identity/pose with exact output filtering and
+  scoped, deduplicated deferred enrollment. - Park Rufus mirrors before their native AI/HUD/damage/child branches run; require a ready graph guard before allocation, finish and
+  adoption. - Restore the native mesh/animation binding and stream visible body yaw; retry failed preparation while stationary and preserve model pitch/roll. - Guard
+  Maxwell/variant music reads and phase seeks with current toy/component/ class/function identity and coherent sound duration, looping and pitch. - Validate native audio
+  parameters, preserve caller state across callbacks and retain newer playback during nested updates without restarting unchanged music. - Bound and deduplicate indexed toy
+  collection; protect touch/toggle/squeak preparation and keep failed pitch reads from overwriting valid output. - Recover Madness music/HUD through session/world changes,
+  readiness loss, stopped components and refused cleanup; preserve newer state during callbacks. - Bind Madness sends to recipient identity, retain join retries and compensate
+  event age only while music is playing. - Validate current native factory/query bindings and return layouts; update HUD text/count directly without replaying addCount's
+  enemy-spawn callback. - Keep companion creation scoped to the host/world and checked ATV instances; restart settling after movement, rotation, riding, carrying or count
+  uncertainty. - Permit an existing coop-key rig as the sole source, bound saved-body waiting and recover creation after a rejected third ATV or refused cleanup. - Protect
+  companion index/key ownership, preserve current driver state during publication/rebinding and retry refused spawn announcements. - Retain chair placement while the sender's first
+  pose loads; validate anchor distance, world and current local occupancy before applying it. - Preserve adjacent sitting/IK flags, recover reloaded animation metadata and support
+  mesh-shift restoration for all 32 players. - Keep authored mesh offsets through failed writes and nested cleanup; apply full parent rotation and vertical forward motion on tilted
+  seats. - Refresh head look and flashlight world aim after final seat placement, with checked native rotation calls and no raw rotation fallback. - Guard ATV driver poses by
+  rig/seat/player identity, readable finite transforms and accepted writes; give the ATV seat priority over an old chair anchor. - Stream small seated-player movements and every
+  chair rotation axis at up to 20 Hz; interpolate the chair and body together through wrapped angles. - Admit a chair before placing its rider, retry late chair discovery, cancel
+  placement on stand/laptop/sleep/ragdoll and retire stale session/peer work. - Keep stand-up packets from rotating released chairs and preserve fresh seating state through refused
+  sends, replaced objects and nested callbacks. - Validate finite/frozen ATV spawn inputs and current class/key layout, native services and original world/context through deferred
+  creation and finish. - Refuse foreign deferred returns and failed whole-rig placement; clean up only the captured rig incarnation. Stop garage queries on source retirement or
+  movement. - Hold lamp/ambient source and exact ambient-component identity through native preparation/completion; reject retired or replaced bindings. - Bound and copy
+  switch-audio parameters, verify the hooked callee, recover spatial resources and reject invalid audio/positions while preserving nested replay context. - Recover
+  replaced/incomplete light-root and switch metadata without fixed offset fallbacks; read live state, switch position and breaker through separate bool masks. - Bound
+  switch-to-group array lookup, check group-call arguments and retain object/function/world/layout identity through group and switch replay calls. - Retry refused flashlight join
+  seeds and cached host relays for the original recipient/source connection. Replay current ON/OFF state with owned packet bytes. - Preserve newer light state through nested sends;
+  pace targeted replay through one rotating 64-attempt budget and wait for active, ready recipient links. - Recover incomplete ATV hit-guard installation so a temporary startup
+  refusal cannot permanently block companion creation; retry honk/mount watches independently. - Validate impulse-frame bounds, companion yaw, deferred spawn/finish results and
+  rig-teleport arguments; clean up failed deferred bodies before publication. - Retry initially refused light-group watches and stop network light guards when the session stops.
+  Remove merged duplicate console code that blocked compilation. - Guard console atlas/factory/init/command/log preparation by current object, class, function and layout bindings.
+  Reject malformed parameter/panel-array bounds. - Preserve newer command fields and stop retired clear/input operations; validate both console backing-log fields before starting
+  display-only clearing. - Guard remote flashlight clicks by current peer/body/session identity, retain transitions through unavailable resources/positions and recover replaced
+  assets. - Preserve newer states through nested preparation, refuse non-finite positions and wait for spatial attenuation instead of playing an unattenuated click. - Freeze
+  held-toy sound identity and action before native use; bind deferred music/squeaks to exact sender/recipient connections through reconnect and reentry. - Preserve overflow retries
+  and fresh join debt, own incoming packets, share a 64-send budget and enforce transient expiry/clock retirement. - Guard native watoy state/audio/effect preparation by current
+  source, component, mesh/template and service identities; refuse unreadable or non-finite outputs. - Keep requester/presentation checks through activation/audio, validate spawned
+  particles and preserve fresh View ownership during Apply/Clear reentry. - Guard watoy session, activation invocation and requester/recipient connection ownership; preserve
+  current rows/queues through nested sends and cleanup. - Reserve activation capture capacity, retain overflow cue retries and copy incoming packets before native authorization.
+  Wire layout remains unchanged. - Retire world toy music/squeak work across session restarts and transport replacement; keep exact PRE/POST ownership through nested native
+  callbacks. - Preserve overflow retries, own received packets, share a 64-send tick budget, expire transient sounds across callbacks and validate keys consistently. - Keep ongoing
+  sponge-foam fixes in public version 2161. Scope effects to their session, invocation, original prop/hand and exact player/recipient connection. - Preserve queue admission and
+  ordered retries, bound per-tick work and expiry, and guard native hit-result ownership without replaying stock consumption.
 
-- Retain a bay-window dab when native preparation is unavailable; consume an
-  admitted canvas draw once, including uncertain failure.
-- Guard window, canvas, material, function and class lifetimes through native
-  preparation, parameter writes and callback-driven replacement.
-- Check scalar updates and every draw/factory binding, including exact Vector2D
-  layout; missing metadata retries instead of permanently disabling drawing.
-- Read held brushes only while their author, item, stock and material remain
-  current; reject unreadable or non-finite values without publishing partial output.
-- Preserve brush ownership through factory failure, GC pinning, teardown and
-  reentry; wait when the shared signal canvas state cannot be established.
-- Every version is a test version, requires extensive testing and may be unstable.
-  Rendered multiplayer, original-dab brush provenance, dynamic grime and full-save
-  parity remain open.
+- Retain a bay-window dab when native preparation is unavailable; consume an admitted canvas draw once, including uncertain failure. - Guard window, canvas, material, function and
+  class lifetimes through native preparation, parameter writes and callback-driven replacement. - Check scalar updates and every draw/factory binding, including exact Vector2D
+  layout; missing metadata retries instead of permanently disabling drawing. - Read held brushes only while their author, item, stock and material remain current; reject unreadable
+  or non-finite values without publishing partial output. - Preserve brush ownership through factory failure, GC pinning, teardown and reentry; wait when the shared signal canvas
+  state cannot be established. - Every version is a test version, requires extensive testing and may be unstable. Rendered multiplayer, original-dab brush provenance, dynamic grime
+  and full-save parity remain open.
 
 
 
-- Retain bay-window sponge strokes through refused reliable sends, preserving
-  their order and sealed brush values until delivery or a 20-second expiry.
-- Bound sending and replay to eight dabs per tick; preserve admitted queued work
-  when full and protect queues from nested native/transport callbacks.
-- Retire strokes across world, session-start, role, stop and disconnect changes.
-- Validate draw ranges and source readiness while accepting host-relayed origins.
-- Check window slot serials and scan generations; stop replay on replacement,
-  signal playback or source retirement, and recover replaced/failed draw hooks.
-- Clean obsolete artifacts before version work and reconcile the active TODO/WORK.
-- Every version is a test version, requires extensive testing and may be unstable.
-  Rendered multiplayer, dynamic grime sources and full-save parity remain open.
+- Retain bay-window sponge strokes through refused reliable sends, preserving their order and sealed brush values until delivery or a 20-second expiry. - Bound sending and replay
+  to eight dabs per tick; preserve admitted queued work when full and protect queues from nested native/transport callbacks. - Retire strokes across world, session-start, role,
+  stop and disconnect changes. - Validate draw ranges and source readiness while accepting host-relayed origins. - Check window slot serials and scan generations; stop replay on
+  replacement, signal playback or source retirement, and recover replaced/failed draw hooks. - Clean obsolete artifacts before version work and reconcile the active TODO/WORK. -
+  Every version is a test version, requires extensive testing and may be unstable. Rendered multiplayer, dynamic grime sources and full-save parity remain open.
 
 ## 0.9.2160
 
-- Package the current combined fork and upstream source as DLL/network **b2215**
-  for VotV **0.9.0n**. All players must update together.
-- Finish the remembered 2-32-player chooser across both hosting menus and all
-  admission paths. Larger automatic lobbies still need the matching master service.
-- Implement shared shovel holes, can-portion guards, all-player sleep voting,
-  companion ATV recovery and current Ariral ship presentation/join state.
-- Improve concurrent console ownership, ordered request/history delivery,
-  input consumption and native display callback lifetime.
-- Preserve exact inventory/container identities through checked restoration,
-  refused sends, joining and proven local failed-extraction recovery.
-- Guard food final bites and MRE output provenance; fix native saw eligibility
-  lookup and protect damage/slice/hit/wall preparation from stale state.
-- Retain bleeding, ATV steering, blast-driven prop movement, material-stock and
-  guarded host wall-delivery changes since 0.9.2158.
-- Integrate upstream damage/creature intents, host ATV ownership/join tables,
-  editing/codecs and device/UI fixes while retaining fork synchronization guards.
-- Remove the main-menu tester roll and outdated promotional attribution.
-- The identical production source snapshot passed 94/94 offline groups. These
-  results are reused for the public-version change; Release, label and package
-  checks are fresh. Rendered multiplayer and remaining transaction/event cases
-  are still open. Every version is a test version, requires extensive testing
-  and may be unstable.
+- Package the current combined fork and upstream source as DLL/network **b2215** for VotV **0.9.0n**. All players must update together. - Finish the remembered 2-32-player chooser
+  across both hosting menus and all admission paths. Larger automatic lobbies still need the matching master service. - Implement shared shovel holes, can-portion guards,
+  all-player sleep voting, companion ATV recovery and current Ariral ship presentation/join state. - Improve concurrent console ownership, ordered request/history delivery, input
+  consumption and native display callback lifetime. - Preserve exact inventory/container identities through checked restoration, refused sends, joining and proven local
+  failed-extraction recovery. - Guard food final bites and MRE output provenance; fix native saw eligibility lookup and protect damage/slice/hit/wall preparation from stale state.
+  - Retain bleeding, ATV steering, blast-driven prop movement, material-stock and guarded host wall-delivery changes since 0.9.2158. - Integrate upstream damage/creature intents,
+  host ATV ownership/join tables, editing/codecs and device/UI fixes while retaining fork synchronization guards. - Remove the main-menu tester roll and outdated promotional
+  attribution. - The identical production source snapshot passed 94/94 offline groups. These results are reused for the public-version change; Release, label and package checks are
+  fresh. Rendered multiplayer and remaining transaction/event cases are still open. Every version is a test version, requires extensive testing and may be unstable.
 
 ## 0.9.2158
 
-- Restore registration headroom for shared door, switch and container script watches.
-- Preserve flashlight sampling through startup and retry remote light state until
-  its component and setters are ready; retain newer state during callbacks.
-- Retry container initial contents for the exact recipient and occupancy, including
-  unreadable initial contents and transport refusal beside other accepted peers.
-- Choose 2-32 total players when hosting. Enforce the selected limit and extend
-  acknowledgements, recipient masks, join storage and held-food addresses.
-- Adopt selected upstream fixes for vital quantization, delayed prop classes, fossil-hound
-  facing, NPC transform retries and plain-wisp landing presentation.
-- Every version is a test version, requires extensive testing and may be unstable.
-- Package 0.9.2158 uses DLL/network b2186. Rendered multiplayer acceptance remains open;
-  automatic lobbies above four also require the updated master service.
+- Restore registration headroom for shared door, switch and container script watches. - Preserve flashlight sampling through startup and retry remote light state until its
+  component and setters are ready; retain newer state during callbacks. - Retry container initial contents for the exact recipient and occupancy, including unreadable initial
+  contents and transport refusal beside other accepted peers. - Choose 2-32 total players when hosting. Enforce the selected limit and extend acknowledgements, recipient masks,
+  join storage and held-food addresses. - Adopt selected upstream fixes for vital quantization, delayed prop classes, fossil-hound facing, NPC transform retries and plain-wisp
+  landing presentation. - Every version is a test version, requires extensive testing and may be unstable. - Package 0.9.2158 uses DLL/network b2186. Rendered multiplayer
+  acceptance remains open; automatic lobbies above four also require the updated master service.
 
 
 ## 0.9.2157
 
-- Replace the ragdoll toy with the selected character using the game's native physics.
-- Fix sky launches and upward camera snapping; preserve running momentum on entry.
-- Remove the model-swap pause on entry and delayed forced turning after getting up.
-- Show the package version 0.9.2157 in the in-game menu and server browser.
-- Fix remote ragdoll visibility and missing limb updates under lag or packet loss.
-- Preserve current main improvements to shared computers, balance, event retries and container contents.
-- Restore the full mod-manager package with the original icon, models and credits.
-- DLL/network b2184 for game 0.9.0n; all players must update together.
+- Replace the ragdoll toy with the selected character using the game's native physics. - Fix sky launches and upward camera snapping; preserve running momentum on entry. - Remove
+  the model-swap pause on entry and delayed forced turning after getting up. - Show the package version 0.9.2157 in the in-game menu and server browser. - Fix remote ragdoll
+  visibility and missing limb updates under lag or packet loss. - Preserve current main improvements to shared computers, balance, event retries and container contents. - Restore
+  the full mod-manager package with the original icon, models and credits. - DLL/network b2184 for game 0.9.0n; all players must update together.
 
 ## 0.9.2156
 
-- Release development DLL **b2179 / protocol 2179**, including held water,
-  concrete, cement, sponge and trowel stock persistence before native hand
-  reconstruction, plus shared-screen startup and selected-model ragdoll fixes.
-  Offline regressions cover the reported startup and C-key setup failures;
-  host/client gameplay acceptance remains open.
-- Preserve each player's native sleep and dream path: local sleep/dream chance,
-  nightmare settings, Insomniac condition, native `wakeup()` and `createDream()`
-  selection, dream phase, scene effects and native `leaveDream()`/`awoken()`
-  return. Sleep-state replication is presentation only and does not roll, choose,
-  start or end another player's dream. Dream scene, reward and late-join behavior
-  still require installed-game and real-peer acceptance; the fresh game-pak audit
-  remains deferred.
-- Keep the event-frequency control from changing sleep, dream probability,
-  Insomniac conditions or story dates. The repeated-event setting still covers
-  only its five verified generators; the complete random-event list remains open.
-- All peers must use the exact 0.9.2156 package and matching game build.
-  Offline qualification and remaining limits are recorded in RELEASE_2156.md.
+- Release development DLL **b2179 / protocol 2179**, including held water, concrete, cement, sponge and trowel stock persistence before native hand reconstruction, plus
+  shared-screen startup and selected-model ragdoll fixes. Offline regressions cover the reported startup and C-key setup failures; host/client gameplay acceptance remains open. -
+  Preserve each player's native sleep and dream path: local sleep/dream chance, nightmare settings, Insomniac condition, native `wakeup()` and `createDream()` selection, dream
+  phase, scene effects and native `leaveDream()`/`awoken()` return. Sleep-state replication is presentation only and does not roll, choose, start or end another player's dream.
+  Dream scene, reward and late-join behavior still require installed-game and real-peer acceptance; the fresh game-pak audit remains deferred. - Keep the event-frequency control
+  from changing sleep, dream probability, Insomniac conditions or story dates. The repeated-event setting still covers only its five verified generators; the complete random-event
+  list remains open. - All peers must use the exact 0.9.2156 package and matching game build. Offline qualification and remaining limits are recorded in RELEASE_2156.md.
 
-- Prevent shared-screen repaint from restoring the stationary PC's loading page
-  after startup. Mirror the desktop subtree while native boot/power code owns
-  the outer screen. The regression reproduces the old repaint failure; actual
-  startup and repeated power cycles still need host/client acceptance.
-- Correct ragdoll setup when pressing C: stop collisions and all old physics
-  bodies before replacing the selected model, then align its warmed pelvis to
-  that model's standing/crouched entry position before restarting physics. Retain that position
-  through setup retries and refuse stale pawn/body/model continuations.
-  Offline regressions pass; the reported launch still needs host/client gameplay
-  acceptance with matching development DLLs.
-- Preserve live water/material stock in the existing held inventory record before
-  native hand reconstruction: water level, soap and alcohol; concrete amount,
-  dry state and timer; cement-bag amount; sponge wetness/soap; and trowel concrete.
-  Validate item/save/world identity, numeric group shapes and current values
-  before committing changes together, preserving native array ownership.
-  Mismatched keys and incomplete schemas remain refused. Paid repairs, resource
-  transactions and multiplayer acceptance remain open.
-- Development DLL/network identity: **b2179 / protocol 2179**. The prepared
-  **0.9.2155** archive still contains **b2178 / protocol 2178**.
+- Prevent shared-screen repaint from restoring the stationary PC's loading page after startup. Mirror the desktop subtree while native boot/power code owns the outer screen. The
+  regression reproduces the old repaint failure; actual startup and repeated power cycles still need host/client acceptance. - Correct ragdoll setup when pressing C: stop
+  collisions and all old physics bodies before replacing the selected model, then align its warmed pelvis to that model's standing/crouched entry position before restarting
+  physics. Retain that position through setup retries and refuse stale pawn/body/model continuations. Offline regressions pass; the reported launch still needs host/client gameplay
+  acceptance with matching development DLLs. - Preserve live water/material stock in the existing held inventory record before native hand reconstruction: water level, soap and
+  alcohol; concrete amount, dry state and timer; cement-bag amount; sponge wetness/soap; and trowel concrete. Validate item/save/world identity, numeric group shapes and current
+  values before committing changes together, preserving native array ownership. Mismatched keys and incomplete schemas remain refused. Paid repairs, resource transactions and
+  multiplayer acceptance remain open. - Development DLL/network identity: **b2179 / protocol 2179**. The prepared **0.9.2155** archive still contains **b2178 / protocol 2178**.
 
 ## 0.9.2155
 
-- Revalidate a prop's original object identity, world and session-start serial
-  throughout received destruction, local consumption and conversion cleanup. Stop
-  after native metadata, drive release, grab release or unpin callbacks replace the
-  actor. Reject recursive destruction of the same incarnation and snapshot destroy
-  listeners so registration during a callback cannot invalidate iteration.
-  Mark incoming destruction only after the final cancellation check, preserving
-  future genuine destruction when an attempt is aborted.
-- Add received-destroy diagnostics with role, sender, actor, class, key, element
-  ID and world to correlate the host's disappearing old-rifle report. The report
-  remains open; the new regression reproduces a receiver lifetime defect, not the
-  owner's in-game disappearance.
-- Reset location-event state when a session restarts at the same address in the
-  same world. Revalidate native player-pose reads and event gathers after teardown
-  or world replacement, and prevent recursive location-event ticks.
+- Revalidate a prop's original object identity, world and session-start serial throughout received destruction, local consumption and conversion cleanup. Stop after native
+  metadata, drive release, grab release or unpin callbacks replace the actor. Reject recursive destruction of the same incarnation and snapshot destroy listeners so registration
+  during a callback cannot invalidate iteration. Mark incoming destruction only after the final cancellation check, preserving future genuine destruction when an attempt is
+  aborted. - Add received-destroy diagnostics with role, sender, actor, class, key, element ID and world to correlate the host's disappearing old-rifle report. The report remains
+  open; the new regression reproduces a receiver lifetime defect, not the owner's in-game disappearance. - Reset location-event state when a session restarts at the same address in
+  the same world. Revalidate native player-pose reads and event gathers after teardown or world replacement, and prevent recursive location-event ticks.
 
-- Integrate all production improvements from `watchers-of-the-void-fish`, adapted
-  to the current main branch's Entity, Kavotia, event and personal-sleep controllers.
-- Deliver the host's chosen scheduled and repeatable special events, including
-  nested outcomes, with recipient-specific retries. Harden client replay against
-  recursive callbacks, disconnects, world/session replacement and queue invalidation.
-  Retry incomplete native-call preparation; consume attempted calls whose completion
-  is unknown to avoid repeating partial effects. Bound replay work per pump.
-- Retain active-event join snapshots while the native registry or transport is
-  unavailable. Copy registry membership before sending, validate sender identities
-  and recipient generations, and stop delivery after teardown or world changes.
-- Add a live, replicated event-frequency setting, default 2x and adjustable from
-  0.5x to 5x. Scale the native waits of Fossilhound, killer-wisp, sky-wisp and
-  night-egg generators on the host, plus each owner's night-eyes generator.
-  Preserve native eligibility, night/day checks, chance rolls, story dates and
-  personal dreams/Insomniac. Other repeatable generators remain outside this setting.
-- Extend Kavotia stance, aim and charge snapshots, Grayboar reliable actions/turns,
-  Ariral and wisp lifetimes, and personal-sleep handling. These routes still need
-  full effect/phase and multiplayer acceptance.
-- Add shared computer display/operator handoff and readiness recovery. Improve the
-  selected-model sleeping body, moving-bed/mattress alignment and sleep/laptop/
-  ragdoll transitions, with animation warmup, articulated-rig checks and recovery.
-- Use numbered immutable placement requests, explicit accepted/refused results,
-  retained replies and bounded backpressure. Refuse existing or reserved keys;
-  publish saved state only after acceptance. Preserve food condition and cooking
-  progress through placement. If admitted client placement exhausts readiness or
-  send retries, retain its local item for pickup and protect it from join cleanup
-  and competing spawn admission. Add request/class/key/world and cleanup diagnostics.
-- Reserve coin pickups before native credit across E, overlap and remote requests,
-  including actors without an element ID. Prevent duplicate credit after uncertain
-  native completion and retry removal of credited coins. Keep client map coins personal.
-- Carry cooking progress through world, hand, placement, profiles and saved records;
-  retry actor readiness and scope personal cooking births to their actual factory.
-  Route banana-peel and empty-cup outputs through the host.
-- Persist wet cement, wall drying and sponge soap state; replicate cosmetic sponge
-  foam without spending twice. Validate creative construction. Persist held-trowel
-  concrete changes into the matching native `hold[0]` record before reconstruction,
-  including zero stock, with exact class/key/slot/world checks. Identity mismatches
-  still defer persistence; ordinary paid wall repair remains disabled pending an
-  atomic material transaction.
-- Give the host native bucket/washer water shots, drink spills and gasoline flight,
-  collision/fire and canonical decals. Deliver source audio and replica effects with
-  exact personal-hand provenance and lifetime checks. Keep private computer-game
-  explosions local.
-- Synchronize grime/window cleaning, final wipes, quiet join snapshots and retained
-  delivery. Track explosion and salt-rocket scorch decals and their retirement.
-- Order grill lid and coal edits independently; synchronize native burning, audio
-  and held-grill state. Preserve host burn/active state against stale client records.
-- Order console submitted, periodic and clear output/history on the host. Recover
-  Madness audio/HUD playback, Maxwell phase/speed/audio and Watoy world/hand state.
-- Bind garden care, faucet and hose/detach actions to their invocation, player and
-  generation. Capture current held state before profile hashing; cancel stale
-  chunked profile sends. Strengthen held-item identity and laptop world-ready handling.
-- Reconcile message IDs, layouts, authority, dispatch and lifecycle registration
-  across both branches. Keep Kavotia=223 and placement-result=224; assign Watoy=235.
-  Placement requests/replies are 188/101 bytes. All peers require this exact DLL.
-- Expand offline qualification to 65 groups, including event replay/lifetime,
-  owner-local frequency, native night-eyes bytecode, trowel persistence and placement
-  exhaustion, received-destroy identity and location-event reentry. Verify the stable production snapshot, Release identity, loader ABI,
-  224 reliable message kinds and 18 routing fault controls.
+- Integrate all production improvements from `watchers-of-the-void-fish`, adapted to the current main branch's Entity, Kavotia, event and personal-sleep controllers. - Deliver the
+  host's chosen scheduled and repeatable special events, including nested outcomes, with recipient-specific retries. Harden client replay against recursive callbacks, disconnects,
+  world/session replacement and queue invalidation. Retry incomplete native-call preparation; consume attempted calls whose completion is unknown to avoid repeating partial
+  effects. Bound replay work per pump. - Retain active-event join snapshots while the native registry or transport is unavailable. Copy registry membership before sending, validate
+  sender identities and recipient generations, and stop delivery after teardown or world changes. - Add a live, replicated event-frequency setting, default 2x and adjustable from
+  0.5x to 5x. Scale the native waits of Fossilhound, killer-wisp, sky-wisp and night-egg generators on the host, plus each owner's night-eyes generator. Preserve native
+  eligibility, night/day checks, chance rolls, story dates and personal dreams/Insomniac. Other repeatable generators remain outside this setting. - Extend Kavotia stance, aim and
+  charge snapshots, Grayboar reliable actions/turns, Ariral and wisp lifetimes, and personal-sleep handling. These routes still need full effect/phase and multiplayer acceptance. -
+  Add shared computer display/operator handoff and readiness recovery. Improve the selected-model sleeping body, moving-bed/mattress alignment and sleep/laptop/ ragdoll
+  transitions, with animation warmup, articulated-rig checks and recovery. - Use numbered immutable placement requests, explicit accepted/refused results, retained replies and
+  bounded backpressure. Refuse existing or reserved keys; publish saved state only after acceptance. Preserve food condition and cooking progress through placement. If admitted
+  client placement exhausts readiness or send retries, retain its local item for pickup and protect it from join cleanup and competing spawn admission. Add request/class/key/world
+  and cleanup diagnostics. - Reserve coin pickups before native credit across E, overlap and remote requests, including actors without an element ID. Prevent duplicate credit after
+  uncertain native completion and retry removal of credited coins. Keep client map coins personal. - Carry cooking progress through world, hand, placement, profiles and saved
+  records; retry actor readiness and scope personal cooking births to their actual factory. Route banana-peel and empty-cup outputs through the host. - Persist wet cement, wall
+  drying and sponge soap state; replicate cosmetic sponge foam without spending twice. Validate creative construction. Persist held-trowel concrete changes into the matching native
+  `hold[0]` record before reconstruction, including zero stock, with exact class/key/slot/world checks. Identity mismatches still defer persistence; ordinary paid wall repair
+  remains disabled pending an atomic material transaction. - Give the host native bucket/washer water shots, drink spills and gasoline flight, collision/fire and canonical decals.
+  Deliver source audio and replica effects with exact personal-hand provenance and lifetime checks. Keep private computer-game explosions local. - Synchronize grime/window
+  cleaning, final wipes, quiet join snapshots and retained delivery. Track explosion and salt-rocket scorch decals and their retirement. - Order grill lid and coal edits
+  independently; synchronize native burning, audio and held-grill state. Preserve host burn/active state against stale client records. - Order console submitted, periodic and clear
+  output/history on the host. Recover Madness audio/HUD playback, Maxwell phase/speed/audio and Watoy world/hand state. - Bind garden care, faucet and hose/detach actions to their
+  invocation, player and generation. Capture current held state before profile hashing; cancel stale chunked profile sends. Strengthen held-item identity and laptop world-ready
+  handling. - Reconcile message IDs, layouts, authority, dispatch and lifecycle registration across both branches. Keep Kavotia=223 and placement-result=224; assign Watoy=235.
+  Placement requests/replies are 188/101 bytes. All peers require this exact DLL. - Expand offline qualification to 65 groups, including event replay/lifetime, owner-local
+  frequency, native night-eyes bytecode, trowel persistence and placement exhaustion, received-destroy identity and location-event reentry. Verify the stable production snapshot,
+  Release identity, loader ABI, 224 reliable message kinds and 18 routing fault controls.
 
-Package **0.9.2155** targets **Voices of the Void 0.9.0n** and contains
-**DLL b2178 / network protocol 2178**. All players must update together.
-Release qualification and scope are recorded in RELEASE_2155.md.
+Package **0.9.2155** targets **Voices of the Void 0.9.0n** and contains **DLL b2178 / network protocol 2178**. All players must update together. Release qualification and scope are
+recorded in RELEASE_2155.md.
 
-The complete eight-category event request, the full repeatable random-event list,
-and real-peer event/frequency/join/reconnect acceptance remain open. The fresh
-game-pak/Blueprint audit remains deferred. Bench58 is now confirmed as an old rifle
-disappearing after placement by the host; its cause remains unverified, and the
-client placement recovery fix does not establish a host-rifle fix. Token52's UI is
-still unidentified; no token or money balance was changed for that report.
-Paid cement repair, exact stock/key continuity in gameplay, general resource
-debit/refund, remaining grime sources and scorch provenance through full world
-reload remain unfinished. Full public-prose and fact-row CI gates retain known
-failures; 65 passing offline groups do not mean all repository CI or gameplay passes.
+The complete eight-category event request, the full repeatable random-event list, and real-peer event/frequency/join/reconnect acceptance remain open. The fresh game-pak/Blueprint
+audit remains deferred. Bench58 is now confirmed as an old rifle disappearing after placement by the host; its cause remains unverified, and the client placement recovery fix does
+not establish a host-rifle fix. Token52's UI is still unidentified; no token or money balance was changed for that report. Paid cement repair, exact stock/key continuity in
+gameplay, general resource debit/refund, remaining grime sources and scorch provenance through full world reload remain unfinished. Full public-prose and fact-row CI gates retain
+known failures; 65 passing offline groups do not mean all repository CI or gameplay passes.
 
 ## 0.9.2154
 
-- Synchronize laptop UI changes and shared file/buffer actions between players.
-- Add shared gardening actions and save synchronization, including plant state and
-  hose routing/link updates.
-- Replicate supported world and event sounds so clients hear cues that were previously
-  missing.
-- Extend placed-object save tracking and building/wall synchronization.
-- Improve possessed Grayboar action and turn synchronization while preserving host
-  authority over AI and damage.
+- Synchronize laptop UI changes and shared file/buffer actions between players. - Add shared gardening actions and save synchronization, including plant state and hose routing/link
+  updates. - Replicate supported world and event sounds so clients hear cues that were previously missing. - Extend placed-object save tracking and building/wall synchronization. -
+  Improve possessed Grayboar action and turn synchronization while preserving host authority over AI and damage.
 
-All players need the exact **0.9.2154** package for **Voices of the Void 0.9.0n**.
-This package contains DLL **b2156 / network protocol 2156**; it is incompatible with
-older protocol builds. Targeted offline checks and the Release build are recorded in
-RELEASE_2154.md. Two-player gameplay verification remains pending; the full bug list
-is still being worked through.
+All players need the exact **0.9.2154** package for **Voices of the Void 0.9.0n**. This package contains DLL **b2156 / network protocol 2156**; it is incompatible with older
+protocol builds. Targeted offline checks and the Release build are recorded in RELEASE_2154.md. Two-player gameplay verification remains pending; the full bug list is still being
+worked through.
 
 ## 0.9.2152
 
-- Improve wisp capture animation readiness on host and clients with bounded retries. Check native montage playback before treating the animation as started, and guard against recycled actors or animation instances.
-- Bind wisp capture and death to the original victim. Protect hold movement and release against disconnects, pawn replacement and nested cleanup.
-- Synchronize full NPC orientation (pitch, yaw and roll), with shortest-arc interpolation and immediate placement on first samples or teleports.
-- Extend spawn detection to the Fossil Hound and yellow-wisp spawners. Correct the possessed boar's classification so its physical body uses prop synchronization instead of the Character path.
-- Replicate host-driven possessed-boar body movement and route bites against remote players to the correct player. Protect other players' health from duplicate replica damage, including adopted save replicas after movement handoffs.
-- Feed replicated boar movement into the native client animation blueprint's velocity input for locomotion and movement-loop audio. Preserve native physics and host behavior.
+- Improve wisp capture animation readiness on host and clients with bounded retries. Check native montage playback before treating the animation as started, and guard against
+  recycled actors or animation instances. - Bind wisp capture and death to the original victim. Protect hold movement and release against disconnects, pawn replacement and nested
+  cleanup. - Synchronize full NPC orientation (pitch, yaw and roll), with shortest-arc interpolation and immediate placement on first samples or teleports. - Extend spawn detection
+  to the Fossil Hound and yellow-wisp spawners. Correct the possessed boar's classification so its physical body uses prop synchronization instead of the Character path. -
+  Replicate host-driven possessed-boar body movement and route bites against remote players to the correct player. Protect other players' health from duplicate replica damage,
+  including adopted save replicas after movement handoffs. - Feed replicated boar movement into the native client animation blueprint's velocity input for locomotion and
+  movement-loop audio. Preserve native physics and host behavior.
 
-Includes the 2151 synchronization fixes. Every player needs this exact **0.9.2152** package and **Voices of the Void 0.9.0n**. This package contains **DLL b2153 / network protocol 2153** for the expanded NPC pose format; older protocols are incompatible.
+Includes the 2151 synchronization fixes. Every player needs this exact **0.9.2152** package and **Voices of the Void 0.9.0n**. This package contains **DLL b2153 / network protocol
+2153** for the expanded NPC pose format; older protocols are incompatible.
 
-The Windows x64 Release build and nine offline regression runners are documented in RELEASE_2152.md. Two-player gameplay verification remains pending. Entity synchronization is still partial: boar attack/roar/death presentation, late-join action state and other entity-specific behavior remain unfinished.
+The Windows x64 Release build and nine offline regression runners are documented in RELEASE_2152.md. Two-player gameplay verification remains pending. Entity synchronization is
+still partial: boar attack/roar/death presentation, late-join action state and other entity-specific behavior remain unfinished.
 
 ## 0.9.2151
 
-- Keep the insomnia demon and sleep nightmares personal to the player who meets the native game conditions. Shared sleep acceleration no longer broadcasts another player's nightmare.
-- Retry remote ragdoll creation, align the physical body to the transmitted pelvis and improve get-up continuity. Use a selected model's valid native physics rig where available.
-- Allow supported NPC synchronization to start before every NPC class has loaded; recognize late-loaded subclasses on their first spawn.
-- Retry wisp capture presentation when its replicated actor arrives late. Wisp capture no longer selects the chair sitting pose.
-- Synchronize Cremator door poses and lever presentation through the host. Cache actor searches and keep replica lever updates from consuming or burning contents.
-- Replicate held physics-gun beam endpoints and gravity-gun cosmetic effects, with stale-effect cleanup.
-- Discover custom skins in nested directories. Hide failed model previews and retry loading instead of showing the previous model under a different name.
+- Keep the insomnia demon and sleep nightmares personal to the player who meets the native game conditions. Shared sleep acceleration no longer broadcasts another player's
+  nightmare. - Retry remote ragdoll creation, align the physical body to the transmitted pelvis and improve get-up continuity. Use a selected model's valid native physics rig where
+  available. - Allow supported NPC synchronization to start before every NPC class has loaded; recognize late-loaded subclasses on their first spawn. - Retry wisp capture
+  presentation when its replicated actor arrives late. Wisp capture no longer selects the chair sitting pose. - Synchronize Cremator door poses and lever presentation through the
+  host. Cache actor searches and keep replica lever updates from consuming or burning contents. - Replicate held physics-gun beam endpoints and gravity-gun cosmetic effects, with
+  stale-effect cleanup. - Discover custom skins in nested directories. Hide failed model previews and retry loading instead of showing the previous model under a different name.
 
-All players need this exact 0.9.2151 package and Voices of the Void 0.9.0n.
-Release build and focused offline checks are documented in RELEASE_2151.md.
-Two-player gameplay and the reported door FPS symptom still need in-game confirmation.
-Missing model assets and static preview mismatches remain unverified without model names.
+All players need this exact 0.9.2151 package and Voices of the Void 0.9.0n. Release build and focused offline checks are documented in RELEASE_2151.md. Two-player gameplay and the
+reported door FPS symptom still need in-game confirmation. Missing model assets and static preview mismatches remain unverified without model names.
 
 ## 0.9.2150
 
 - Renamed the fork to Watchers of the Void, authored and maintained by ElvardFIC, with a new supplied cover.
 
-- Consolidates all accumulated Plus changes since 2146, including development work through 2192, into one release numbered 2150.
-- Preserves partially used item records through container extraction and pocket capture; retries failed birth/save delivery without stale retries overwriting newer state. Adds identity and lifecycle checks before removing replicated objects.
-- Adds host-mediated anchored-hook retrieval, MRE opening, prop freeing/debris motion, collision-push handling and ordinary physics-gun prop movement. Prevents ATV carry/mount overlap and improves newly created companion ATV placement.
-- Extends water, cement, sponge and selected-hand material state; adds supported wall placement/save tracking and client melee damage. Client wall repair remains disabled without spending cement until atomic material accounting is implemented.
-- Adds shared console text/history, Madness presentation, Maxwell-family music/squeaks and supported toy audio; adds safe opening, grill state and initial crop/faucet/hose placement persistence.
-- Adds common event-schedule authority, black-disk sky presentation, Mimic lifetime handling and event-location routing. Other creature/event paths remain incomplete.
-- Improves client socket requests, laptop power animation/retry handling, ZIP-slot bitfield access, canned-food world/hand state and base light phase synchronization.
-- Retains selected-model ragdoll, chair, extinguisher, cable-release, flashlight, equipment and container fixes; corrects the ragdoll animation mode so the old animation blueprint cannot overwrite its rig. Includes supplied skin previews and reduces repeated object searches.
+- Consolidates all accumulated Plus changes since 2146, including development work through 2192, into one release numbered 2150. - Preserves partially used item records through
+  container extraction and pocket capture; retries failed birth/save delivery without stale retries overwriting newer state. Adds identity and lifecycle checks before removing
+  replicated objects. - Adds host-mediated anchored-hook retrieval, MRE opening, prop freeing/debris motion, collision-push handling and ordinary physics-gun prop movement.
+  Prevents ATV carry/mount overlap and improves newly created companion ATV placement. - Extends water, cement, sponge and selected-hand material state; adds supported wall
+  placement/save tracking and client melee damage. Client wall repair remains disabled without spending cement until atomic material accounting is implemented. - Adds shared
+  console text/history, Madness presentation, Maxwell-family music/squeaks and supported toy audio; adds safe opening, grill state and initial crop/faucet/hose placement
+  persistence. - Adds common event-schedule authority, black-disk sky presentation, Mimic lifetime handling and event-location routing. Other creature/event paths remain
+  incomplete. - Improves client socket requests, laptop power animation/retry handling, ZIP-slot bitfield access, canned-food world/hand state and base light phase synchronization.
+  - Retains selected-model ragdoll, chair, extinguisher, cable-release, flashlight, equipment and container fixes; corrects the ragdoll animation mode so the old animation
+  blueprint cannot overwrite its rig. Includes supplied skin previews and reduces repeated object searches.
 
-All players must install this exact 2150 package. Earlier development snapshots numbered 2150 are not compatible: this release consolidates later protocol changes under the owner's requested number. Previous work-note numbers are historical identifiers, not separate releases.
+All players must install this exact 2150 package. Earlier development snapshots numbered 2150 are not compatible: this release consolidates later protocol changes under the owner's
+requested number. Previous work-note numbers are historical identifiers, not separate releases.
 
-Full Release build and offline regression/package checks are recorded in RELEASE_2150.md. Two-player gameplay has not been verified. Insomnia demon, ragdoll appearance, token/UI synchronization, shared computer display, ZIP ejection and disappearing workbench items remain open reports; related code changes do not prove those symptoms resolved. Full remaining work is in agent/TODO_2150.md in the source workspace.
+Full Release build and offline regression/package checks are recorded in RELEASE_2150.md. Two-player gameplay has not been verified. Insomnia demon, ragdoll appearance, token/UI
+synchronization, shared computer display, ZIP ejection and disappearing workbench items remain open reports; related code changes do not prove those symptoms resolved. Full
+remaining work is tracked in the maintained local work list.
 
 ## 0.9.2146
 
-- Fixed malformed empty equipment slots that could make clients see "Not enough space" when equipping any equippable item, including backpacks and fanny packs. Empty slots from older player profiles are repaired when those profiles load.
-- Refresh the open shared-container item list after another player's contents update, including its selection and action buttons.
-- Fixed a missing item-state broadcast when the host registered an object before its saved charge/uses were restored. Already registered objects now send their final save data after spawning, without announcing a duplicate spawn. This addresses one cause of batteries and other consumables appearing full on the other peer.
+- Fixed malformed empty equipment slots that could make clients see "Not enough space" when equipping any equippable item, including backpacks and fanny packs. Empty slots from
+  older player profiles are repaired when those profiles load. - Refresh the open shared-container item list after another player's contents update, including its selection and
+  action buttons. - Fixed a missing item-state broadcast when the host registered an object before its saved charge/uses were restored. Already registered objects now send their
+  final save data after spawning, without announcing a duplicate spawn. This addresses one cause of batteries and other consumables appearing full on the other peer.
 
-All players need b2146. Includes b2143–2145 changes. Focused offline checks pass; two-player testing is still required, especially all inventory/hand/container routes for consumables. Container extraction into the inventory has a separate native ordering issue still under investigation.
+All players need b2146. Includes b2143–2145 changes. Focused offline checks pass; two-player testing is still required, especially all inventory/hand/container routes for
+consumables. Container extraction into the inventory has a separate native ordering issue still under investigation.
 
 ## 0.9.2145
 
-- Fixed remote hand-held fire extinguishers missing their foam and spray audio. The effect follows the other player's aim, stops when empty, and waits for the correct held-item display to exist.
-- Fixed unplugged cable ends remaining suspended after another player lets go. Release is delivered reliably, stale movement packets cannot restart a finished grab, and interrupted streams recover automatically.
-- Fixed other players' flashlights remaining on after their batteries run out. Automatic shutdown and unequipping now update the remote light, with lightweight state checks and change-only messages.
+- Fixed remote hand-held fire extinguishers missing their foam and spray audio. The effect follows the other player's aim, stops when empty, and waits for the correct held-item
+  display to exist. - Fixed unplugged cable ends remaining suspended after another player lets go. Release is delivered reliably, stale movement packets cannot restart a finished
+  grab, and interrupted streams recover automatically. - Fixed other players' flashlights remaining on after their batteries run out. Automatic shutdown and unequipping now update
+  the remote light, with lightweight state checks and change-only messages.
 
-All players need b2145. Includes the b2144 selected-model ragdoll and chair changes. Focused offline checks pass; two-player in-game verification is still required. General item-charge persistence through inventory remains under investigation.
+All players need b2145. Includes the b2144 selected-model ragdoll and chair changes. Focused offline checks pass; two-player in-game verification is still required. General
+item-charge persistence through inventory remains under investigation.
 
 ## 0.9.2144
 
-- Remote ragdolls now keep the selected Kel, Kerfur or compatible custom player model and its materials. Replaced the plushie's physics override with the complete 17-body rig, instead of the model's simplified two-body collision asset.
-- Validate the selected model's skeleton and physical bones before starting ragdoll simulation. Removed the incompatible animation setup and added object-lifetime and initialization checks. Unsupported models remain visible instead of turning into a substitute plushie.
-- Added synchronization of the chair's rotation while seated and when standing up, with periodic updates for joining players. ATV seats keep their separate synchronization.
+- Remote ragdolls now keep the selected Kel, Kerfur or compatible custom player model and its materials. Replaced the plushie's physics override with the complete 17-body rig,
+  instead of the model's simplified two-body collision asset. - Validate the selected model's skeleton and physical bones before starting ragdoll simulation. Removed the
+  incompatible animation setup and added object-lifetime and initialization checks. Unsupported models remain visible instead of turning into a substitute plushie. - Added
+  synchronization of the chair's rotation while seated and when standing up, with periodic updates for joining players. ATV seats keep their separate synchronization.
 
-All players need b2144. Focused automated checks pass; selected-model ragdolls and chair rotation still need two-player in-game testing. Limb motion is simulated locally rather than streamed bone by bone.
+All players need b2144. Focused automated checks pass; selected-model ragdolls and chair rotation still need two-player in-game testing. Limb motion is simulated locally rather
+than streamed bone by bone.
 
 ## 0.9.2143
 
-- Integrated the 2142RBE source changes while retaining the earlier food-state and client microstutter fixes.
-- Fixed inherited damage and saw events being missed by the host when a client hits a prop. Pending hits are cleared when leaving or changing worlds.
-- Added protection against duplicate client props after R + left click: one placement request per actor, no competing spawn announcement, and the host's reply binds to the original local object.
-- Synchronized the drone's rotor sound pitch with the host, including both nearby and distant audio loops.
-- Restored the compatible native ragdoll body instead of applying a player skin with an incompatible skeleton. Ragdolls currently use that fallback body rather than the selected skin.
-- Preserved food condition during inventory placement and corrected held-food join snapshots.
+- Integrated the 2142RBE source changes while retaining the earlier food-state and client microstutter fixes. - Fixed inherited damage and saw events being missed by the host when
+  a client hits a prop. Pending hits are cleared when leaving or changing worlds. - Added protection against duplicate client props after R + left click: one placement request per
+  actor, no competing spawn announcement, and the host's reply binds to the original local object. - Synchronized the drone's rotor sound pitch with the host, including both nearby
+  and distant audio loops. - Restored the compatible native ragdoll body instead of applying a player skin with an incompatible skeleton. Ragdolls currently use that fallback body
+  rather than the selected skin. - Preserved food condition during inventory placement and corrected held-food join snapshots.
 
-All players need b2143. Targeted automated checks and a Release build pass; these fixes still need testing together in game. Chair rotation and the remaining test-log items are tracked for follow-up.
+All players need b2143. Targeted automated checks and a Release build pass; these fixes still need testing together in game. Chair rotation and the remaining test-log items are
+tracked for follow-up.
 
 ## 0.9.2142
 
-- Fixed partially eaten food becoming full again after a client takes it into their hand or inventory and places it back in the world. Remaining bites, temperature and ripeness now travel with the placement.
-- Ordered food updates with item spawning and removal, and refreshed food state after birth/snapshot messages to prevent stale or missing updates.
-- Retains the client microstutter fixes from b2141, now confirmed working by the user.
+- Fixed partially eaten food becoming full again after a client takes it into their hand or inventory and places it back in the world. Remaining bites, temperature and ripeness now
+  travel with the placement. - Ordered food updates with item spawning and removal, and refreshed food state after birth/snapshot messages to prevent stale or missing updates. -
+  Retains the client microstutter fixes from b2141, now confirmed working by the user.
 
 Everyone needs b2142. Please test the food fix together in game.
 
 ## 0.9.2141
 
-- Reduced repeated client-side searches for power cords and sockets. Incoming connection updates are now grouped before applying them, avoiding repeated expensive identity reads for every connection.
-- Replaced full game-object scans in multimedia synchronization with indexed MediaPlayer lookups, and fixed temporary string allocations that were not being freed.
-- Added timing diagnostics for Plus synchronization features to help investigate remaining frame-time spikes. These fixes target likely sources of the reported client microstutters; the affected player's in-game result still needs confirmation.
+- Reduced repeated client-side searches for power cords and sockets. Incoming connection updates are now grouped before applying them, avoiding repeated expensive identity reads
+  for every connection. - Replaced full game-object scans in multimedia synchronization with indexed MediaPlayer lookups, and fixed temporary string allocations that were not being
+  freed. - Added timing diagnostics for Plus synchronization features to help investigate remaining frame-time spikes. These fixes target likely sources of the reported client
+  microstutters; the affected player's in-game result still needs confirmation.
 
 Everyone needs b2141. Includes the fire and explosion changes from previous builds.
 
 ## 0.9.2140 (test build)
 
-- Expanded explosion synchronization beyond gas cans to gameplay blasts from bombs, grenades, mines, rockets, explosive props and world events, including explosions from items held in the inventory hand.
-- Shared blasts preserve their position, rotation, scale, damage, fire and camera effects. The host controls world damage and chain reactions; each player receives their own local effects.
-- Added duplicate protection, ordered bomb removal, retries and safeguards for reconnects and changing held items.
+- Expanded explosion synchronization beyond gas cans to gameplay blasts from bombs, grenades, mines, rockets, explosive props and world events, including explosions from items held
+  in the inventory hand. - Shared blasts preserve their position, rotation, scale, damage, fire and camera effects. The host controls world damage and chain reactions; each player
+  receives their own local effects. - Added duplicate protection, ordered bomb removal, retries and safeguards for reconnects and changing held items.
 
-Everyone needs b2140. Multiplayer testing is required. Random debris trajectories and client physics impulses are not mirrored. Private laptop-game explosions and the separate spore/story-object spawners are outside this blast channel. Includes b2137/b2138 fire synchronization; fire is still not serialized into stowed inventory records.
+Everyone needs b2140. Multiplayer testing is required. Random debris trajectories and client physics impulses are not mirrored. Private laptop-game explosions and the separate
+spore/story-object spawners are outside this blast channel. Includes b2137/b2138 fire synchronization; fire is still not serialized into stowed inventory records.
 
 ## 0.9.2139 (test build)
 
-- Added shared explosions for gas cans placed in the world, including gas-can chain reactions. Client breaks are validated and executed by the host; each peer plays the native blast effects and handles its own player's exposure.
-- Kept world damage and fire spread on the host to prevent duplicated chain reactions. Added protection against duplicate blasts, stale requests, item replacement and delayed sends.
-- Fixed the ordering between a client's gas-can break request and the source item's destruction. Joining players do not replay past explosions.
+- Added shared explosions for gas cans placed in the world, including gas-can chain reactions. Client breaks are validated and executed by the host; each peer plays the native
+  blast effects and handles its own player's exposure. - Kept world damage and fire spread on the host to prevent duplicated chain reactions. Added protection against duplicate
+  blasts, stale requests, item replacement and delayed sends. - Fixed the ordering between a client's gas-can break request and the source item's destruction. Joining players do
+  not replay past explosions.
 
-Everyone needs b2139. Multiplayer testing is required. This first explosion pass covers world gas cans; other explosives and gas cans exploding while selected in the inventory hand are still pending. Random burning debris and explosion physics impulses are not replayed on clients. Includes the physical-item and selected-hand fire changes from b2137/b2138; fire is still not serialized into stowed inventory records.
+Everyone needs b2139. Multiplayer testing is required. This first explosion pass covers world gas cans; other explosives and gas cans exploding while selected in the inventory hand
+are still pending. Random burning debris and explosion physics impulses are not replayed on clients. Includes the physical-item and selected-hand fire changes from b2137/b2138;
+fire is still not serialized into stowed inventory records.
 
 ## 0.9.2138 (test build)
 
-- Added shared fire effects and native contact ignition for the item currently selected in a player's inventory hand.
-- Switching or stowing the item removes its remote fire. Delayed updates cannot ignite the next item, including a replacement of the same type.
-- Fixed hand-state send retries, stale mirror identity and fire cleanup when a player leaves or changes items. Remote held items wait for the player's position before appearing.
-- Prevented duplicate fire-spread requests from held-item copies and fixed a timing edge case that could prematurely expire a newly received fire update.
-- Preserved burning when a client releases a surviving held item back into the shared world.
+- Added shared fire effects and native contact ignition for the item currently selected in a player's inventory hand. - Switching or stowing the item removes its remote fire.
+  Delayed updates cannot ignite the next item, including a replacement of the same type. - Fixed hand-state send retries, stale mirror identity and fire cleanup when a player
+  leaves or changes items. Remote held items wait for the player's position before appearing. - Prevented duplicate fire-spread requests from held-item copies and fixed a timing
+  edge case that could prematurely expire a newly received fire update. - Preserved burning when a client releases a surviving held item back into the shared world.
 
-Everyone needs b2138. Multiplayer testing is required. Explosions are still pending. This update mirrors the currently burning hand actor; it does not store fire in inventory records or restore it when the game recreates a stowed item without fire.
+Everyone needs b2138. Multiplayer testing is required. Explosions are still pending. This update mirrors the currently burning hand actor; it does not store fire in inventory
+records or restore it when the game recreates a stowed item without fire.
 
 ## 0.9.2137 (test build)
 
-- Added shared burning and extinguishing for physical world items with a shared key, including items held with the physics grab. Uses the game's own fire effects and contact ignition.
-- The host controls item fire damage and spread; burning fuel and extinguished state are refreshed for other players and late joiners.
-- Added request validation and protection against stale updates, repeated ignition, delayed sends and session changes.
+- Added shared burning and extinguishing for physical world items with a shared key, including items held with the physics grab. Uses the game's own fire effects and contact
+  ignition. - The host controls item fire damage and spread; burning fuel and extinguished state are refreshed for other players and late joiners. - Added request validation and
+  protection against stale updates, repeated ignition, delayed sends and session changes.
 
-Everyone needs b2137. Multiplayer testing is required. This is a partial fire update: explosions and fire on items selected in the inventory hand are still pending. Fire state is not saved into stowed inventory items.
+Everyone needs b2137. Multiplayer testing is required. This is a partial fire update: explosions and fire on items selected in the inventory hand are still pending. Fire state is
+not saved into stowed inventory items.
 
 ## 0.9.2136
 
@@ -513,109 +353,134 @@ Well, I lied to you guys — I've still got tokens because payday came around. I
 
 Mattresses are shared now, so no separate sleeping spot for each of you. Deal with it.
 
-Fixed bugs here and there, and playing should be more fun now. I still haven't synchronized explosions or item states like whether something is burning, though — that's for later. Enjoy the new version. Peace, people!
+Fixed bugs here and there, and playing should be more fun now. I still haven't synchronized explosions or item states like whether something is burning, though — that's for later.
+Enjoy the new version. Peace, people!
 
 ## 0.9.2135 (test build)
 
-- Synchronized the delivery drone's "Stay indefinitely / Leave after 5 minutes" setting. Client changes are checked by the host, and waiting drones periodically refresh their shared state.
-- Added synchronization of saved text on editable paper notes and notebooks, including text saved when closing the editor. Uses the existing item save data for reconnects and inventory transfers.
-- Hardened pending console requests and note updates against failed sends, replaced objects and session changes.
+- Synchronized the delivery drone's "Stay indefinitely / Leave after 5 minutes" setting. Client changes are checked by the host, and waiting drones periodically refresh their
+  shared state. - Added synchronization of saved text on editable paper notes and notebooks, including text saved when closing the editor. Uses the existing item save data for
+  reconnects and inventory transfers. - Hardened pending console requests and note updates against failed sends, replaced objects and session changes.
 
-Everyone needs b2135. Multiplayer verification is still required. Reopen a note to see incoming edits; live collaborative editing, drawings and nametags are outside this change. Includes the b2134 garage lift changes.
+Everyone needs b2135. Multiplayer verification is still required. Reopen a note to see incoming edits; live collaborative editing, drawings and nametags are outside this change.
+Includes the b2134 garage lift changes.
 
 ## 0.9.2134 (test build)
 
-- Added garage cargo lift synchronization: clients send button requests to the host, and everyone receives the physical platform's position, direction and movement state.
-- Added smooth platform updates, late-join recovery and protection against repeated requests, stale updates, replaced objects and session teardown.
+- Added garage cargo lift synchronization: clients send button requests to the host, and everyone receives the physical platform's position, direction and movement state. - Added
+  smooth platform updates, late-join recovery and protection against repeated requests, stale updates, replaced objects and session teardown.
 
 Everyone needs b2134. Multiplayer verification is still required, especially riding the lift together, carrying objects and obstruction handling.
 
 ## 0.9.2133 (test build)
 
-- Added synchronization of the coordinate triangle's scan progress, including its outer lines, inner lines and circle. Observers receive the display state without starting another signal calculation.
-- Fixed coordinate snapshots being rejected when joining an idle or client-operated desk, and retained updates until the interface is ready.
-- Hardened interface reconstruction, world changes, player departure and stale updates. A failed coordinate repaint now refuses a ping verdict instead of using old coordinates.
+- Added synchronization of the coordinate triangle's scan progress, including its outer lines, inner lines and circle. Observers receive the display state without starting another
+  signal calculation. - Fixed coordinate snapshots being rejected when joining an idle or client-operated desk, and retained updates until the interface is ready. - Hardened
+  interface reconstruction, world changes, player departure and stale updates. A failed coordinate repaint now refuses a ping verdict instead of using old coordinates.
 
-Everyone needs b2133. Multiplayer verification is still required; see the combined test checklist. Garage lift, shared physical fire/explosions, writable item text, basement walls and the remaining ATV/drone tasks are still pending.
+Everyone needs b2133. Multiplayer verification is still required; see the combined test checklist. Garage lift, shared physical fire/explosions, writable item text, basement walls
+and the remaining ATV/drone tasks are still pending.
 
 ## 0.9.2132 (test build)
 
-- Fixed a missing network identity when unfolding floor mattresses and sleeping bags, which could make them disappear for other players. Fresh floor beds now receive their native save key before synchronization.
-- Protected the host's pending spawn queue against deleted or replaced objects, world changes and nested game callbacks.
+- Fixed a missing network identity when unfolding floor mattresses and sleeping bags, which could make them disappear for other players. Fresh floor beds now receive their native
+  save key before synchronization. - Protected the host's pending spawn queue against deleted or replaced objects, world changes and nested game callbacks.
 
-Everyone needs b2132. Multiplayer testing is still required. The coordinate triangle has been investigated; its presentation fix and the other pending gameplay tasks are not included yet.
+Everyone needs b2132. Multiplayer testing is still required. The coordinate triangle has been investigated; its presentation fix and the other pending gameplay tasks are not
+included yet.
 
 ## 0.9.2131 (test build)
 
-- Reviving now extinguishes the player's remaining fire state, so its delayed pain sounds and camera movement can stop normally.
-- Prevented remote player models from running local-only fire and death logic. This addresses a path that can hide the model after an explosion and affect the observer's camera; the existing remote ragdoll display remains in use.
+- Reviving now extinguishes the player's remaining fire state, so its delayed pain sounds and camera movement can stop normally. - Prevented remote player models from running
+  local-only fire and death logic. This addresses a path that can hide the model after an explosion and affect the observer's camera; the existing remote ragdoll display remains in
+  use.
 
-Everyone needs b2131. These changes require multiplayer testing. Floor mattresses, the garage lift, shared fire/explosions, the coordinate triangle, writable notes and basement walls remain pending.
+Everyone needs b2131. These changes require multiplayer testing. Floor mattresses, the garage lift, shared fire/explosions, the coordinate triangle, writable notes and basement
+walls remain pending.
 
 ## 0.9.2130 (test build)
 
-- Fixed item save-data queue errors during nested game callbacks, including repeated application and newer records being removed by an older update.
-- Fixed pending item spawns inheriting the identity of a deleted object, and protected queued births during callbacks and world changes.
-- Hardened record resend handling when a player leaves or the world disconnects.
+- Fixed item save-data queue errors during nested game callbacks, including repeated application and newer records being removed by an older update. - Fixed pending item spawns
+  inheriting the identity of a deleted object, and protected queued births during callbacks and world changes. - Hardened record resend handling when a player leaves or the world
+  disconnects.
 
 Everyone needs b2130. Multiplayer testing is still required; these fixes do not establish that every reported item-sync issue is resolved.
 
 ## 0.9.2129 (test build)
 
-- World downloads now compress the save before sending it and verify the restored data before loading. Two tested saves shrank by about 28 times; actual download time still depends on the connection.
-- Added the separate synchronization paths for placing a mattress on a bunk bed and rolling it back up.
-- Strengthened transfer-header/chunk validation and fixed concurrent CRC table initialization.
-- Follow-up audit: reject incomplete save reads and failed final writes, handle receive-buffer allocation failures, and refuse an unavailable save directory.
+- World downloads now compress the save before sending it and verify the restored data before loading. Two tested saves shrank by about 28 times; actual download time still depends
+  on the connection. - Added the separate synchronization paths for placing a mattress on a bunk bed and rolling it back up. - Strengthened transfer-header/chunk validation and
+  fixed concurrent CRC table initialization. - Follow-up audit: reject incomplete save reads and failed final writes, handle receive-buffer allocation failures, and refuse an
+  unavailable save directory.
 
 Everyone needs b2129. Offline checks passed; the new multiplayer behavior still needs testing.
 
 ## 0.9.2128 (test build)
 
-- Adjusted world-transfer pacing so normal network latency no longer prevents the download speed from increasing. Congestion limits remain in place.
-- Remote light-switch clicks now fade with distance instead of playing across the map.
-- Workbench items crafted by a client now enter the existing item synchronization path immediately, without needing to be picked up first.
-- Client mattress and sleeping-bag unfolding/folding now use the same item synchronization path.
-- World-created and container-extracted items take priority over device-ejection rules, avoiding inappropriate physics sleep or device-denial handling for modules and drives.
+- Adjusted world-transfer pacing so normal network latency no longer prevents the download speed from increasing. Congestion limits remain in place. - Remote light-switch clicks
+  now fade with distance instead of playing across the map. - Workbench items crafted by a client now enter the existing item synchronization path immediately, without needing to
+  be picked up first. - Client mattress and sleeping-bag unfolding/folding now use the same item synchronization path. - World-created and container-extracted items take priority
+  over device-ejection rules, avoiding inappropriate physics sleep or device-denial handling for modules and drives.
 
 Use b2128 on every peer. These fixes passed offline checks; multiplayer verification is still needed.
 
 ## 0.9.2127
 
-So, boxes don't lag anymore, music now syncs as long as you all have the **SAME SONGS** in your "radio" folder, and the module compartment covers open for everyone now, yay! The transformer repair cover opens for both players too. Have fun, friends! I'm off to play with my friends too.
+So, boxes don't lag anymore, music now syncs as long as you all have the **SAME SONGS** in your "radio" folder, and the module compartment covers open for everyone now, yay! The
+transformer repair cover opens for both players too. Have fun, friends! I'm off to play with my friends too.
 
 ## 0.9.2126 (test build)
 
 Everyone in one session needs b2126. Includes b2125's shared local radio music.
 
-**Gravity gun corrections.** Live local gun holds now take priority over old incoming held poses, releases and spawn reconciliation. Continuous force observation no longer evaluates the native force parameters twice; one-shot impulses still wake parked bodies before the shot. Fixed an out-of-bounds read in the native hook when the physics query returns a one-byte boolean. These address concrete defects found while investigating the reported freeze and one-way motion; reproducing those symptoms with two players is still required before calling them resolved.
+**Gravity gun corrections.** Live local gun holds now take priority over old incoming held poses, releases and spawn reconciliation. Continuous force observation no longer
+evaluates the native force parameters twice; one-shot impulses still wake parked bodies before the shot. Fixed an out-of-bounds read in the native hook when the physics query
+returns a one-byte boolean. These address concrete defects found while investigating the reported freeze and one-way motion; reproducing those symptoms with two players is still
+required before calling them resolved.
 
-**Computer covers.** A client can bring a hand-held cover to its socket: the client releases its physics handle and requests insertion of that specific part. The host checks the socket, distance and ownership, closes the old held stream and consumes the cover once. Short overlap/animation races retry; another player's held cover cannot be consumed by the request. Added the missing native top-right cover return path. Remote cover closure follows the shared state; the host runs the native magnet animation where available.
+**Computer covers.** A client can bring a hand-held cover to its socket: the client releases its physics handle and requests insertion of that specific part. The host checks the
+socket, distance and ownership, closes the old held stream and consumes the cover once. Short overlap/animation races retry; another player's held cover cannot be consumed by the
+request. Added the missing native top-right cover return path. Remote cover closure follows the shared state; the host runs the native magnet animation where available.
 
-**Transformer repair door.** The yellow button's opening/closing is now shared through the existing power-grid channel. Client prediction, busy-animation retries, duplicate protection and late-join state are included. Failed state sends and join replies stay pending.
+**Transformer repair door.** The yellow button's opening/closing is now shared through the existing power-grid channel. Client prediction, busy-animation retries, duplicate
+protection and late-join state are included. Failed state sends and join replies stay pending.
 
 Production-controller tests, native Blueprint checks and a guard-page test passed, with deliberate fault controls. Full multiplayer gameplay verification remains pending.
 
 ## 0.9.2125 (test build)
 
-Everyone in one session needs b2125. Added shared local-file music for the radio's track-selection interface: any player can select a song, play, pause or skip it. Playback mode and approximate position follow the host. Everyone supplies the same filenames and subfolders in their own `radio` folder; installation paths may differ. Music files are not transferred. Cyrillic filenames are supported.
+Everyone in one session needs b2125. Added shared local-file music for the radio's track-selection interface: any player can select a song, play, pause or skip it. Playback mode
+and approximate position follow the host. Everyone supplies the same filenames and subfolders in their own `radio` folder; installation paths may differ. Music files are not
+transferred. Cyrillic filenames are supported.
 
-Requests retry during loading, duplicate clicks are fenced, and stale host updates cannot erase a pending local command. Late joiners receive the current track and pause state. Local radio players are separated from the generic TV/media channel. Volume remains local. Internet URLs retain their older behavior; the ATV and legacy random-music radio are outside this change.
+Requests retry during loading, duplicate clicks are fenced, and stale host updates cannot erase a pending local command. Late joiners receive the current track and pause state.
+Local radio players are separated from the generic TV/media channel. Volume remains local. Internet URLs retain their older behavior; the ATV and legacy random-music radio are
+outside this change.
 
-Offline controller, cooked Blueprint and regression checks passed. Two-player radio testing is still required, especially track endings and multiple radios. The latest gameplay report confirms boxes and coordinate tower minigames work, and compartment covers open. Gravity-gun freezes/one-way motion, client cover return and the transformer's yellow-button door remain pending; this build does not claim those fixes.
+Offline controller, cooked Blueprint and regression checks passed. Two-player radio testing is still required, especially track endings and multiple radios. The latest gameplay
+report confirms boxes and coordinate tower minigames work, and compartment covers open. Gravity-gun freezes/one-way motion, client cover return and the transformer's yellow-button
+door remain pending; this build does not claim those fixes.
 
 ## 0.9.2124 (test build)
 
-Everyone in one session needs b2124. The previous gameplay test confirmed outlet connections, coffee maker operation, microwave startup and PVP. This build addresses the reported failures; its multiplayer gameplay test is still pending.
+Everyone in one session needs b2124. The previous gameplay test confirmed outlet connections, coffee maker operation, microwave startup and PVP. This build addresses the reported
+failures; its multiplayer gameplay test is still pending.
 
-**Gravity gun.** Added the native attraction and impulse paths to the existing continuous held/release/coast stream, including shots without a held target. A brief shot survives a slow network tick; parked network props can be grabbed again. Switching targets releases the previous prop.
+**Gravity gun.** Added the native attraction and impulse paths to the existing continuous held/release/coast stream, including shots without a held target. A brief shot survives a
+slow network tick; parked network props can be grabbed again. Switching targets releases the previous prop.
 
-**Microwave and mini-oven lids.** The kitchen channel now owns child lids consistently. Clients send actual mouse movement to the host, which runs the native hinge torque and sends the door's relative pose. This addresses the sound/light-only opening, conflicting lid streams and collision with a door that remained closed remotely. Automatic client closes do not echo back, and simultaneous drags have one owner. Engine physics and FPS still need in-game verification.
+**Microwave and mini-oven lids.** The kitchen channel now owns child lids consistently. Clients send actual mouse movement to the host, which runs the native hinge torque and sends
+the door's relative pose. This addresses the sound/light-only opening, conflicting lid streams and collision with a door that remained closed remotely. Automatic client closes do
+not echo back, and simultaneous drags have one owner. Engine physics and FPS still need in-game verification.
 
 **Standing on boxes.** Remote player bodies retain query collision for traces while no longer physically pushing boxes through their delayed walking/jumping pose.
 
-**Main computer covers.** Added shared screw and cover state for the four module compartments. Removal and return run on the host. A cover removed by a client drops beside that player for pickup; it is not automatically placed in their hand. Repeated requests cannot spawn extra covers, and a held cover is not consumed before release.
+**Main computer covers.** Added shared screw and cover state for the four module compartments. Removal and return run on the host. A cover removed by a client drops beside that
+player for pickup; it is not automatically placed in their hand. Repeated requests cannot spawn extra covers, and a held cover is not consumed before release.
 
-**Radio tower.** Added the separate radio tower's six fuses, 2x2 through 5x5 light puzzle, reset/confirm levers and repair state. Transformer puzzles and the three coordinate radar towers already had synchronization in upstream MultiVoid and keep their existing systems. The new channel includes late-join state, ordered retries and refunds for conflicting fuse inserts.
+**Radio tower.** Added the separate radio tower's six fuses, 2x2 through 5x5 light puzzle, reset/confirm levers and repair state. Transformer puzzles and the three coordinate radar
+towers already had synchronization in upstream MultiVoid and keep their existing systems. The new channel includes late-join state, ordered retries and refunds for conflicting fuse
+inserts.
 
 Several code-review passes, cooked Blueprint checks and offline regression tests passed, including ten deliberate fault controls. These checks do not replace a two-player test.
 
@@ -623,9 +488,13 @@ Several code-review passes, cooked Blueprint checks and offline regression tests
 
 Everyone in one session needs b2123. Includes b2121/b2122; multiplayer gameplay verification is still pending.
 
-**Cord fixes.** A client connection request no longer runs local power callbacks or turns into an unintended disconnect when the local socket appears occupied. Switching sockets guards the actual delayed Blueprint reset instead of relying on a wall-clock delay. The state cache keeps one occupant per socket and expires obsolete rows. Save reconstruction remains allowed; user disconnects are recognized without a pre/post nesting counter. Component/socket names compare with Unreal's case-insensitive name semantics.
+**Cord fixes.** A client connection request no longer runs local power callbacks or turns into an unintended disconnect when the local socket appears occupied. Switching sockets
+guards the actual delayed Blueprint reset instead of relying on a wall-clock delay. The state cache keeps one occupant per socket and expires obsolete rows. Save reconstruction
+remains allowed; user disconnects are recognized without a pre/post nesting counter. Component/socket names compare with Unreal's case-insensitive name semantics.
 
-**Physics fixes.** Live local hand/gravity-gun holds now take priority over support/coast streams, with physics restored for the local grab. Old or duplicate end messages and obsolete pending ends cannot rewind the prop. A quick grab/drop opens a new generation. Recycled actor slots are checked by serial on the receiver too. Stationary heartbeats no longer prevent a coast from ending at low frame rates. Movement-base field lookup accepts different FName display casing.
+**Physics fixes.** Live local hand/gravity-gun holds now take priority over support/coast streams, with physics restored for the local grab. Old or duplicate end messages and
+obsolete pending ends cannot rewind the prop. A quick grab/drop opens a new generation. Recycled actor slots are checked by serial on the receiver too. Stationary heartbeats no
+longer prevent a coast from ending at low frame rates. Movement-base field lookup accepts different FName display casing.
 
 Offline regression tests exercise the production host and receiver, including deliberately broken variants. This does not replace the combined two-player test.
 
@@ -633,11 +502,16 @@ Offline regression tests exercise the production host and receiver, including de
 
 Everyone in one session needs b2122. This includes the b2121 kitchen/gravity-gun changes. Two-player gameplay verification is still pending.
 
-**Cords and outlets.** Added host-authored plug/unplug state, connected socket power, client requests and late-join replay. Child plugs/sockets use their parent and component name; level sockets use their placed identity. The native connection verbs update the plug attachment, cable constraint and appliance callbacks. The host checks reach, cable length and socket occupancy. Switching sockets waits for the game's delayed detach to finish. The temporary hand-drag animation remains local.
+**Cords and outlets.** Added host-authored plug/unplug state, connected socket power, client requests and late-join replay. Child plugs/sockets use their parent and component name;
+level sockets use their placed identity. The native connection verbs update the plug attachment, cable constraint and appliance callbacks. The host checks reach, cable length and
+socket occupancy. Switching sockets waits for the game's delayed detach to finish. The temporary hand-drag animation remains local.
 
-**Standing on props.** A player's current physics prop underfoot now keeps the existing host physics stream alive, including a client stepping on a box that nobody grabbed. Leaving, disconnecting or taking the object into a hand ends this support lease. ATV, static/frozen props, trash and held items are excluded. This does not add general synchronization for every loose physics object in the map.
+**Standing on props.** A player's current physics prop underfoot now keeps the existing host physics stream alive, including a client stepping on a box that nobody grabbed.
+Leaving, disconnecting or taking the object into a hand ends this support lease. ATV, static/frozen props, trash and held items are excluded. This does not add general
+synchronization for every loose physics object in the map.
 
-**Physics stream fixes.** Stationary driven props periodically resend their pose, so a lost packet or late join can recover. A failed reliable end send is retried. A recycled actor address cannot reuse another object's drive entry.
+**Physics stream fixes.** Stationary driven props periodically resend their pose, so a lost packet or late join can recover. A failed reliable end send is retried. A recycled actor
+address cannot reuse another object's drive entry.
 
 ## 0.9.2121 (test build)
 
@@ -645,29 +519,46 @@ Everyone in one session needs b2121. Compilation and wire-routing checks passed;
 
 **Gravity gun.** The held-prop stream now reads the gun component's actual `obj` field. Beam-held props use the existing pose/release/coast path, with the ATV exclusion preserved.
 
-**Kitchen machines.** Added host-authored state and client button intents for the microwave, mini-oven, coffee maker and coffee vending machine. Microwave timer/run state, oven mode/heat, cup/coffee state and vending busy state have dedicated fields. Cooking, ingredient consumption, cup creation and credit charges run on the host; clients paint the result. Unkeyed child lids use the parent's identity; keyed lids keep ContainerState. Late join and actor-loading retries are included.
+**Kitchen machines.** Added host-authored state and client button intents for the microwave, mini-oven, coffee maker and coffee vending machine. Microwave timer/run state, oven
+mode/heat, cup/coffee state and vending busy state have dedicated fields. Cooking, ingredient consumption, cup creation and credit charges run on the host; clients paint the
+result. Unkeyed child lids use the parent's identity; keyed lids keep ContainerState. Late join and actor-loading retries are included.
 
-Power comes from the host's cord state. Outlet/plug synchronization remains a separate unfinished task. Confirm ingredient insertion, lids, completion, one cup/one charge, gravity-gun throws and late join with two players before calling this build verified.
+Power comes from the host's cord state. Outlet/plug synchronization remains a separate unfinished task. Confirm ingredient insertion, lids, completion, one cup/one charge,
+gravity-gun throws and late join with two players before calling this build verified.
 
 ## 0.9.2120
 
 Everyone in one session needs this build. The menu reads Multivoid+ 0.9.0n b2120. An older build cannot join.
 
-**Base.** F1, Player, Debug: "Teleport to base". It presses the game's own key, numpad decimal (the "."), the action named debugtp. Numpad 0 is the cheat menu, not this. Only you move.
+**Base.** F1, Player, Debug: "Teleport to base". It presses the game's own key, numpad decimal (the "."), the action named debugtp. Numpad 0 is the cheat menu, not this. Only you
+move.
 
-**PVP.** After a hit from another player you cannot take another for 3 seconds, including while you are on the ground. One swing cannot be spammed into a kill. An explosion is not part of this pause.
+**PVP.** After a hit from another player you cannot take another for 3 seconds, including while you are on the ground. One swing cannot be spammed into a kill. An explosion is not
+part of this pause.
 
-**Events.** A world event that one player starts, including the vent break in the control room, now runs on every machine. The others are moved into that room first, then the event runs. Walking into the same spot after that does not start it a second time. A ship or a pyramid still brings people without starting a second copy. A personal scare still stays on the player who walked into it.
+**Events.** A world event that one player starts, including the vent break in the control room, now runs on every machine. The others are moved into that room first, then the event
+runs. Walking into the same spot after that does not start it a second time. A ship or a pyramid still brings people without starting a second copy. A personal scare still stays on
+the player who walked into it.
 
-**PVP.** The nickname flag was already shared. A swing hits a player standing in front of where you look, within about three metres. Both of you still need PVP on. An explosion still hits everyone.
+**PVP.** The nickname flag was already shared. A swing hits a player standing in front of where you look, within about three metres. Both of you still need PVP on. An explosion
+still hits everyone.
 
-**Scooters.** A save has one quadbike. The host places a second one beside it, and both are visible to everyone, so two people can drive. The driver sends where the scooter is. The others follow that. A parked scooter is sent by the host. Gas, a repair tool, a sponge, and a tyre reach the other machines, but only as an improvement, and only from someone standing at the scooter. Sitting on it plays the Omega sit pose. The model rises one and a half heads and moves three heads forward. The player stays where the game put them, so standing up does not start inside the floor. A Kerfur Omega on a scooter is shown sitting, not standing on the seat.
+**Scooters.** A save has one quadbike. The host places a second one beside it, and both are visible to everyone, so two people can drive. The driver sends where the scooter is. The
+others follow that. A parked scooter is sent by the host. Gas, a repair tool, a sponge, and a tyre reach the other machines, but only as an improvement, and only from someone
+standing at the scooter. Sitting on it plays the Omega sit pose. The model rises one and a half heads and moves three heads forward. The player stays where the game put them, so
+standing up does not start inside the floor. A Kerfur Omega on a scooter is shown sitting, not standing on the seat.
 
-**Chairs.** The same sit pose. The model drops by half the kerfur's height, then another two and a half heads, and moves four heads forward. The other players see you on that seat. Standing up still starts from the capsule.
+**Chairs.** The same sit pose. The model drops by half the kerfur's height, then another two and a half heads, and moves four heads forward. The other players see you on that seat.
+Standing up still starts from the capsule.
 
-**Models.** F1, Cosmetics, Skins. The folder is `LogicMods\multimodel`. A pak left in `%LOCALAPPDATA%\MultiModel\Models` is copied there on the next start. Only the model name is sent. A player who does not have that file sees Kel. On the same page, "Always see playermodel" (on by default) keeps your own body visible when you look down or use spectator, including during an event. Only your screen changes. A faint or a death still hides the standing body, because the ragdoll is the body then.
+**Models.** F1, Cosmetics, Skins. The folder is `LogicMods\multimodel`. A pak left in `%LOCALAPPDATA%\MultiModel\Models` is copied there on the next start. Only the model name is
+sent. A player who does not have that file sees Kel. On the same page, "Always see playermodel" (on by default) keeps your own body visible when you look down or use spectator,
+including during an event. Only your screen changes. A faint or a death still hides the standing body, because the ragdoll is the body then.
 
-**Events.** The host runs them. A client does not roll its own list, so the same event does not start twice. If the event only makes sense in one place (the locked complex, with the garage as the way out, the obelisk, the pyramid, the wisps, and a few others of that kind), everyone is brought to the player who triggered it. A personal scare stays on that player. Opening the fridge, and a ship that only flies over the map, do not pull anyone. Creatures and ships the event spawns show up for clients too. The F1 Events tab is the catalog, not a "playing now" line.
+**Events.** The host runs them. A client does not roll its own list, so the same event does not start twice. If the event only makes sense in one place (the locked complex, with
+the garage as the way out, the obelisk, the pyramid, the wisps, and a few others of that kind), everyone is brought to the player who triggered it. A personal scare stays on that
+player. Opening the fridge, and a ship that only flies over the map, do not pull anyone. Creatures and ships the event spawns show up for clients too. The F1 Events tab is the
+catalog, not a "playing now" line.
 
 The scooter's map screen, the drone's bag, and the desk's rear panels still do not sync.
 
@@ -675,4 +566,6 @@ The scooter's map screen, the drone's bag, and the desk's rear panels still do n
 
 **AquariumFishTeam**
 
-HELLO FELLOW astronomicans with thousands of hour of studying astronomics. so straight to the point, we synced MANY STUFF lie computer and laptops, gardening, FKAHH BOARS, gardening again, sounds from different events that wasnt working properly before, building and stuff connected to it. stuff goes well and we have not finished the whole list of bugs yet... BUT WE ARE ON IT, tuned guys, have fun
+HELLO FELLOW astronomicans with thousands of hour of studying astronomics. so straight to the point, we synced MANY STUFF lie computer and laptops, gardening, FKAHH BOARS,
+gardening again, sounds from different events that wasnt working properly before, building and stuff connected to it. stuff goes well and we have not finished the whole list of
+bugs yet... BUT WE ARE ON IT, tuned guys, have fun

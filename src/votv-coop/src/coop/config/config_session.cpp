@@ -4,12 +4,12 @@
 //
 // Two divergences from Source, whose replicated cvars this layer answers to. (1) A client may still
 // set its own hosting default: Source takes a change of a replicated cvar only from the server's
-// console (iconvar.h:60); here a client's SetValue of a server-scope row writes the install's own
+// console (reference/source-sdk-2013/src/public/tier1/iconvar.h:60); here a client's SetValue of a server-scope row writes the install's own
 // value and never the session's. (2) Leaving restores the install's own value, not the default:
 // the SDK sets a client's saved replicated cvars back to their DEFAULT at a level's end
-// (gamerules.cpp:659-663, 914-927; tf_training_ui.cpp:2032), while this layer is emptied and the
+// (reference/source-sdk-2013/src/game/shared/gamerules.cpp:659-663, 914-927; reference/source-sdk-2013/src/game/client/tf/vgui/tf_training_ui.cpp:2032), while this layer is emptied and the
 // install's value answers again, as MTA's client keeps the server's synced settings apart from its
-// own config (CPacketHandler.cpp:5491-5541, Packet_SyncSettings).
+// own config (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:5491-5541, Packet_SyncSettings).
 
 #include "coop/config/config.h"
 

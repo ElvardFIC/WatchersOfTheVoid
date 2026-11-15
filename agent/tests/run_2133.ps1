@@ -7,16 +7,16 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/desk_stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/desk_stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   $rc=$LASTEXITCODE
   if($negative){if($rc -ne 1){throw "Negative assertion expected1, got $rc for $name"};Write-Host "PASS negative control: $name"}
   elseif($rc -ne 0){throw "Test failed: $name"}
  }
- Compile-AndRun 'controller' 'agent/tests/desk_visual_2133_test.cpp' $false
- Compile-AndRun 'wrapper' 'agent/tests/coords_wrapper_2133_test.cpp' $false
- & $Python agent/tests/blueprint_coords_2133_test.py
+ Compile-AndRun 'controller' (Join-Path $PSScriptRoot 'desk_visual_2133_test.cpp') $false
+ Compile-AndRun 'wrapper' (Join-Path $PSScriptRoot 'coords_wrapper_2133_test.cpp') $false
+ & $Python "$PSScriptRoot/blueprint_coords_2133_test.py"
  if($LASTEXITCODE -ne 0){throw 'Native evidence/integration failed'}
  $cases=@(
  @{Name='authority';Suite='desk_visual';File='coop/interactables/desk_visual_sync.cpp';Before='if (holder!=sender && !tail) return;';After=''},

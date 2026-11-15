@@ -1,7 +1,7 @@
 //! TLS termination for the coop master + signaling binaries (Tier B).
 //!
 //! RULE 3: VPS infra, never ships in the mod. Design of record:
-//! `research/findings/network/votv-tls-tier-b-c-DESIGN-2026-07-20.md`.
+//! the reviewed network transport threat model.
 //!
 //! Why we terminate TLS *inside* our own binaries instead of behind a reverse
 //! proxy: :443 on the coop box belongs to a different tenant (measured

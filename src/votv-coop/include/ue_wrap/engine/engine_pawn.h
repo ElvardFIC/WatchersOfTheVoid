@@ -29,9 +29,15 @@ FVector GetCameraLocation();
 
 FRotator GetCameraRotation();
 
-// APawn::SpawnDefaultController: an AIController possesses the pawn, so its AnimBP poses, with no
-// viewport, input or camera. Game thread.
-bool SpawnDefaultController(void* pawn);
+// What MakePawnInert did: Made (the pawn was written), NotAPawn (null or a non-pawn actor; nothing written),
+// Unresolved (the Pawn class could not be looked up, so no actor could be judged; nothing written).
+enum class PawnInertResult { Made, NotAPawn, Unresolved };
+
+// A pawn begun by a deferred spawn and not yet finished is made inert: AutoPossessPlayer, AutoPossessAI and
+// AutoReceiveInput zeroed, bBlockInput set, AIControllerClass nulled, so its BeginPlay takes no controller of
+// either kind and no local input, and nothing that asks the class for a default controller gets one. It looks up
+// the Pawn class and nothing else. Must run between the begin and the finish of the spawn. Game thread.
+PawnInertResult MakePawnInert(void* deferredPawn);
 
 // AActor::K2_DestroyActor. Game thread.
 bool DestroyActor(void* actor);

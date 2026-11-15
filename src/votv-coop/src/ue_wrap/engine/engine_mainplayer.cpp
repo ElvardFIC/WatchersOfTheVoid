@@ -238,6 +238,14 @@ bool CallMainPlayerUseSelectedAction(void* mainPlayer) {
     return f.valid() && Call(mainPlayer, f);
 }
 
+bool CallMainPlayerSetActionIndex(void* mainPlayer, int32_t index) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(mainPlayer), L"setActionIndex");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    return f.valid() && f.Set<int32_t>(L"actionIndex", index) && Call(mainPlayer, f);
+}
+
 bool MainPlayerHasSelectedAction(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(mainPlayer), L"selectedAction");
@@ -330,6 +338,14 @@ bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out) {
             }
         }
     }
+    return true;
+}
+
+bool WriteMainPlayerHoldingActor(void* mainPlayer, void* actor) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    const int32_t holdingOff = ue_wrap::reflected_offset::MainPlayer_holding_actor();
+    if (holdingOff < 0) return false;
+    *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(mainPlayer) + holdingOff) = actor;
     return true;
 }
 

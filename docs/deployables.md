@@ -46,6 +46,24 @@ the hook lane did not have in front of it:
   its head still rides what it bit. Two players hooking one prop is then two host constraints on
   one host body, which is what single-player physics would do (`coop/items/hook_constraint`).
 
+An anchored hook is taken back with the use key, as the game has it: the player's look takes one of its two spheres,
+which the game leaves query-only, the pop-up offers the hook's one action, and `hook_C::actionOptionIndex` drops a hook
+item at the player, puts it in the inventory and destroys the hook. A client's copy of an anchored hook -- the mirror
+`HookAnchored` built, or the hook a joiner's save loaded -- keeps that collision, so the look takes it (the mirror's
+was switched off before, and no client got the pop-up), but its pickup is refused there and asked of the host by the
+hook's save key (`HookRetrieve`). The host takes its hook away without a drop when either end is within 200 uu of the
+sender's puppet, with the authority's pads, and tells every client the hook is gone, naming the taker; the taker's
+copy then runs the game's own pickup, so the item lands in that player's inventory, or at its feet when the inventory
+is full, and every other copy goes. The host player's own pickup runs the game's and is told the same way: a copy a
+joiner's save loaded has no other word that the hook went. A refused request is answered to its sender alone and the
+copy stays; a client asks once per hook until the host's word for it comes, then may press again
+(`coop/items/hook_retrieve`). A joiner's save is a photograph and the word is not sent to a slot before its world-ready,
+so the host keeps the keys of the anchored hooks standing when each save is cut and, in that slot's connect replay, names
+gone to it alone each one it no longer holds, as the join's removes do for props (`join_window_baseline`). `[V]` on the rig (`coop/dev/hook_retrieve_drill`): a client takes
+a mirror and a save-loaded copy, and the host takes its hook while the client holds each kind of copy; the reds fail,
+`nocollision` with no pose of the aim fan putting the client's look on its copy, the reported symptom, and
+`clientruns` in the press's own tick, with nothing asked of the host while the copy and an item are already there.
+
 ## Who owns what
 
 Brick-wall construction runs on the host through `coop/world/wall_build_sync`.
@@ -63,6 +81,7 @@ unverified. Wall save-state publication uses `coop/world/placed_save_sync`.
 | a deployed hook, while its thrower still holds it | that peer | keyed by (slot, sequence); the others render a parked mirror |
 | a deployed hook once both ends are anchored | the host | the thrower hands over the hook's own save record; it is a save actor from then on |
 | a hook's tie, the physics constraint | the host | a client breaks every tie a hook builds on it; the host builds a client's tie on its mirror of that hook |
+| an anchored hook taken back with the use key | the host | a client's pickup is asked of the host by the hook's save key; the taker's copy runs the game's pickup once the host has taken its hook away |
 
 ## Wire messages
 
@@ -72,6 +91,7 @@ unverified. Wall save-state publication uses `coop/world/placed_save_sync`.
 | `HookDestroy` | the owner to all, or the host for a leaver | that hook is gone |
 | `HookAnchorCommit` | a client to the host | the anchored hook's own save record, chunked |
 | `HookAnchored` | the host to all | an anchored hook exists, as the same record |
+| `HookRetrieve` | a client to the host (op 0); the host to all (op 1) | an anchored hook's save key: a client's pickup of it; or that it is gone, and whose pickup it was |
 
 ## Late join
 
@@ -112,7 +132,8 @@ during placement is local. `[V]` Offline controller/wrapper/native-asset tests.
 
 A hook its thrower still owns reaches a joiner on its keepalive. An anchored hook is a save actor
 of the host's and arrives with the save, and the game's own load re-resolves both of its attach
-keys in the joiner's world. The deployables that are not built reach a joiner only through the save.
+keys in the joiner's world, and its pickup goes through the host like any other copy's. The deployables that are not
+built reach a joiner only through the save.
 
 ## Known limits
 

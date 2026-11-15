@@ -30,7 +30,7 @@ def rows(text):
 
 text = TABLE.read_text(encoding='utf-8')
 actual = rows(text)
-capture = (ROOT / 'agent/tests/ci_reference_capture_0.9.0n.txt').read_text(encoding='utf-8')
+capture = (Path(__file__).resolve().parent / 'ci_reference_capture_0.9.0n.txt').read_text(encoding='utf-8')
 control = re.search(r'### gameplaystatics.spawnsoundattached[^\n]+\nsig\(([^\n]+)\)', capture).group(1)
 assert actual['gameplaystatics.spawnsoundattached'] == (fnv('sig(' + control + ')\n'), fnv(''))
 expected = {key: (fnv('sig(' + signature + ')\n'), fnv('')) for key, signature in SIGNATURES.items()}

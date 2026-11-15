@@ -80,6 +80,11 @@ void* g_timerHoldFlashlightFn = nullptr;
 inline constexpr uint64_t kNoSendYet = 0xFFFFFFFFFFFFFFFFULL;
 std::atomic<uint64_t> g_lastSentSig{kNoSendYet};
 
+// Whether the peers last heard this player's flashlight as on. An empty battery switches it off in the
+// game's ReceiveTick, which writes the bool and hides the light with no function an observer can see, so
+// TickConnect compares this with the bool.
+std::atomic<bool> g_lastSentOn{false};
+
 // The latched "on" intensity, sampled from the local light_R the first time it reads above
 // the off-state value; the receiver drives the puppet's light_R with it. VOTV's light_R uses
 // ELightUnits::Unitless, where Intensity is a small multiplier (about 0.2 off, roughly 5-10

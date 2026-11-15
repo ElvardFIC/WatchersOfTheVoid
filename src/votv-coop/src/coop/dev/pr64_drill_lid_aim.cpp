@@ -26,7 +26,7 @@ namespace R = ue_wrap::reflection;
 namespace E = ue_wrap::engine;
 using ue_wrap::FVector;
 
-// The player's interaction trace is LookAtFunction's SphereTraceSingle (radius 2, TraceTypeQuery1, mainPlayer.cpp:19962):
+// The player's interaction trace is LookAtFunction's SphereTraceSingle (radius 2, TraceTypeQuery1, CXXHeaderDump/mainPlayer.cpp:19962):
 // a component it can take must block that channel. TraceTypeQuery1 is ECC_Visibility in a default project config; the
 // game's own channel table is not read here.
 constexpr uint8_t kVisibilityChannel = 3;

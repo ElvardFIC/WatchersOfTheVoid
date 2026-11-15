@@ -3,7 +3,7 @@
 // The header's C expression over `n` picks which of a translation's forms a count takes, and a
 // language's rule is whatever its translators wrote there, so it is EVALUATED, as libintl evaluates
 // it, rather than matched against a table of known strings -- tinygettext's table
-// (tinygettext's plural_forms.cpp:50-85) misses the rule of 12 of MTA's own 43 locales. The
+// (tinygettext's reference/mtasa-blue/vendor/tinygettext/plural_forms.cpp:50-85) misses the rule of 12 of MTA's own 43 locales. The
 // grammar is GNU gettext's (plural.y): `n`, decimal integers, `( )`, `!`, `* / %`, `+ -`,
 // `< > <= >=`, `== !=`, `&&`, `||`, `?:`, with C's precedence and associativity, over unsigned 64-bit
 // values. The text is untrusted translator input: it is bounded in length and nesting, and compiled

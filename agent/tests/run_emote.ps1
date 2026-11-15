@@ -7,14 +7,14 @@ Push-Location $root
 try {
     . (Join-Path $root '../_toolchain/env.ps1')
     foreach($name in @('emote_sync','emote_wrapper')) {
-        & cl /nologo /std:c++20 /EHsc /utf-8 /I agent/tests/emote_stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp"
+        & cl /nologo /std:c++20 /EHsc /utf-8 /I "$PSScriptRoot/emote_stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_test.cpp"
         if($LASTEXITCODE){throw "$name compile failed"}
         & "$output/$name.exe"
         if($LASTEXITCODE){throw "$name regression failed"}
     }
-    & "$env:USERPROFILE/.local/bin/python3.15.exe" agent/tests/emote_catalogue_test.py
+    & "$env:USERPROFILE/.local/bin/python3.15.exe" "$PSScriptRoot/emote_catalogue_test.py"
     if($LASTEXITCODE){throw 'EmoteWheel catalogue validation failed'}
-    & "$env:USERPROFILE/.local/bin/python3.15.exe" agent/tests/emote_native_fingerprints_test.py
+    & "$env:USERPROFILE/.local/bin/python3.15.exe" "$PSScriptRoot/emote_native_fingerprints_test.py"
     if($LASTEXITCODE){throw 'EmoteWheel native fingerprint validation failed'}
     if($FaultControls){
         $cases=@(
@@ -29,7 +29,7 @@ try {
             [IO.File]::WriteAllText($mutant,$source.Replace($case.Before,$case.After))
             $fixture=Join-Path $output ($case.Name+'_test.cpp')
             [IO.File]::WriteAllText($fixture,('#define '+$case.Macro+' "'+$mutant.Replace('\','/')+'"'+"`n"+'#include "'+(Join-Path $PSScriptRoot $case.Fixture).Replace('\','/')+'"'))
-            & cl /nologo /std:c++20 /EHsc /utf-8 /I agent/tests/emote_stubs /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $fixture
+            & cl /nologo /std:c++20 /EHsc /utf-8 /I "$PSScriptRoot/emote_stubs" /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $fixture
             if($LASTEXITCODE){throw "Fault compile failed: $($case.Name)"}
             & "$output/$($case.Name).exe"
             if($LASTEXITCODE -eq 0){throw "Injected fault escaped detection: $($case.Name)"}

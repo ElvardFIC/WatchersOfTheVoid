@@ -7,16 +7,16 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($testName in @('hand_toy_2157','dingus_2155','prop_knock_2157')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $testName"}
   & "$output/$testName.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}
  }
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/hand_toy_lifetime.obj" "/Fe$output/hand_toy_lifetime.exe" agent/tests/hand_toy_lifetime_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/toy_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/hand_toy_lifetime.obj" "/Fe$output/hand_toy_lifetime.exe" "$PSScriptRoot/hand_toy_lifetime_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Hand toy lifetime compile failed'}
  & "$output/hand_toy_lifetime.exe"
  if($LASTEXITCODE){throw 'Hand toy lifetime failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/hand_toy_budget.obj" "/Fe$output/hand_toy_budget.exe" agent/tests/hand_toy_budget_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/hand_toy_budget.obj" "/Fe$output/hand_toy_budget.exe" "$PSScriptRoot/hand_toy_budget_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Hand toy budget compile failed'}
  & "$output/hand_toy_budget.exe"
  if($LASTEXITCODE){throw 'Hand toy budget failed'}
@@ -40,7 +40,7 @@ try {
    foreach($change in $changes){if(-not $mutant.Contains($change[0])){throw "Missing hand toy control anchor: $($control.Name)"};$mutant=$mutant.Replace($change[0],$change[1])}
    $name='fault_'+$control.Name;$path=Join-Path $output ($name+'.cpp');[IO.File]::WriteAllText($path,$mutant)
    $header=Join-Path $output ($name+'.h');[IO.File]::WriteAllText($header,('#define HAND_TOY_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/hand_toy_lifetime_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/toy_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/hand_toy_lifetime_test.cpp" /link /OPT:REF
    if($LASTEXITCODE){throw "Hand toy control compile failed: $name"}
    $saved=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& "$output/$name.exe" $control.Name 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}

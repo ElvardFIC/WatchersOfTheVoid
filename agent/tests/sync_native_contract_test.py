@@ -1,7 +1,7 @@
 """Validate the gameplay contracts against extracted 0.9.0n assets, not fixtures.
 
-Usage: python agent/tests/sync_native_contract_test.py _research/current-assets _research
-The second directory supplies the existing research-only Kismet decoder.
+Usage: python sync_native_contract_test.py _research/current-assets _research
+The second directory supplies the existing evidence_root-only Kismet decoder.
 """
 from pathlib import Path
 import hashlib

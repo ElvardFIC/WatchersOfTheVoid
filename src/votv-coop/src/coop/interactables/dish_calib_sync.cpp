@@ -331,12 +331,12 @@ void OnDishCalib(const coop::net::DishCalibPayload& p) {
 
 // HOST: performs what it can of a client's intent and answers with every live dish named, as it now holds it, read
 // after the writes. Once anything was performed the answer goes to all, as the server box's upgrade lane broadcasts its
-// canonical after an applied op (server_upgrade_sync.cpp:301) and MTA a confirmed request (CGame.cpp:3196-3197); a
+// canonical after an applied op (src/votv-coop/src/coop/interactables/server_upgrade_sync.cpp:301) and MTA a confirmed request (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3196-3197); a
 // refused entry rides along, harmless, since every other client already holds that value. When nothing was
-// performed it goes to the author alone, as both answer a refusal (server_upgrade_sync.cpp:255;
-// CGame.cpp:3042-3043), so the budget bounds what a client can make the host write and send to the others; its
+// performed it goes to the author alone, as both answer a refusal (src/votv-coop/src/coop/interactables/server_upgrade_sync.cpp:255;
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3042-3043), so the budget bounds what a client can make the host write and send to the others; its
 // author hears at most one answer per intent. A slot not yet in its world is not heard, as MTA hears a joined player
-// only (CGame.cpp:3024-3025): its announce is pinned to this lane, ahead of any intent (session_lanes.h).
+// only (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3024-3025): its announce is pinned to this lane, ahead of any intent (session_lanes.h).
 void OnDishCalibIntent(const coop::net::DishCalibPayload& p, uint8_t senderSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host || senderSlot == 0 || senderSlot >= coop::net::kMaxPeers) return;

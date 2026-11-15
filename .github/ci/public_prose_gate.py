@@ -34,7 +34,7 @@ from public_prose_faults import (
     string_marker_lines)
 from public_prose_markers import (
     DECL, DECL_SKIP, HEX_LITERAL, INCLUDE, LINE_MARKERS, LONG_COMMENT_BLOCK, OFFSET_OWNERS,
-    SRC_EXTRA)
+    SRC_EXTRA, WORD)
 from public_prose_scope import (
     BASELINE, DOC_ROOT, HALF_COMMENT_MIN_LINES, INFORMATIONAL, MD_HARD_CAP, OTHER_HARD_CAP,
     OTHER_MARKER_OWNERS, REPO, SRC_EXT, SRC_ROOTS, code_only, comment_prefix, doc_name_fault, git,
@@ -67,7 +67,8 @@ def measure(repo):
     c = collections.OrderedDict()
     who = collections.defaultdict(collections.Counter)
     detail = collections.defaultdict(lambda: collections.defaultdict(list))
-    md = [p for p in files if measured_md(p)]
+    # A staged deletion still appears in `git ls-files`; count only documents the reader can open.
+    md = [p for p in files if measured_md(p) and read(repo, p) is not None]
     c["md.files"] = len(md)
     c["md.lines"] = 0
     c["md.over_%d" % MD_HARD_CAP] = 0
@@ -150,6 +151,10 @@ def measure(repo):
             lines = [l for l in lines if l.lstrip().startswith(comment_prefix(p))]
         for line in lines:
             for k, (rx, _) in LINE_MARKERS.items():
+                # This UTF-8 roster is public display data. Non-Latin names are values, not prose;
+                # keep the rest of the file under the ordinary prose checks.
+                if p == "src/votv-coop/assets/thanks/thanks.txt" and k == "cyrillic":
+                    continue
                 if rx.search(line):
                     c["other." + k] += 1
                     who["other." + k][p] += 1
@@ -170,13 +175,27 @@ def measure(repo):
     for k in ("dead_path", "dead_log_marker", "dead_env", "dead_ini_key", "dead_member"):
         c["src.comment_" + k] = 0
     bare_by_file = {}                      # path -> its code with comments and strings gone
+    symbol_uses = {}                        # path -> occurrence counts, reused by the declaration sweep
+    symbol_declarations = {}
+    symbol_definitions = {}
+    test_symbol_uses = collections.Counter()
     declared = collections.defaultdict(list)   # name -> every header that declares it
+    function_definition = re.compile(
+        r"(?m)^\s*(?:inline\s+|static\s+|constexpr\s+|virtual\s+|explicit\s+)*"
+        r"(?!(?:return|co_return)\b)"
+        r"[\w:<>,*&]+(?:\s+[\w:<>,*&]+)*\s+(?:[\w:]+::)*([A-Za-z_]\w*)"
+        r"\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept(?:\([^)]*\))?\s*)?\{")
+    offset_definition = re.compile(r"\bVC_DEFINE_OFFSET\s*\(\s*([A-Za-z_]\w*)\b")
     for p in src:
         text = read(repo, p)
         if text is None:
             continue
         bare = code_only(text)
         bare_by_file[p] = bare
+        symbol_uses[p] = collections.Counter(WORD.findall(bare))
+        symbol_declarations[p] = collections.Counter(DECL.findall(bare))
+        symbol_definitions[p] = collections.Counter(function_definition.findall(bare))
+        symbol_definitions[p].update(offset_definition.findall(bare))
         # The offsets this file's own code reads. A comment naming one of them sits beside the read
         # it explains and the number IS the fact; a comment naming any other pins a number whose
         # owner is elsewhere -- another file's named constant, or a property the code resolves by
@@ -206,6 +225,16 @@ def measure(repo):
                 if k in c:
                     c[k] += 1
                     who[k][p] += 1
+    # Checked-in C++ fixture calls are real API consumers too. Several native wrappers are
+    # intentionally exercised in isolation while production reaches their guarded sibling;
+    # stripping the tested adapter made the regression suite uncompilable.
+    test_call = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+    for p in files:
+        if not p.startswith("agent/tests/") or not p.endswith((".cpp", ".h", ".hpp")):
+            continue
+        text = read(repo, p)
+        if text is not None:
+            test_symbol_uses.update(test_call.findall(code_only(text)))
     # A capability nothing calls is not shipped, and its comment describes code no one runs.
     #
     # Uses are attributed to the header that DECLARES the name, counted only where that header is
@@ -249,10 +278,20 @@ def measure(repo):
 
     c["src.dead_declarations"] = 0
     for name, headers in declared.items():
-        word = re.compile(r"\b" + re.escape(name) + r"\b")
         for header in headers:
-            uses = sum(len(word.findall(bare_by_file[f])) for f in reach(header))
-            if uses <= 2:                  # its own declaration and its definition, and nothing else
+            visible = reach(header)
+            uses = sum(symbol_uses[f].get(name, 0) for f in visible)
+            # Count exported declarations in visible headers only. DECL also matches a normal
+            # out-of-line definition; subtracting that and the definition count below charged the
+            # same definition twice and marked called APIs dead (including qualified alias calls).
+            declarations_here = sum(
+                symbol_declarations[f].get(name, 0) for f in visible
+                if f.endswith(".h") and "/include/" in f)
+            definitions_here = sum(symbol_definitions[f].get(name, 0) for f in visible)
+            # A declaration plus one CALL is live even if its implementation is missing; the
+            # compiler/linker owns that error. Function-like property accessors generated by
+            # VC_DEFINE_OFFSET count as definitions through their macro invocation.
+            if uses - declarations_here - definitions_here <= 0 and not test_symbol_uses.get(name):
                 c["src.dead_declarations"] += 1
                 who["src.dead_declarations"][header] += 1
                 detail["src.dead_declarations"][header].append(name)

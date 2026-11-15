@@ -7,7 +7,7 @@ Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
     foreach($test in @('window_delivery','window_wrapper')){
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/grime_stubs /I agent/tests/placed_save_stubs /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "agent/tests/${test}_test.cpp" /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/grime_stubs" /I "$PSScriptRoot/placed_save_stubs" /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$PSScriptRoot/${test}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE -ne 0){throw "Window test compile failed: $test"}
         & "$output/$test.exe"
         if($LASTEXITCODE -ne 0){throw "Window test failed: $test"}

@@ -2,567 +2,443 @@
 
 ## Purpose
 
-The keyed things around the base that are not the workstation: doors and their keypads, the
-light switches and the light groups, the garage, the appliances, the lockers, the security cameras,
-the power panel, the wind turbine, the windows and the grime, the delivery drone, and the signal
-servers. Who owns each and how a peer's press reaches the others. The laptop and the economy the
-drone serves (the balance, the shop orders, the coin gun) are in
-[base-computer.md](base-computer.md).
+The keyed things around the base that are not the workstation: doors and their keypads, the light switches and the light groups, the garage, the appliances, the lockers, the
+security cameras, the power panel, the wind turbine, the windows and the grime, the delivery drone, the woodchipper, and the signal servers. Who owns each and how a peer's press
+reaches the others. The laptop and the economy the drone serves (the balance, the shop orders, the coin gun) are in [base-computer.md](base-computer.md).
 
 ## How it works
 
 ### One engine, one adapter per device
 
-Every open-or-closed, on-or-off device rides one replication engine
-(`coop/interactables/interactable_channel`, driven by `coop/interactables/interactable_sync`):
-a key-to-actor index that heals itself, per-key dedup, a deferred apply with a throttled retry for
-an instance that has not streamed in yet, echo suppression, and the connect snapshot. A device
-family is an adapter over its engine wrapper (`ue_wrap/devices/`), a few lines each: doors, light
-switches, light groups, container lids, the garage, the appliances, the lockers, the oven's repair,
-the security cameras.
+Every open-or-closed, on-or-off device rides one replication engine (`coop/interactables/interactable_channel`, driven by `coop/interactables/interactable_sync`): a key-to-actor
+index that heals itself, per-key dedup, a deferred apply with a throttled retry for an instance that has not streamed in yet, echo suppression, and the connect snapshot. A device
+family is an adapter over its engine wrapper (`ue_wrap/devices/`), a few lines each: doors, light switches, light groups, container lids, the garage, the appliances, the lockers,
+the oven's repair, the security cameras, the cargo lift (the base's elevator, `coop/interactables/cargo_lift`).
 
-Each channel is sent at the verbs that write its state, which the script-body gate watches: every
-live writer of a door's open state goes through `doorOpen` or `doorClose`, and of a light group's
-`isActive` through its `runTrigger`, both sent by the host (`coop/interactables/door_state_verbs`,
-`coop/interactables/lightgroup_verbs`); a symmetric device is sent by the peer whose verb ran
-(`coop/interactables/toggle_verbs`, below), and the host relays a client's edge to the other
-clients. After the body the lane sends the state the call left; a send no peer can take (none is
-world-ready) counts as made, since each joiner's snapshot at its ready edge carries the state. A
-receiver resolves the instance by key and applies it, moving its lane's baseline so nothing
-echoes. A write no verb makes, a save's load, reaches a joiner in the connect snapshot; a send refused
-while a peer's connection goes is sent again each tick. No channel polls: a dev probe
-(`channel_shadow_probe`) polls every indexed instance and logs a change the lane neither sent nor
-applied as a `SHADOW MISS`, and sends nothing. A door is sent again where its swing ends
-(`move__FinishedFunc`), for a swing that settles otherwise than it began.
+Each channel is sent at the verbs that write its state, which the script-body gate watches: every live writer of a door's open state goes through `doorOpen` or `doorClose`, and of
+a light group's `isActive` through its `runTrigger`, both sent by the host (`coop/interactables/door_state_verbs`, `coop/interactables/lightgroup_verbs`); a symmetric device is
+sent by the peer whose verb ran (`coop/interactables/toggle_verbs`, below), and the host relays a client's edge to the other clients. After the body the lane sends the state the
+call left; a send no peer can take (none is world-ready) counts as made, since each joiner's snapshot at its ready edge carries the state. A receiver resolves the instance by key
+and applies it, moving its lane's baseline so nothing echoes. A write no verb makes, a save's load, reaches a joiner in the connect snapshot; a send refused while a peer's
+connection goes is sent again each tick. No channel polls: a dev probe (`channel_shadow_probe`) polls every indexed instance and logs a change the lane neither sent nor applied as
+a `SHADOW MISS`, and sends nothing. A door is sent again where its swing ends (`move__FinishedFunc`), for a swing that settles otherwise than it began.
 
-The key is the game's own for the save-persisted instances and a portable identity computed
-by both peers for the rest (`coop/element/portable_identity`): the game mints a random key per
-process for anything the save does not keep, so a child actor is named by its parent plus its
-component name and a level-baked actor by its object name. Before that, half the doors, lights
-and containers in a world were addressable only by the peer that loaded them.
+The key is the game's own for the save-persisted instances and a portable identity computed by both peers for the rest (`coop/element/portable_identity`): the game mints a random
+key per process for anything the save does not keep, so a child actor is named by its parent plus its component name and a level-baked actor by its object name. Before that, half
+the doors, lights and containers in a world were addressable only by the peer that loaded them.
 
-Two modes. A device that reverts on its own, a door that auto-closes or a light group the game
-re-derives, is host-authoritative: the host's copy is the one that moves, and a client renders it.
-A client's copy of a door moves only by the host's state: its own `doorOpen` and `doorClose` are
-refused unless the door lane's own apply to that door is running them, so its autoclose, a creature
-or a trigger on that machine cannot move it alone -- nor a creature mirror that overlaps a door as
-our own code moves it. A client's copy of a light group likewise: its `runTrigger` is refused unless
-the group lane's own apply is running it, so a switch pressed there, an eventer's flicker or that
-machine's own breaker cannot move the group; the switch still flips, and its bit reaches the host
-on the switch lane, whose replay of the press is what moves the host's group. The switch lane sends
-a switch's `a` at its `use()`, the one writer of `a`, on the peer that ran it
-(`coop/interactables/toggle_verbs`), the garage lane a garage's Open at its `runTrigger`, the one
-writer of Open past the load, and the appliance lane an appliance's bool at its `actionOptionIndex`
-(a faucet's, sink's, shower's, oven's and tape unit's toggle) or a server box's `visual` (the kerfur
-Omega's call), the box lane a locker's `opened` at its `open` (its toggle's, a murder kerfur's) and the drone
-console's at its `actionOptionIndex`, and the container lane a lid's `opened` at its `open` or `close`
-(which its setup, grab, damage, padlock and resting swing, and a cremator's door, call), and the oven
-lane an oven's `fixed` at its `fix()`, the repair widget's last step, which goes one way: a receiver
-writes it and repaints on 1, `fix()`'s work without its screen, and refuses 0.
-A lid a player drags with the mouse (`mouseAssign`, bound to the player's `input_mouseXY` while the grab
-lasts) is not a verb of this lane: the game leaves the lid in the dragger's `grabbing_actor`, so the
-held-item stream carries its pose and the host relays it to the other clients. The game's own `Key` of a
-lid differs between peers for most lids (a barrel's or crate's cap), so the pose and the release go under
-this lane's key for the lid, the portable `mv_` token; a lid the lane files under its game Key (no portable
-identity) streams under that key and is logged once, and one the lane has not indexed streams nothing and
-is logged. The receiving side resolves a portable `mv_` key through this lane's index alone, and any other key through the prop key index first and this lane's index
-(`interactable_sync::ContainerActor`) second; it parks the lid's mesh and follows the pose as it follows any
-held prop. A lid with nothing to hang on (a barrel's or crate's cap) falls when it is let go, so the holder
-keeps streaming its pose from its own copy, under the identity the hold streamed, until that copy is at rest,
-and only then sends the release (`PropRelease`): the others follow the same fall, parked, and the release puts
-the lid where it stopped and unparks it with no throw velocity, thrown event or whoosh. At rest is the body
-asleep, or within a quarter of a centimetre and a tenth of a degree of one pose for 30 equal reads (about half a second), so a slow creep is
-not rest. The coast is bounded at ten seconds from the release: a lid that never rests (on a moving carrier, or jittering against
-its limit) is released at its current pose and each peer's own physics takes it from there. A grab of another
-item while a lid coasts sends the lid's release at once. A lid the lane has not indexed streams nothing, held or
-let go. One limit stays: a second player who drags the same lid during the first one's coast makes two slots
-stream one lid, and each receiver follows whichever pose came last, as for any prop two peers grab; the
-coasting peer, whose copy the other drag parks, ends its coast and sends its release, and a receiver that
-follows the other drag applies nothing for it. A peer whose own player is dragging the same lid does not apply
-the remote poses for it, whether its drag began before the stream or in the middle of it.
-The held-item broadcast never expresses a lid as a spawned prop. Mid-join: the game saves nothing for a lid
-(a child actor is skipped by the save), so a joiner's lid spawns closed at its hinge default, and the connect
-snapshot carries a lid's `opened` and nothing else. A closed lid is locked at that default on every peer and
-needs no more. An open one rests wherever it was left, which only the host's copy knows, so right after the
-snapshot the host sends each open lid's place (`SwingerRestPose`, under the lane's portable key), and the
-joiner puts its copy there, with no velocity and still simulating, once the key resolves and its copy reads
-open. A lid without a portable key is skipped and counted in the host's log line. A place that cannot be applied
-yet is parked and retried once per index pass, and dropped by the lane's own rule for its parked states with one
-warning naming the key. A lid a remote stream drives, or the joiner's own player drags, is left to that owner, and a stream or release that reaches a lid whose place is still parked drops the place, as newer. A
-joiner arriving mid-drag or mid-coast gets the place, then the live stream, then the release.
-`[?]` until the swinger drill has a two-peer proof.
-A client's own press, hit or pry of a door never runs on its copy either: the
-script-body gate refuses the door's entry verb there and sends it to the host
-(`coop/interactables/door_verb_intent`), which
-runs the same verb on its own copy, so the door's own body decides it once -- its power gate with
-the blackout clause, a swing already moving, the pry. A verb that reaches the host before the
-sender's body has taken its first pose waits for it, since the host measures the sender's reach
-from that body. A pry is run only for a sender whose hand held a crowbar last (the prying crowbar
-takes the held one as it goes in), and a hit only with an item whose swing the weapon table allows,
-its damage cut to the most that swing deals. The cut is at those entry verbs rather than
-at `doorOpen`/`doorClose`: every in-door caller reaches those two through the door's own event
-graph, where a press cannot be told from a hit or a trigger, and a hit moves both leaves before it
-ever reaches `doorOpen`. The host's door then closes by its own
-autoclose, at the first of its five-second checks that finds its sensor list empty, and a client's
-puppet counts in that list exactly when the client's own player counts in the client's own copy of
-it. A device with no auto-revert (the garage, an appliance, an oven's repair, a locker, a lid) is
-symmetric: any peer's edge is the state.
+Two modes. A device that reverts on its own, a door that auto-closes or a light group the game re-derives, is host-authoritative: the host's copy is the one that moves, and a
+client renders it. A client's copy of a door moves only by the host's state: its own `doorOpen` and `doorClose` are refused unless the door lane's own apply to that door is running
+them, so its autoclose, a creature or a trigger on that machine cannot move it alone -- nor a creature mirror that overlaps a door as our own code moves it. A client's copy of a
+light group likewise: its `runTrigger` is refused unless the group lane's own apply is running it, so a switch pressed there, an eventer's flicker or that machine's own breaker
+cannot move the group; the switch still flips, and its bit reaches the host on the switch lane, whose replay of the press is what moves the host's group. The switch lane sends a
+switch's `a` at its `use()`, the one writer of `a`, on the peer that ran it (`coop/interactables/toggle_verbs`), the garage lane a garage's Open at its `runTrigger`, the one writer
+of Open past the load, and the appliance lane an appliance's bool at its `actionOptionIndex` (a faucet's, sink's, shower's, oven's and tape unit's toggle) or a server box's
+`visual` (the kerfur Omega's call), the box lane a locker's `opened` at its `open` (its toggle's, a murder kerfur's) and the drone console's at its `actionOptionIndex`, and the
+container lane a lid's `opened` at its `open` or `close` (which its setup, grab, damage, padlock and resting swing, and a cremator's door, call), and the oven lane an oven's
+`fixed` at its `fix()`, the repair widget's last step, which goes one way: a receiver writes it and repaints on 1, `fix()`'s work without its screen, and refuses 0. A lid a player
+drags with the mouse (`mouseAssign`, bound to the player's `input_mouseXY` while the grab lasts) is not a verb of this lane: the game leaves the lid in the dragger's
+`grabbing_actor`, so the held-item stream carries its pose and the host relays it to the other clients. The game's own `Key` of a lid differs between peers for most lids (a
+barrel's or crate's cap), so the pose and the release go under this lane's key for the lid, the portable `mv_` token; a lid the lane files under its game Key (no portable identity)
+streams under that key and is logged once, and one the lane has not indexed streams nothing and is logged. The receiving side resolves a portable `mv_` key through this lane's
+index alone, and any other key through the prop key index first and this lane's index (`interactable_sync::ContainerActor`) second; it parks the lid's mesh and follows the pose as
+it follows any held prop. A lid with nothing to hang on (a barrel's or crate's cap) falls when it is let go, so the holder keeps streaming its pose from its own copy, under the
+identity the hold streamed, until that copy is at rest, and only then sends the release (`PropRelease`): the others follow the same fall, parked, and the release puts the lid where
+it stopped and unparks it with no throw velocity, thrown event or whoosh. At rest is the body asleep, or within a quarter of a centimetre and a tenth of a degree of one pose for 30
+equal reads (about half a second), so a slow creep is not rest. The coast is bounded at ten seconds from the release: a lid that never rests (on a moving carrier, or jittering
+against its limit) is released at its current pose and each peer's own physics takes it from there. A grab of another item while a lid coasts sends the lid's release at once. A lid
+the lane has not indexed streams nothing, held or let go. One limit stays: a second player who drags the same lid during the first one's coast makes two slots stream one lid, and
+each receiver follows whichever pose came last, as for any prop two peers grab; the coasting peer, whose copy the other drag parks, ends its coast and sends its release, and a
+receiver that follows the other drag applies nothing for it. A peer whose own player is dragging the same lid does not apply the remote poses for it, whether its drag began before
+the stream or in the middle of it. The held-item broadcast never expresses a lid as a spawned prop. Mid-join: the game saves nothing for a lid (a child actor is skipped by the
+save), so a joiner's lid spawns closed at its hinge default, and the connect snapshot carries a lid's `opened` and nothing else. A closed lid is locked at that default on every
+peer and needs no more. An open one rests wherever it was left, which only the host's copy knows, so right after the snapshot the host sends each open lid's place
+(`SwingerRestPose`, under the lane's portable key), and the joiner puts its copy there, with no velocity and still simulating, once the key resolves and its copy reads open. A lid
+without a portable key is skipped and counted in the host's log line. A place that cannot be applied yet is parked and retried once per index pass, and dropped by the lane's own
+rule for its parked states with one warning naming the key. A lid a remote stream drives, or the joiner's own player drags, is left to that owner, and a stream or release that
+reaches a lid whose place is still parked drops the place, as newer. A joiner arriving mid-drag or mid-coast gets the place, then the live stream, then the release. `[?]` until the
+swinger drill has a two-peer proof. A client's own press, hit or pry of a door never runs on its copy either: the script-body gate refuses the door's entry verb there and sends it
+to the host (`coop/interactables/door_verb_intent`), which runs the same verb on its own copy, so the door's own body decides it once -- its power gate with the blackout clause, a
+swing already moving, the pry. A verb that reaches the host before the sender's body has taken its first pose waits for it, since the host measures the sender's reach from that
+body. A pry is run only for a sender whose hand held a crowbar last (the prying crowbar takes the held one as it goes in), and a hit only with an item whose swing the weapon table
+allows, its damage cut to the most that swing deals. The cut is at those entry verbs rather than at `doorOpen`/`doorClose`: every in-door caller reaches those two through the
+door's own event graph, where a press cannot be told from a hit or a trigger, and a hit moves both leaves before it ever reaches `doorOpen`. The host's door then closes by its own
+autoclose, at the first of its five-second checks that finds its sensor list empty, and a client's puppet counts in that list exactly when the client's own player counts in the
+client's own copy of it. A device with no auto-revert (the garage, an appliance, an oven's repair, a locker, a lid) is symmetric: any peer's edge is the state. The cargo lift is
+host-authoritative, because it has a writer of its own: its Blueprint reverses `dir` when its platform lags its attach point (a blocked platform), with no press. Its direction
+(`dir`) is the host's: a client's own press is refused and sent as the direction it wants, the host presses its own lift when that lift is not moving, the sender is alive and
+within reach, and the host sends the direction after a press and after its own reversal. A client presses a still copy to the host's direction and turns a moving one by writing
+`dir`, as the Blueprint does itself; its own copy never reverses itself (the gate refuses `ignore` there and undoes the flip), so an obstructed copy waits for the lag to clear or
+for the host's state. Each copy runs its own travel from the direction it is told, so a client's starts at its receive time and a joiner whose snapshot arrives mid-move runs the
+whole travel; the copies meet at the stops (`[V]` `harness/autotest/autotest_cargo_lift.cpp`: a host's press and a client's both move the lift on both peers, each peer's copy
+ending at the same direction and platform height; the red, cargo_lift_client_runs, says FAIL at the client's press; the reversal is `[?]`, no drill holds a platform back).
+
+### The cremator's lever run
+
+The cremator is the host's machine. The host sends its `isActive` once, when the handle's travel finishes (`handleLimeline__FinishedFunc`), and a client's copy keeps that as the
+state it wants and drives its own handle to it with `useLever`, which it refuses for any call that is not the lane's own. A start is driven only with the copy's door shut, and the
+lane never closes the door: the host shuts its lid before it starts and the lid lane brings that to the copy. A copy that finds its door open waits, says so once, and looks again
+at the door's own close. A client's press of the handle is cancelled where it is made and sent as a `CrematorIntent` carrying the state it wants (the opposite of what its copy
+shows); the host refuses a press that is out of reach, mid-travel, already so, or, for a start, with its own door open, and otherwise pulls its lever.
+
+The host sends the committed `isActive` at the finish and not a start at the press, unlike MTA, which broadcasts the start of an act and confirms its end (`CGame.cpp:3196`,
+`:3373`): a start sent at the press could show a client a run that the host's door check still turns back at the forward finish. The price is a client display that trails the
+host's by about one handle travel plus the trip, on every run `[?]`. Two windows follow from it for a joiner, and both converge `[?]`: a joiner that arrives while the handle is
+reversing is told `isActive` true, drives forward, and reverses when the host's finish arrives, so its display is wrong for about two travels; and in the cool-down after a run,
+with `isActive` false and the fire still fading, it shows idle for up to ten seconds.
+
+A client's copy of the machine acts on nothing. Its `addObject` is refused, so the copy collects no one and holds no prop to burn or destroy: the burn a client's player takes is
+the host's machine's, delivered below, and a burnt prop's destruction is the host's, which reaches the client like any destroy. The copy's door is not opened by a player's use
+while the copy runs or the lane holds an on want for it (the host's door is locked for the run; a client's is unlocked until the host's state arrives, so the window is the state's
+trip). A press of the fuel valve is refused and not sent: the pour runs from the fuel the machine makes, which does not cross, so the copy holds none to show, and the host pours
+until the gasoline package carries it. A client's fuel gauge therefore reads zero `[?]`. The blow-out's fireballs (`spitFireballs_timer`, every 0.2 s while the lid is open on an
+active machine) are refused on the copy too: a client sees none, and the host's are not synced either, a host-only effect. A refused valve press shows the player the game's own
+hint, once a burst. Until the host's forward finish its lid is still unlocked, so a client's own open of the cremator's lid in that window passes the guard and reaches the host's
+lid, and the host turns the start back at the finish with its open-door hint, as it would for its own player; the client sees nothing `[?]`.
+
+A player burning in the host's cremator is hit on the host's machine, where the hit lands on the peer's puppet and is refused like any hit on a puppet. The cremator's own call is
+delivered to the peer instead, as a `CrematorHit` naming the cremator by its key (damage, or an ignite with the machine's fuel), and the peer's machine applies it to its own player
+by the Blueprint's own split on its own health: ten damage a hit, and the lethal one with the cremator achievement once that health is under ten. A hit whose cremator the peer's
+machine cannot resolve costs the hit nothing: the damage lands with no source, counted, and the counts are said once when the session ends `[?]`.
 
 ### Security cameras
 
-A camera has two saved bits, each its own lane keyed by the lane's key for the camera (its portable
-identity where it has one, else its prop key): `active` (the LED, the click, the laptop's camera
-list and capture gate) and `isLight` (the spotlight, flipped from the laptop's camera panel). Both
-are the host's. Besides a player's use, a wisp, the gray events, the cursed camera's night roll and
-a save's load write `active`, and most of those are host-owned world systems, so the host's lanes
-read both bits after a camera's `actionOptionIndex`, `upd` and `updState` and after the cursed
-camera's tick, and send a change to every peer. A client renders what it is sent: the apply writes
-the bit, then runs `updState` when the write turns a camera other than the cursed one on, which
-plays the click, else `upd`, then repaints a laptop camera panel that has the camera selected. A
-joiner hears one click for a camera the host has on that its save had off, and none for one that is
-already on.
+A camera has two saved bits, each its own lane keyed by the lane's key for the camera (its portable identity where it has one, else its prop key): `active` (the LED, the click, the
+laptop's camera list and capture gate) and `isLight` (the spotlight, flipped from the laptop's camera panel). Both are the host's. Besides a player's use, a wisp, the gray events,
+the cursed camera's night roll and a save's load write `active`, and most of those are host-owned world systems, so the host's lanes read both bits after a camera's
+`actionOptionIndex`, `upd` and `updState` and after the cursed camera's tick, and send a change to every peer. A client renders what it is sent: the apply writes the bit, then runs
+`updState` when the write turns a camera other than the cursed one on, which plays the click, else `upd`, then repaints a laptop camera panel that has the camera selected. A joiner
+hears one click for a camera the host has on that its save had off, and none for one that is already on.
 
-A client's own use of a camera and its press of the laptop's camera-light button are refused at
-their bodies and sent to the host (`coop/interactables/camera_toggle_intent`). The host checks the
-sender's reach, of the camera for the use and of any device showing the laptop interface (the base
-laptop or a portable PC) for the light, and sets the bit to the value the sender wanted, so two
-presses that race collapse to one change. A bit already at that value changes nothing and is sent
-again to that sender alone, so a client whose copy diverged converges and its button is never dead.
-The host's own open laptop panel is repainted after it performs a request. The cursed camera's tick
-is refused on a client: the host rolls it. A camera whose key is empty, or the key its class carries
-by default, is addressed by no lane: a client's press on it is refused and sends nothing, and a
-cursed one's tick stays that peer's own. A client's copy of a wisp still switches that client's own
-cameras off until the creature mirror stops running the wisp's world writes `[?]`.
+A client's own use of a camera and its press of the laptop's camera-light button are refused at their bodies and sent to the host (`coop/interactables/camera_toggle_intent`). The
+host checks the sender's reach, of the camera for the use and of any device showing the laptop interface (the base laptop or a portable PC) for the light, and sets the bit to the
+value the sender wanted, so two presses that race collapse to one change. A bit already at that value changes nothing and is sent again to that sender alone, so a client whose copy
+diverged converges and its button is never dead. The host's own open laptop panel is repainted after it performs a request. The cursed camera's tick is refused on a client: the
+host rolls it. A camera whose key is empty, or the key its class carries by default, is addressed by no lane: a client's press on it is refused and sends nothing, and a cursed
+one's tick stays that peer's own. A client's copy of a wisp still switches that client's own cameras off until the creature mirror stops running the wisp's world writes `[?]`.
 
 ### What is inside a container
 
-A container's contents are not on the container. Every one of them reads from a single global
-per-peer array, `saveSlot.GObjStack`, addressed by an index the actor holds alongside a cached
-volume. That array reaches a client once, inside the join save-transfer blob, and never again on
-its own, because every verb that mutates it dispatches internally to the Blueprint, where neither
-hook seam can intercept it and only the script-body gate can watch it
-(`docs/coop-dispatch-visibility.md`). Without a lane of its own, a
-drone delivery landed full on the host and empty on the client.
+A container's contents are not on the container. Every one of them reads from a single global per-peer array, `saveSlot.GObjStack`, addressed by an index the actor holds alongside
+a cached volume. That array reaches a client once, inside the join save-transfer blob, and never again on its own, because every verb that mutates it dispatches internally to the
+Blueprint, where neither hook seam can intercept it and only the script-body gate can watch it (`docs/coop-dispatch-visibility.md`). Without a lane of its own, a drone delivery
+landed full on the host and empty on the client.
 
-The seam is a gate on the Blueprint body of the add and take verbs, and it only marks the
-container dirty -- it reads no arguments and takes no action, which is what makes it correct for
-every caller. On the host the next sweep publishes the slice. There is no request the host could
-refuse here: the gate fires at the body's entry, on the presser's own machine, and the item has
-moved there before an answer from anywhere else could arrive. So a client's mirror of a shared
-container is display only: its own add or take runs on the mirror, the watch forgets the applied
-hash, and the host's next publication, or the truth it sends a refused ask, puts the mirror back.
-A change a client really makes to a shared container is an act the host judges
-(`coop/props/container_act_*`). One client slice remains, a thrown container's birth: the host
-built its copy empty from the throw, the contents are the thrower's, and that slice is the one a
-host takes. It spends the author's arrival budget (sixteen a second); past it the slice waits in
-the pen. The host refuses every other client slice after its header, never applies or relays it,
-counts it, says it once per container, and answers the author with its own truth: at most one
-per container every two seconds and one per author every half second, so a forged address buys
-no more than the floor. An accepted birth is relayed to every peer except the author -- echoing a
-peer's own state back would revert its newer local value.
+The seam is a gate on the Blueprint body of the add and take verbs, and it only marks the container dirty -- it reads no arguments and takes no action, which is what makes it
+correct for every caller. On the host the next sweep publishes the slice. There is no request the host could refuse here: the gate fires at the body's entry, on the presser's own
+machine, and the item has moved there before an answer from anywhere else could arrive. So a client's mirror of a shared container is display only: its own add or take runs on the
+mirror, the watch forgets the applied hash, and the host's next publication, or the truth it sends a refused ask, puts the mirror back. A change a client really makes to a shared
+container is an act the host judges (`coop/props/container_act_*`). One client slice remains, a thrown container's birth: the host built its copy empty from the throw, the contents
+are the thrower's, and that slice is the one a host takes. It spends the author's arrival budget (sixteen a second); past it the slice waits in the pen. The host refuses every
+other client slice after its header, never applies or relays it, counts it, says it once per container, and answers the author with its own truth: at most one per container every
+two seconds and one per author every half second, so a forged address buys no more than the floor. An accepted birth is relayed to every peer except the author -- echoing a peer's
+own state back would revert its newer local value.
 
-Two things can arrive before they can be judged, and neither is refused for it. A slice whose
-container has not spawned on this machine yet waits in a holding pen -- one entry per container,
-replayed until it lands, and dropped after thirty seconds; while a join is streaming in, that
-clock does not run at all, because contents normally arrive ahead of the props they belong to. And
-a thrown container's first contents that arrive faster than their arrival budget allows wait in
-the same pen rather than being turned down, since they are the thrower's only copy. A client's pen is bounded per
-author; the host's own slices are not bounded, the way nothing of the host's is.
+Two things can arrive before they can be judged, and neither is refused for it. A slice whose container has not spawned on this machine yet waits in a holding pen -- one entry per
+container, replayed until it lands, and dropped after thirty seconds; while a join is streaming in, that clock does not run at all, because contents normally arrive ahead of the
+props they belong to. And a thrown container's first contents that arrive faster than their arrival budget allows wait in the same pen rather than being turned down, since they are
+the thrower's only copy. A client's pen is bounded per author; the host's own slices are not bounded, the way nothing of the host's is.
 
-A container that is thrown changes hands without either verb: the game rebinds the thrown actor to
-its old slot of the thrower's own array, and the drop intent carries no contents, so the host's copy
-of a client's throw was born empty and every later client slice for it was refused for its base.
-The host's copy of a client's throw is now a transfer in progress: it is not published, to a joiner
-either, until the thrower's slice lands. The thrower ships its slice once the host's echo binds the
-container, and retries while its own slot is not readable yet; every slice of that author for the
-container is the newest version of the transfer, an edit made while the first one waited included,
-and is taken without a base. Whatever the host put in meanwhile is kept beside it, and the merged
-contents go to every peer, the thrower included; if the two do not fit one slice, the thrower's is
-applied alone and the host's records are dropped, with a warning. A birth slice is taken unjudged
-but not unbounded: it spends its author's arrival budget like an edit, and past that budget it is
-held in the pen and replayed rather than refused, since it is the thrower's only copy and is sent
-once. The pen holds eight per author, so a ninth simultaneous held slice evicts that author's oldest, said. Each author
-has at most 64 transfers in flight, its own oldest given up past that. The wait ends after thirty
-seconds or when the thrower leaves. A peer that joins during a transfer gets the container from the
-fan-out that completes it, not from its seed. A container the host throws publishes its contents at the express, since the
-mirrors are born empty, retrying while its slot is not readable.
+A container that is thrown changes hands without either verb: the game rebinds the thrown actor to its old slot of the thrower's own array, and the drop intent carries no contents,
+so the host's copy of a client's throw was born empty and every later client slice for it was refused for its base. The host's copy of a client's throw is now a transfer in
+progress: it is not published, to a joiner either, until the thrower's slice lands. The thrower ships its slice once the host's echo binds the container, and retries while its own
+slot is not readable yet; every slice of that author for the container is the newest version of the transfer, an edit made while the first one waited included, and is taken without
+a base. Whatever the host put in meanwhile is kept beside it, and the merged contents go to every peer, the thrower included; if the two do not fit one slice, the thrower's is
+applied alone and the host's records are dropped, with a warning. A birth slice is taken unjudged but not unbounded: it spends its author's arrival budget like an edit, and past
+that budget it is held in the pen and replayed rather than refused, since it is the thrower's only copy and is sent once. The pen holds eight per author, so a ninth simultaneous
+held slice evicts that author's oldest, said. Each author has at most 64 transfers in flight, its own oldest given up past that. The wait ends after thirty seconds or when the
+thrower leaves. A peer that joins during a transfer gets the container from the fan-out that completes it, not from its seed. A container the host throws publishes its contents at
+the express, since the mirrors are born empty, retrying while its slot is not readable.
 
-Applying a slice raw-writes the receiver's own array slot and then re-derives everything a setter
-owns through the game's own verbs -- the volume and mass recalculation and the display-name
-rebuild -- rather than writing those fields directly. The add verb cannot be the apply verb: it
-takes a live actor and serialises it itself, so it cannot ingest a record off the wire. The
-overflow check is not called on apply either: it ejects contents.
+Applying a slice raw-writes the receiver's own array slot and then re-derives everything a setter owns through the game's own verbs -- the volume and mass recalculation and the
+display-name rebuild -- rather than writing those fields directly. The add verb cannot be the apply verb: it takes a live actor and serialises it itself, so it cannot ingest a
+record off the wire. The overflow check is not called on apply either: it ejects contents.
 
-Two boundaries, both fail-closed. Personal inventory is not this lane's business even though it
-is backed by the same global array, so a container whose component is flagged as a player's -- or
-whose flag cannot be resolved at all -- is skipped; writing over another peer's slice would wipe
-that player's inventory. And a nested container's own index into that array never travels: it
-names a slot in the sender's array and would resolve to an unrelated container on the receiver. A
-record whose class descends from the container class carries a sentinel there instead -- written
-when a slice is sent and again when one is applied, since enforcing it only on the way out would
-trust every sender to be this build -- and the nested container arrives empty rather than broken.
+Two boundaries, both fail-closed. Personal inventory is not this lane's business even though it is backed by the same global array, so a container whose component is flagged as a
+player's -- or whose flag cannot be resolved at all -- is skipped; writing over another peer's slice would wipe that player's inventory. And a nested container's own index into
+that array never travels: it names a slot in the sender's array and would resolve to an unrelated container on the receiver. A record whose class descends from the container class
+carries a sentinel there instead -- written when a slice is sent and again when one is applied, since enforcing it only on the way out would trust every sender to be this build --
+and the nested container arrives empty rather than broken.
 
 ### Keypads and locks
 
-A keypad is a typed buffer and a verdict, and the verdict is also the power it hands on to its pair
-and its gated door. The host's copy decides. Every change goes through one of the keypad's own
-verbs -- a digit, an open with its verdict, the scripted guesser, the set-new-code mode, a false
-entry -- and the script-body gate watches them by name (`coop/interactables/keypad_verbs`): before
-each body on the host the verb goes to every client, which runs the same verb on its own copy, so
-the keypad's own chain plays its sounds and lands the same state; after it the state the chain
-settled on goes too -- at the keypad's setActive, its pair's with it and the password in it; at a
-digit or a reset that started no open -- and a joiner gets each keypad's state in its snapshot
-(`coop/interactables/keypad_sync`), handed on to its pair and door where the host's already hold
-it, so a door ends as the host's even when a chain ran after the host's save was taken. A client's
-copy is written to that state whatever its own
-replay met, but one that arrives while the copy's own replayed open, on the keypad or its pair, is
-still in its 0.2 s wait is written at that chain's end, so it never lands under the tail that
-reads the set-new-code mode and writes the pair. On a client every call of those
-verbs is refused but the lane's own; a player's own entries -- a digit, the accept or cancel key,
-the numpad's (told apart by the key, since the numpad's accept passes the copy's own verdict), a
-keycard's swipe, a pass changer -- go to the host as an intent, and the host runs the verb on its
-copy, judging a submit against its own password. A digit clicked on the keys needs the light's power
-on the presser's own copy, as single player's click does, and a client's copy holds the host's
-light power, since a client applies the host's canonical through the panel's own buttonsVisibility,
-whose tail runs setPower once the panel is enabled and its generators read whole: a client's clicks
-stop in a blackout and come back with the power. The entries run in order, and the next one waits
-while the host has no body for the sender and while the keypad's open is in the 0.2 s tail that
-clears its buffer, so none is lost to either wait (a full queue still refuses). A keycard's
-verdict is taken only while the sender holds a keycard. An accept unlocks a door; opening it is
-an ordinary press of the door.
+A keypad is a typed buffer and a verdict, and the verdict is also the power it hands on to its pair and its gated door. The host's copy decides. Every change goes through one of
+the keypad's own verbs -- a digit, an open with its verdict, the scripted guesser, the set-new-code mode, a false entry -- and the script-body gate watches them by name
+(`coop/interactables/keypad_verbs`): before each body on the host the verb goes to every client, which runs the same verb on its own copy, so the keypad's own chain plays its
+sounds and lands the same state; after it the state the chain settled on goes too -- at the keypad's setActive, its pair's with it and the password in it; at a digit or a reset
+that started no open -- and a joiner gets each keypad's state in its snapshot (`coop/interactables/keypad_sync`), handed on to its pair and door where the host's already hold it,
+so a door ends as the host's even when a chain ran after the host's save was taken. A client's copy is written to that state whatever its own replay met, but one that arrives while
+the copy's own replayed open, on the keypad or its pair, is still in its 0.2 s wait is written at that chain's end, so it never lands under the tail that reads the set-new-code
+mode and writes the pair. On a client every call of those verbs is refused but the lane's own; a player's own entries -- a digit, the accept or cancel key, the numpad's (told apart
+by the key, since the numpad's accept passes the copy's own verdict), a keycard's swipe, a pass changer -- go to the host as an intent, and the host runs the verb on its copy,
+judging a submit against its own password. A digit clicked on the keys needs the light's power on the presser's own copy, as single player's click does, and a client's copy holds
+the host's light power, since a client applies the host's canonical through the panel's own buttonsVisibility, whose tail runs setPower once the panel is enabled and its generators
+read whole: a client's clicks stop in a blackout and come back with the power. The entries run in order, and the next one waits while the host has no body for the sender and while
+the keypad's open is in the 0.2 s tail that clears its buffer, so none is lost to either wait (a full queue still refuses). A keycard's verdict is taken only while the sender holds
+a keycard. An accept unlocks a door; opening it is an ordinary press of the door.
 
 ### Power, turbine, windows, grime
 
-The power panel's five latched breakers have one author, the host (`coop/world/power_panel`). A
-press on any peer, a lever or the laptop's breaker page, runs as its prediction, and a client's
-reaches the host as the breakers it flipped, caught where the panel's own apply runs. The host takes
-presses in arrival order, a few a second, from a presser within reach of the lever or of the
-terminal it worked the page through (the laptop, or a portable PC); it runs a lever press as the
-game's own press by the presser's puppet, tutorial gate and click included, and applies a page
-press's flip, whose wait the presser already served. It sends every peer the breakers and the
-panel's lockout with the last press it took from each, and a refused press to its author alone. A
-client puts its own untaken presses on top and runs the panel's apply only when that differs from
-what its panel shows, so each machine's own setPower drives its base: the desk's units, the laptop,
-the lights, the servers and the sockets follow the grid everywhere. The desk virus's 60 s lockout
-runs on the host alone: a client refuses its own, switches its servers off as the host's lockout
-starts, and as it ends switches them on with the calc breaker and plays the turn-on cue. The
-generators behind the panel wear on a 30 s decay tick that rolls its own dice; the host runs it,
-and a client refuses its own tick, break, wear and fullFix at the body. The host sends every
-generator's row after the outermost of its generator verbs and its Activate presses, so a break's
-rows follow the blackout canonical it produced; a client runs the same edges from the rows and then
-puts its breakers back to the canonical, since a break's own blackout rewrote them
-(`coop/world/power_grid`). A client's player acts on a generator as ops: its Activate press and its
-upgrade install run on the client first and are reconciled like the panel's presses, and its hit is
-the host's to run, with a held item that swings. The host takes an op from a player within reach, in
-the player's order, and judges an Activate press on its own copy of the repair puzzle, branching as
-the button does: a broken generator is mended, a whole one serviced. An install rests on the upgrade
-its insert spent, which the host saw that player destroy beside the generator
-(`coop/world/power_upgrade`): an install without one is refused, and one refused after it, the second
-of two players at a generator's last free place, gets its upgrade back where the player stands. A repair, the host's of a client's press and a client's of the host's rows alike, runs as
-the game's repair with the puzzle solved followed by the Activate route's turn-on at the generator
-and its completion trigger. The puzzle crosses in the rows (`coop/world/power_puzzle`): its targets
-are the host's rolls, which a client never makes, and its values belong to the one player inside the
-panel (the device lock). That player's knob, switch and rotator inputs run on its client first and
-reach the host as values, taken in its order, so a press follows the inputs it rests on; every peer
-draws the host's puzzle with the panel's own setters and moves, and a joiner gets it with the rows.
-The wind turbine's heading integrator is not saved and chases the synced wind at a degree per
-second, so the host mirrors six driver floats about once a second and the turbine's own tick
-interpolates (`coop/interactables/turbine_sync`). The base window's dirt and the wall grime are
-monotone: a wipe only lowers them, so each peer broadcasts a decrease and the receiver keeps the
-minimum, and two peers wiping at once converge with no oscillation; the grime decals are keyed by
-their quantised world position, since both peers place them from the same save
-(`coop/interactables/window_sync`, `coop/interactables/grime_sync`).
+The power panel's five latched breakers have one author, the host (`coop/world/power_panel`). A press on any peer, a lever or the laptop's breaker page, runs as its prediction, and
+a client's reaches the host as the breakers it flipped, caught where the panel's own apply runs. The host takes presses in arrival order, a few a second, from a presser within
+reach of the lever or of the terminal it worked the page through (the laptop, or a portable PC); it runs a lever press as the game's own press by the presser's puppet, tutorial
+gate and click included, and applies a page press's flip, whose wait the presser already served. It sends every peer the breakers and the panel's lockout with the last press it
+took from each, and a refused press to its author alone. A client puts its own untaken presses on top and runs the panel's apply only when that differs from what its panel shows,
+so each machine's own setPower drives its base: the desk's units, the laptop, the lights, the servers and the sockets follow the grid everywhere. The desk virus's 60 s lockout runs
+on the host alone: a client refuses its own, switches its servers off as the host's lockout starts, and as it ends switches them on with the calc breaker and plays the turn-on cue.
+The generators behind the panel wear on a 30 s decay tick that rolls its own dice; the host runs it, and a client refuses its own tick, break, wear and fullFix at the body. The
+host sends every generator's row after the outermost of its generator verbs and its Activate presses, so a break's rows follow the blackout canonical it produced; a client runs the
+same edges from the rows and then puts its breakers back to the canonical, since a break's own blackout rewrote them (`coop/world/power_grid`). A client's player acts on a
+generator as ops: its Activate press and its upgrade install run on the client first and are reconciled like the panel's presses, and its hit is the host's to run, with a held item
+that swings. The host takes an op from a player within reach, in the player's order, and judges an Activate press on its own copy of the repair puzzle, branching as the button
+does: a broken generator is mended, a whole one serviced. An install rests on the upgrade its insert spent: a world upgrade the host saw that player destroy beside the generator,
+or, for one taken out of the inventory (the hold slot's own actor, whose destroy reaches no one), the upgrade the hand lane says that player's hand last held, one use a hold
+(`coop/player/hand_spend`), the world one recorded by `coop/world/power_upgrade`: an install without one is refused, and one refused after it, the second of two players at a
+generator's last free place, gets its upgrade back where the player stands. An upgrade from the hold slot is announced to the host as the generator's insert begins, before it
+spends the upgrade; a request the hand lane never counted is the client's loss, as for the fuse towers below. A repair, the host's of a client's press and a client's of the host's
+rows alike, runs as the game's repair with the puzzle solved followed by the Activate route's turn-on at the generator and its completion trigger. The puzzle crosses in the rows
+(`coop/world/power_puzzle`): its targets are the host's rolls, which a client never makes, and its values belong to the one player inside the panel (the device lock). That player's
+knob, switch and rotator inputs run on its client first and reach the host as values, taken in its order, so a press follows the inputs it rests on; every peer draws the host's
+puzzle with the panel's own setters and moves, and a joiner gets it with the rows. The wind turbine's heading integrator is not saved and chases the synced wind at a degree per
+second, so the host mirrors six driver floats about once a second and the turbine's own tick interpolates (`coop/interactables/turbine_sync`). The base window's dirt and the wall
+grime are monotone: a wipe only lowers them, so each peer broadcasts a decrease and the receiver keeps the minimum, and two peers wiping at once converge with no oscillation; the
+grime decals are keyed by their quantised world position, since both peers place them from the same save (`coop/interactables/window_sync`, `coop/interactables/grime_sync`).
 
-The base's bay window is not one of those: its dirt is a 1645x512 render target that a sponge
-wipes one dab at a time, so there is no scalar to compare. A stroke reaches the window's own
-`cleanPhys` through a script call no hook here carries arguments for, so the dab is observed at
-its native draw instead -- a `UCanvas::K2_DrawMaterial` whose calling frame is the window with its
-canvas session open, which the window's periodic dirt splotch cannot be, since that refuses to run
-while the session is open. The stroking peer sends the dab's pixel, its edge and the brush's
-opacity and colour; every other peer draws the same dab through the window's own `Canvas` event
-with a brush material the mod owns, and the host relays a client's dab, so the host's save carries
-every peer's wipes. Never `setDraw`, `endDraw` or `dirty` from outside: the session belongs to the
-window, and an outside `endDraw` deletes the world canvas the game's own next dab draws into
-(`coop/interactables/window_stroke_sync`, `ue_wrap/devices/window_canvas`).
+A spilled liquid is the host's (`coop/world/spill_sync`). A coffee cup tipped or flung fast, beer, wine and a gas bottle spill through a `grimeProjectile_C` that flies and leaves
+its grime decal (`grime_coffee_C` and the rest) where it meets a surface, so each peer's own flight would land somewhere else. The host sends each decal its projectile leaves, with
+its transform, its decal's random turn and its dirt (`SpillState`); a client makes it at that transform, so the grime lane's position key names it on both and a partial wipe
+crosses as any decal's does. A client removes a decal its own projectile leaves; when the liquid was in its player's hand it sends the decal first (`SpillIntent`), and the host
+checks its class and that it lies within 15 m of the sender, makes it and sends it back. A spill wiped away is said by whoever wiped it, the host's to everyone and a client's to
+the host, which wipes its own within reach. A spill that just landed carries its splash: every peer whose own flight did not land it plays the game's `water_splash_Cue` there, as
+the projectile does at its hit, and a replay plays none. A copy lies at the host's own floats, so a peer keeps one spill per message and checks only a replay against a decal
+already there; a bottle's pours land a millimetre apart and stack. A world cup or bottle does not spill on a client, whose copy of a food is parked; a gas bottle spills only as it
+breaks, which the host decides. A beer or wine pours on its tick while it is open and upside down, and each pour plays `fuel1` beside the bottle on the peer that pours it; the lane
+sees the pour as its projectile is born, with the `size` of 1 a pour writes (a break leaves the class default, 5, and plays no pour), so the host sends each of its pours
+(`SpillPour`), a client sends one from a bottle in its hand (`SpillPourIntent`) for the host to play and send on, and each peer that did not pour it plays it at the bottle. Water
+from a bucket leaves no puddle: the game's pour (`prop_sponge_bucketPour_C`) flies, puts out fires and cleans what it meets, then ends `[V]` (`harness/autotest/autotest_spill.cpp`,
+twice: a host cup spilled and on the client at its place with none of its own and its splash heard; a partial wipe each way, 100 to 76 and 76 to 52 on both; the host's wipe and the
+client's; an opened beer (7 and 8 decals), an opened wine (10) and a broken gas bottle (1) on their head on the host, every decal on the client at its place and none of its own; a
+cup in the client's hand spilled, made by the host, its splash heard there and back on the client once; the host's 16 bottle pours all heard on the client and a pour of a beer in
+the client's hand heard on the host; the client killed and rejoined, all 40 and 41 live spills there, none twice).
+
+The base's bay window is not one of those: its dirt is a 1645x512 render target that a sponge wipes one dab at a time, so there is no scalar to compare. A stroke reaches the
+window's own `cleanPhys` through a script call no hook here carries arguments for, so the dab is observed at its native draw instead -- a `UCanvas::K2_DrawMaterial` whose calling
+frame is the window with its canvas session open, which the window's periodic dirt splotch cannot be, since that refuses to run while the session is open. The stroking peer sends
+the dab's pixel, its edge and the brush's opacity and colour; every other peer draws the same dab through the window's own `Canvas` event with a brush material the mod owns, and
+the host relays a client's dab, so the host's save carries every peer's wipes. Never `setDraw`, `endDraw` or `dirty` from outside: the session belongs to the window, and an outside
+`endDraw` deletes the world canvas the game's own next dab draws into (`coop/interactables/window_stroke_sync`, `ue_wrap/devices/window_canvas`).
 
 ### The fuse towers
 
-Each of the three coordinate towers can break, and a broken one blocks the ping. A tower's state is
-its broken flag, eight fuses (empty, good or blown) and a lights-out puzzle, and its panel, on a
-platform up the tower's ladder, opens on a montage and carries a lever that runs a timeline. The
-tower rolls its dice in one function, `Scramble Radar Dish`, which blows a good fuse or, with none
-left, scrambles the puzzle and breaks the tower; three callers reach it -- the decay timer the
-generators' saboteur runs, an explosion nearby, and the tower's own load when it was saved broken
--- and the lever's end judges the puzzle. A client refuses both at the script gate on every route,
-its world's load included, so the host's world is the towers' only author
-(`coop/world/fuse_tower_ops`). The host reads its towers each tick and sends every tower's row
-whenever one changes (`coop/world/fuse_tower_rows`); a client applies each change as the tower's
-own graph makes it: the painters for the state, `solvePuzzle` for a repair with its success sound,
-`moveLever` for the lever, and its own retract for the panel once its own montage is idle; a press,
-a pull, an insert and a failed lever play their own sounds. The lever's end, refused on a client, is
-what would clear its moving flag, so a client takes that flag from the row. A client's press of a
-puzzle button, the lever or the panel's retract is refused and sent to the host, which runs the
-tower's own use with the look-at answered and then gives its own player's look-at back. A pull or an
-insert moves a fuse into or out of the player's own hand, so the client's own game makes it and
-claims the slot. The host takes a pull when its copy has the panel open, the lever at rest and that
-fuse blown, and an insert when the slot is empty and, above the two easiest difficulties, the host saw
-that player spend a good fuse at the tower; it refuses one otherwise, answering in the rows to the
-sender alone, and a refused pull's fuse is taken back out of the puller's hand, a refused insert's
-fuse given back where the player stands. A press or a lever the tower's own gates would ignore on the
-host's copy is refused the same way, and a dead player's acts are. Every act is judged within reach of
-the part it acts on, in the player's order, at a few a second.
+Each of the three coordinate towers can break, and a broken one blocks the ping. A tower's state is its broken flag, eight fuses (empty, good or blown) and a lights-out puzzle, and
+its panel, on a platform up the tower's ladder, opens on a montage and carries a lever that runs a timeline. The tower rolls its dice in one function, `Scramble Radar Dish`, which
+blows a good fuse or, with none left, scrambles the puzzle and breaks the tower; three callers reach it -- the decay timer the generators' saboteur runs, an explosion nearby, and
+the tower's own load when it was saved broken -- and the lever's end judges the puzzle. A client refuses both at the script gate on every route, its world's load included, so the
+host's world is the towers' only author (`coop/world/fuse_tower_ops`). The host reads its towers each tick and sends every tower's row whenever one changes
+(`coop/world/fuse_tower_rows`); a client applies each change as the tower's own graph makes it: the painters for the state, `solvePuzzle` for a repair with its success sound,
+`moveLever` for the lever, and its own retract for the panel once its own montage is idle; a press, a pull, an insert and a failed lever play their own sounds. The lever's end,
+refused on a client, is what would clear its moving flag, so a client takes that flag from the row. A client's press of a puzzle button, the lever or the panel's retract is refused
+and sent to the host, which runs the tower's own use with the look-at answered and then gives its own player's look-at back. A pull or an insert moves a fuse into or out of the
+player's own hand, so the client's own game makes it and claims the slot. The host takes a pull when its copy has the panel open, the lever at rest and that fuse blown, and an
+insert when the slot is empty and, above the two easiest difficulties, that player spent a good fuse on it; it refuses one otherwise, answering in the rows to the sender alone, and
+a refused pull's fuse is taken back out of the puller's hand, a refused insert's fuse given back where the player stands. A press or a lever the tower's own gates would ignore on
+the host's copy is refused the same way, and a dead player's acts are. Every act is judged within reach of the part it acts on, in the player's order, at a few a second.
 
-The radio tower is the second kind (`coop/world/fuse_tower_kind` holds what differs between the two). It
-is one actor, the gamemode's `radiotower`, and the drone's shop run reads its broken flag on the host, so
-a client's own break or repair that stayed on its own copy left the order flow judged by the host alone.
-It has the same fuses, a lights-out puzzle on a torus of up to 5x5 cells, a confirm lever whose forward
-end judges the puzzle and one `animation` flag that gates every use, and no panel; its second lever, the
-reset lever, re-rolls the tower. Its one roll is `scramble` (the decay timer, an explosion nearby and the
-reset lever all reach it), refused on a client with the lever's judgement, so the host is its only
-author. Only its fuses are saved: it loads whole and rolls nothing at load. Its row rides the same
-message: the confirm lever's two bits are its timeline's (running, and running forward), the reset
-lever's one is new, and a client starts each lever's timeline once when the host's row first has it
-running, takes `animation` from the row, and repairs through `completeMinigame`. A client that is shown
-a fuse blowing or the tower breaking raises the console's "Radio tower has been damaged!" and "is
-down!" alert by hand (the handler the host's broadcast would call), never for a tower's first applied
-row, since the handler also wakes the player. A client's press of a puzzle button or of either lever is
-sent to the host when its own copy is broken and idle; a whole tower answers with its own hint on the
-client. The host takes a pull of a blown fuse when no lever runs, and an insert on an empty slot. At
-the two easiest difficulties the game keeps the held fuse and the insert solves the puzzle (the radio
-tower also writes the slot, the coordinate tower does not): a client's insert there is refused at the
-gate and sent to the host like a press, which judges reach and the slot on its copy and runs the solve,
-its rows answering. No spend is asked, since the game spends none, so a client holding no fuse can
-solve an easy tower. A client keeps the host's last row of each tower and applies it when that tower
-resolves, looking it up again once a second meanwhile; a tower's first applied row is silent in every
-sound, and a tower that is another object than the row last went to starts over as a first row. The
-radio tower regenerates its puzzle and fuses at construction and at BeginPlay, so a client watches both
+The spend is one of two things the host saw. A fuse lying in the world that the player grabbed is a world prop, and its destroy at the insert reaches the host, which counts it as a
+spend at the tower within reach of the player. A fuse taken out of the inventory is the hold slot's own actor, the player's expression and never a world prop, so its destroy
+reaches no one; for it the host asks the hand lane, as it does for a toolbox's use on the ATV (`coop/player/hand_spend`): the hand's last held class must be a fuse and the hold the
+lane numbers must have its one use left. The judgement is made as the request arrives, after the hold it was sent from is applied if the lane's pace still owes it, and goes with
+the request through the queue; an insert the hand paid for also burns the world spend beside it, so one fuse is one credit. The client announces a fuse from the hold slot before
+its claim leaves, even when it was picked up and used within one tick. The host cannot see the inventory: a client that announces a hold and keeps its fuse is taken once per
+announce, at the hand lane's own rate. A request the lane never counted is the client's loss, reached by an honest client only through a same-tick swap of two identical items or a
+hand that outruns the lane's budget and its debt; a counted one the host refuses, or loses to a leaver, is given back.
+
+The radio tower is the second kind (`coop/world/fuse_tower_kind` holds what differs between the two). It is one actor, the gamemode's `radiotower`, and the drone's shop run reads
+its broken flag on the host, so a client's own break or repair that stayed on its own copy left the order flow judged by the host alone. It has the same fuses, a lights-out puzzle
+on a torus of up to 5x5 cells, a confirm lever whose forward end judges the puzzle and one `animation` flag that gates every use, and no panel; its second lever, the reset lever,
+re-rolls the tower. Its one roll is `scramble` (the decay timer, an explosion nearby and the reset lever all reach it), refused on a client with the lever's judgement, so the host
+is its only author. Only its fuses are saved: it loads whole and rolls nothing at load. Its row rides the same message: the confirm lever's two bits are its timeline's (running,
+and running forward), the reset lever's one is new, and a client starts each lever's timeline once when the host's row first has it running, takes `animation` from the row, and
+repairs through `completeMinigame`. A client that is shown a fuse blowing or the tower breaking raises the console's "Radio tower has been damaged!" and "is down!" alert by hand
+(the handler the host's broadcast would call), never for a tower's first applied row, since the handler also wakes the player. A client's press of a puzzle button or of either
+lever is sent to the host when its own copy is broken and idle; a whole tower answers with its own hint on the client. The host takes a pull of a blown fuse when no lever runs, and
+an insert on an empty slot with a spend behind it, as the coordinate towers' are. At the two easiest difficulties the game keeps the held fuse and the insert solves the puzzle (the
+radio tower also writes the slot, the coordinate tower does not): a client's insert there is refused at the gate and sent to the host like a press, which judges reach and the slot
+on its copy and runs the solve, its rows answering. No spend is asked, since the game spends none, so a client holding no fuse can solve an easy tower. A client keeps the host's
+last row of each tower and applies it when that tower resolves, looking it up again once a second meanwhile; a tower's first applied row is silent in every sound, and a tower that
+is another object than the row last went to starts over as a first row. The radio tower regenerates its puzzle and fuses at construction and at BeginPlay, so a client watches both
 generators and puts the kept row back onto the tower after each.
 
 ### The drone
 
-The delivery drone is one host-simulated actor: its flight is a fragile per-tick integrator not
-worth reproducing, so the host streams its transform while it moves (it glides on after its active
-flag drops) and its state the moment it changes, the client suppresses
-the drone's own tick and drives the streamed transform through an interpolation window, and the
-cargo it drops rides the ordinary prop lanes (`coop/interactables/drone_sync`). The drone's sale
-runs on the host only, which is what makes selling into it the one economy path that credits the
-group correctly.
+The delivery drone is one host-simulated actor: its flight is a fragile per-tick integrator, so the host streams its transform, stamped with its send time, while it moves and its
+state as it changes. The client stops the drone's tick and physics (a touched body spun between writes) and plays the poses back a little behind the host's times, as late as the
+link needs, so late or bunched poses do not lurch, and the cargo it drops rides the ordinary prop lanes (`coop/interactables/drone_sync`). The drone's sale runs on the host only,
+which is what makes selling into it the one economy path that credits the group correctly.
 
-The garage console calls and sends it. Its one action option dispatches on what the presser is
-looking at -- the keyboard runs the drone's own call-or-send verb, the other face toggles the
-drone's leave timer and clicks -- and the console holds its drone as a level reference, so every peer's
-console points at that peer's own drone. A client's press therefore reached a mirror whose flight
-tick is suppressed: nothing moved and nobody heard about it, which is why only the host could work
-the button. The client now refuses its own body at the script-body gate and sends the press. The
-console carries no identity to name, so the host takes the console of its own world that the sender
-stands at, re-tests its own copy of the lid, then runs the same verb, so the flight starts on the
-machine that owns it and arrives on the stream that already carries it
-(`coop/interactables/drone_call_intent`). A press that reaches the host before it holds the sender's
-body, from a joiner who presses at once, waits for the body rather than being refused, as the
-door-verb, keypad and container lanes wait. The leave-timer face rides the same lane: the host flips
-its own drone's setting, which every peer's copy takes from the drone's state stream, and the console's
-click plays on the presser's machine and on the host.
+The garage console calls and sends it. Its one action option dispatches on what the presser is looking at -- the keyboard runs the drone's own call-or-send verb, the other face
+toggles the drone's leave timer and clicks -- and the console holds its drone as a level reference, so every peer's console points at that peer's own drone. A client's press
+therefore reached a mirror whose flight tick is suppressed: nothing moved and nobody heard about it, which is why only the host could work the button. The client now refuses its
+own body at the script-body gate and sends the press. The console carries no identity to name, so the host takes the console of its own world that the sender stands at, re-tests
+its own copy of the lid, then runs the same verb, so the flight starts on the machine that owns it and arrives on the stream that already carries it
+(`coop/interactables/drone_call_intent`). A press that reaches the host before it holds the sender's body, from a joiner who presses at once, waits for the body rather than being
+refused, as the door-verb, keypad and container lanes wait. The leave-timer face rides the same lane: the host flips its own drone's setting, which every peer's copy takes from the
+drone's state stream, and the console's click plays on the presser's machine and on the host.
+
+### The woodchipper
+
+A woodchipper keeps its fuel (0 to 100) and whether it is on. A gas can fills it through its `gascanFuel`, its button flips it on or off, its own tick burns fuel while it runs and
+switches it off at 0, and a prop that enters its intake box is destroyed and chipped into a garbage clump. Each of those ran only on the copy it happened on, so a client's pour or
+press never reached the host, whose copy the save keeps, and a host's never reached a client `[V]`. The host's copy is now the machine (`coop/interactables/woodchipper_sync`,
+`coop/interactables/woodchipper_gate`):
+
+- A client's copy is refused its tick and its intake at the script gate, as the foods' and the plants' ticks are, so it burns nothing and eats nothing; the host's copy eats,
+  destroys the prop through the prop destroy path and drops the clump, which reaches a client by the prop census's re-seed `[?]`. - Every change of the host's chipper is announced
+  by the game's own `checkActive`, and by the button's body for a press at fuel 0, so a watch on each sends the chipper's fuel and on/off at once, one message per changed chipper
+  per tick. The burn is the one thing nothing announces: while a chipper's fuel moves it is read and sent once a second. A client writes both onto its copy and, when the on/off
+  changed, runs the game's own `checkActive` on it, so the copy's motor and its sounds start as in single player `[?]`; a state for a chipper it has not resolved yet is held, the
+  newest per key, and the held keys are retried when the prop index moves. - A client's pour runs on its copy as the game wrote it (its can drains and sounds), and the fuel the
+  copy gained is sent to the host; its press of the button is refused on the copy and sent as the state it wanted. The host judges each (the sender's world, the chipper by key and
+  class, a living sender, its reach, a bounded queue and rate, the gas can in the sender's hand and the room in the tank for a pour, the state wanted for a press), adds the fuel it
+  has room for and runs `checkActive`, or runs the game's own press with the sender's puppet as the player, inside the requester feedback scope, and answers a refused intent with
+  the state, to the sender alone, whenever it can name the chipper (a key that names none has no state to send). A client can refill a chipper to full on demand, at the intent
+  budget of four a second; it cannot overfill it, and no gas can drains but the one in the client's own hand `[?]`. - At a joiner's ready edge the host sends which chippers are on;
+  their fuel comes with the prop records. A chipper that is mid-chip at the join, its chip animation and its chip sound are not carried `[?]`.
+
+`[?]` until the drill runs (`harness/autotest/autotest_woodchipper.cpp`, the `woodchipper_drill` row).
 
 ### The computer and the economy
 
-The host owns the balance. It polls the points field every tick, which catches every writer, and
-broadcasts the absolute value on change and to a joiner; a client writes the host's value directly.
-The wire is one-way. A client-to-host balance delta once existed with no bound, so any peer could
-set the group's money to anything; it was retired whole rather than clamped
-(`coop/world/balance_sync`). A client's own earnings are therefore not shared unless a lane
-carries them as an intent.
+The host owns the balance. It polls the points field every tick, which catches every writer, and broadcasts the absolute value on change and to a joiner; a client writes the host's
+value directly. The wire is one-way. A client-to-host balance delta once existed with no bound, so any peer could set the group's money to anything; it was retired whole rather
+than clamped (`coop/world/balance_sync`). A client's own earnings are therefore not shared unless a lane carries them as an intent.
 
 ### The upgrades
 
-The eighteen upgrade levels are one struct on the save, so they used to ride only the transferred
-save and diverged in silence from the moment a level was bought. The host now polls the struct and
-broadcasts it whole on any change, which catches every writer: the panel, the physical racks, the
-transformer prop. A client applies what it is sent and repaints the rows it has open.
+The eighteen upgrade levels are one struct on the save, so they used to ride only the transferred save and diverged in silence from the moment a level was bought. The host now
+polls the struct and broadcasts it whole on any change, which catches every writer: the panel, the physical racks, the transformer prop. A client applies what it is sent and
+repaints the rows it has open.
 
-A purchase is an intent. A client's button is refused at the script-body gate, so it never debits
-itself, and the host re-derives the price and the bounds from its own table and its own level,
-charges the shared balance and republishes. The rows have no identity of their own to name, so
-holding the laptop claim is the sender's reach, and the index must be one of the fifteen rows that
-buy a level. The host asks exactly what the button asks, including the game's own asymmetry: the
-balance is tested against the row's unaccumulated price and charged the accumulated one.
+A purchase is an intent. A client's button is refused at the script-body gate, so it never debits itself, and the host re-derives the price and the bounds from its own table and
+its own level, charges the shared balance and republishes. The rows have no identity of their own to name, so holding the laptop claim is the sender's reach, and the index must be
+one of the fifteen rows that buy a level. The host asks exactly what the button asks, including the game's own asymmetry: the balance is tested against the row's unaccumulated
+price and charged the accumulated one.
 
 ### The laptop's inbox
 
-The laptop's messages -- the hash-collection task mails, the scientist and alien replies, the
-mails an event or a caught signal produces -- are the same on every machine, and deleting one
-deletes it for everyone. Every producer in the game funnels through one Blueprint-internal
-function into the save's email array, and calling that same function on a receiver reproduces the
-whole arrival at once: the stored row, the list entry, the ding at the physical laptop and the
-tab highlight, with the date re-stamped from the synced clock.
+The laptop's messages -- the hash-collection task mails, the scientist and alien replies, the mails an event or a caught signal produces -- are the same on every machine, and
+deleting one deletes it for everyone. Every producer in the game funnels through one Blueprint-internal function into the save's email array, and calling that same function on a
+receiver reproduces the whole arrival at once: the stored row, the list entry, the ding at the physical laptop and the tab highlight, with the date re-stamped from the synced
+clock.
 
-Each peer keeps a shadow of the array and diffs it once a second. The array only ever grows at
-the tail, so the diff is positional. A new row is broadcast by the host -- see below -- and a
-removed row is broadcast by whoever deleted it, as the row's content HASH and never its index,
-because a producer writes its own row before that row reaches anyone and two peers therefore hold
-the same messages in different orders.
+Each peer keeps a shadow of the array and diffs it once a second. The array only ever grows at the tail, so the diff is positional. A new row is broadcast by the host -- see below
+-- and a removed row is broadcast by whoever deleted it, as the row's content HASH and never its index, because a producer writes its own row before that row reaches anyone and two
+peers therefore hold the same messages in different orders.
 
-Writing a mail is the host's alone: nothing in the game authors a mail from a player action, so a
-client that started producing them could only be a diverged simulation writing into everyone's
-permanent inbox, and a client's append is dropped at the host rather than relayed. Deleting is
-symmetric, because the only thing in the game that removes a mail is a player pressing the row's
-delete button (`coop/world/email_sync`).
+Writing a mail is the host's alone: nothing in the game authors a mail from a player action, so a client that started producing them could only be a diverged simulation writing
+into everyone's permanent inbox, and a client's append is dropped at the host rather than relayed. Deleting is symmetric, because the only thing in the game that removes a mail is
+a player pressing the row's delete button (`coop/world/email_sync`).
 
 ### Shared PC and laptop pages and cart
 
-The base computer and portable terminals use the same `ui_laptop` widget. Its
-main page, media page, media-viewer page and unpurchased cart now follow the
-exclusive laptop operator. The host validates the holder and a grant/release
-serial before accepting a snapshot, then distributes its canonical state.
-A new operator and a late joiner start from that state; loading widgets and
-temporarily full send queues retain their pending work. The final local edit
-is sent before releasing the device on the same reliable lane.
+The base computer and portable terminals use the same `ui_laptop` widget. Its main page, media page, media-viewer page and unpurchased cart now follow the exclusive laptop
+operator. The host validates the holder and a grant/release serial before accepting a snapshot, then distributes its canonical state. A new operator and a late joiner start from
+that state; loading widgets and temporarily full send queues retain their pending work. The final local edit is sent before releasing the device on the same reliable lane.
 
-The cart carries ordered catalog row names, including duplicates. Each peer
-rebuilds the changed suffix through native add/remove calls and reindexes the
-cart widgets. Prices and capacity come from its own catalog. No purchase or
-camera-possession verb is replayed: selecting the camera tab only changes the
-displayed page. Restoring a refused order now also stamps the native catalog
-key, so restored items can be ordered again.
+The cart carries ordered catalog row names, including duplicates. Each peer rebuilds the changed suffix through native add/remove calls and reindexes the cart widgets. Prices and
+capacity come from its own catalog. No purchase or camera-possession verb is replayed: selecting the camera tab only changes the displayed page. Restoring a refused order now also
+stamps the native catalog key, so restored items can be ordered again.
 
-`[V]` Offline production-controller, wire and reflection-wrapper tests plus
-installed 0.9.0n asset contracts. `[?]` Two-player operation and handover remain
-unverified. Search/category state, open message/item details, media playback,
-cursor and the visible operator are still separate work. Purchases continue
-through the existing order economy below.
+`[V]` Offline production-controller, wire and reflection-wrapper tests plus installed 0.9.0n asset contracts. `[?]` Two-player operation and handover remain unverified.
+Search/category state, open message/item details, media playback, cursor and the visible operator are still separate work. Purchases continue through the existing order economy
+below.
 
 ### Shop orders
 
-A client's laptop order is entirely local to its machine: the game's order function queues it in
-the client's own save and hands it to the client's own mirror drone. So on a client the order function's
-queueing (`addOrderCart`) and its send to the drone (`sendShop`) are refused at the script-body gate, and
-the order goes to the host as an intent naming each item's shop row and nothing else, read from the
-function's own parameter at its entry; the host prices the row from its own
-store table, checks its own balance, rolls its own delivery time, commits through the game's own
-order function and charges (`coop/items/order_sync`). An order a world event makes on a client (the
-daily delivery, a gift) is not sent: the host's copy of the event makes it. A refused order comes back with a reason, and the refused items
-are put back in the client's cart, because the game's own affordability gate runs before the cart
-is cleared while the refusal arrives after. This is the reference intent lane: the intent used to
-carry a client-chosen price, and every client shopped free.
+A client's laptop order is entirely local to its machine: the game's order function queues it in the client's own save and hands it to the client's own mirror drone. So on a client
+the order function's queueing (`addOrderCart`) and its send to the drone (`sendShop`) are refused at the script-body gate, and the order goes to the host as an intent naming each
+item's shop row and nothing else, read from the function's own parameter at its entry; the host prices the row from its own store table, checks its own balance, rolls its own
+delivery time, commits through the game's own order function and charges (`coop/items/order_sync`). An order a world event makes on a client (the daily delivery, a gift) is not
+sent: the host's copy of the event makes it. A refused order comes back with a reason, and the refused items are put back in the client's cart, because the game's own affordability
+gate runs before the cart is cleared while the refusal arrives after. This is the reference intent lane: the intent used to carry a client-chosen price, and every client shopped
+free.
 
-The intent names a shop ROW, not an object class, because a class cannot name an item: the game's
-473 shop rows map onto 368 distinct classes, and `prop_C` alone is shared by 50 of them, so 112
-rows have no unique class. The row name is the shop's real identity, and the game stamps it into
-each generated store entry, so a forwarded order already carries it.
+The intent names a shop ROW, not an object class, because a class cannot name an item: the game's 473 shop rows map onto 368 distinct classes, and `prop_C` alone is shared by 50 of
+them, so 112 rows have no unique class. The row name is the shop's real identity, and the game stamps it into each generated store entry, so a forwarded order already carries it.
 
-The host's price comes from the game's own `list_store` table, read two independent ways -- a walk
-over the row map, and a fully reflected column read that needs no layout knowledge. They are
-compared, and a single disagreement invalidates the whole catalog: the host then refuses client
-orders outright rather than charge a number it cannot vouch for. Setting
-`VOTVCOOP_STORE_CATALOG_BREAK=1` makes the walk read the wrong field on purpose, so that refusal
-can be seen firing before it is trusted (`ue_wrap/world/store_catalog`).
+The host's price comes from the game's own `list_store` table, read two independent ways -- a walk over the row map, and a fully reflected column read that needs no layout
+knowledge. They are compared, and a single disagreement invalidates the whole catalog: the host then refuses client orders outright rather than charge a number it cannot vouch for.
+Setting `VOTVCOOP_STORE_CATALOG_BREAK=1` makes the walk read the wrong field on purpose, so that refusal can be seen firing before it is trusted (`ue_wrap/world/store_catalog`).
 
-The delivery queue is the host's. Each change to it -- an order queued, the delivered one taken off --
-goes to every client as the laptop's own queue functions run, and a client's queue follows through
-the same functions (`coop/items/order_queue_sync`). A shop item travels by its row; an item a world
-event built outside the shop has no row and travels by its class, and by the list_props name a generic
-prop carries in its asProp (the daily delivery's reel case), rebuilt in the one shape every such builder
-makes. A change waits, in its place, while the client's laptop, its shop catalog or the engine's name
-conversion is not ready yet; an item the client can never build is left out, down to an order of no
-items that still keeps its place, so the host's next delivery takes the same order off both queues; and
-a change counts as applied only when the queue moved by exactly one.
+The delivery queue is the host's. Each change to it -- an order queued, the delivered one taken off -- goes to every client as the laptop's own queue functions run, and a client's
+queue follows through the same functions (`coop/items/order_queue_sync`). A shop item travels by its row; an item a world event built outside the shop has no row and travels by its
+class, and by the list_props name a generic prop carries in its asProp (the daily delivery's reel case), rebuilt in the one shape every such builder makes. A change waits, in its
+place, while the client's laptop, its shop catalog or the engine's name conversion is not ready yet; an item the client can never build is left out, down to an order of no items
+that still keeps its place, so the host's next delivery takes the same order off both queues; and a change counts as applied only when the queue moved by exactly one.
 
 ### The coin gun
 
-Shooting a prop with the coin gun sells it: the game destroys the prop and mints coins whose
-material is their denomination. A client's shot is uncancellable, so the lane captures the
-client's own coins at their birth and releases or destroys them at the next barrier, sends a sale
-intent naming the prop by key ahead of the client's ordinary destroy on the same lane, and the
-host resolves the prop in its own world, prices it from its own copy, mints through the gun's own
-sell function and destroys the sold prop itself; the coins are host-owned world actors that the
-event-actor mirror carries, and whoever's body trips one on the host credits the host, a client's
-puppet included (`coop/items/coingun_sync`). The client is told the result.
+Shooting a prop with the coin gun sells it: the game destroys the prop and mints coins whose material is their denomination. A client's shot is uncancellable, so the lane captures
+the client's own coins at their birth and releases or destroys them at the next barrier, sends a sale intent naming the prop by key ahead of the client's ordinary destroy on the
+same lane, and the host resolves the prop in its own world, prices it from its own copy, mints through the gun's own sell function and destroys the sold prop itself; the coins are
+host-owned world actors that the event-actor mirror carries, and whoever's body trips one on the host credits the host, a client's puppet included (`coop/items/coingun_sync`). The
+client is told the result.
 
 ### The floppy slot
 
-A laptop and a signal server hold a disc the same way: inserting one moves its type, its remaining
-writes, its data rows and the JSON of its whole save struct into four fields of the device and
-destroys the actor, and ejecting one spawns the disc back from those fields. The four are one
-concept with one owner, and they are state, not an event: the host holds every device's slot, each
-peer polls its own devices once a second behind a digest that reads the raw field bytes, and a peer
-whose own game changed a slot sends the host the outcome as a claim. The host applies it and answers
-with the canonical, which is also the acknowledgement (`coop/interactables/floppy_slot_sync`).
+A laptop and a signal server hold a disc the same way: inserting one moves its type, its remaining writes, its data rows and the JSON of its whole save struct into four fields of
+the device and destroys the actor, and ejecting one spawns the disc back from those fields. The four are one concept with one owner, and they are state, not an event: the host
+holds every device's slot, each peer polls its own devices once a second behind a digest that reads the raw field bytes, and a peer whose own game changed a slot sends the host the
+outcome as a claim. The host applies it and answers with the canonical, which is also the acknowledgement (`coop/interactables/floppy_slot_sync`).
 
-The laptop also edits the files of the disc it holds, which its file quad carries as edit scripts
-(`coop/interactables/laptop_buffer_sync`). So the laptop's slot is watched for which disc it holds
-alone: the rows and the writes travel with a change of that and are the quad's between two. A
-canonical naming the disc a laptop already holds leaves its files alone, and the slot lane primes
-the quad at each change it takes -- a claim sent, a publish, a canonical written -- so an edit made
-after it is the quad's to send, even one made before the host answered the claim. The host counts
-each change of the laptop's disc; the quad's batches and canonicals carry that count on the slot's
-lane, a batch made on another disc is answered with the canonical instead of applied, a canonical of
-another disc is dropped, and neither end applies or sends one while its own change of the disc waits
-for the other.
+The laptop also edits the files of the disc it holds, which its file quad carries as edit scripts (`coop/interactables/laptop_buffer_sync`). So the laptop's slot is watched for
+which disc it holds alone: the rows and the writes travel with a change of that and are the quad's between two. A canonical naming the disc a laptop already holds leaves its files
+alone, and the slot lane primes the quad at each change it takes -- a claim sent, a publish, a canonical written -- so an edit made after it is the quad's to send, even one made
+before the host answered the claim. The host counts each change of the laptop's disc; the quad's batches and canonicals carry that count on the slot's lane, a batch made on another
+disc is answered with the canonical instead of applied, a canonical of another disc is dropped, and neither end applies or sends one while its own change of the disc waits for the
+other.
 
-Emptying a slot writes only what the device's own eject writes -- the type and the rows. The eject
-runs in two phases: it clears those two, and about a second later, when the carrier's timeline
-finishes, the deferred spawn reads the remaining writes and the save JSON to rebuild the disc.
-Anything that zeroes those in between hands the player back a blank disc under a new identity.
+Emptying a slot writes only what the device's own eject writes -- the type and the rows. The eject runs in two phases: it clears those two, and about a second later, when the
+carrier's timeline finishes, the deferred spawn reads the remaining writes and the save JSON to rebuild the disc. Anything that zeroes those in between hands the player back a
+blank disc under a new identity.
 
-A disc a peer ejects reaches the others through the ordinary birth channel: a client's own fresh
-prop spawn is not broadcast, so its device's eject is reported to the host, which authors the disc
-and broadcasts it like any other world prop. Three other lineages travel that way, and all three
-are born into a hand and spawn inert on the host until the holder's pose stream drives them; a
-disc is not held by anyone, so it falls on the host instead.
+A disc a peer ejects reaches the others through the ordinary birth channel: a client's own fresh prop spawn is not broadcast, so its device's eject is reported to the host, which
+authors the disc and broadcasts it like any other world prop. Three other lineages travel that way, and all three are born into a hand and spawn inert on the host until the
+holder's pose stream drives them; a disc is not held by anyone, so it falls on the host instead.
 
-A device takes a disc by two entries, and only one of them is a player. Pressing E with a disc in
-hand is deliberate, happens on one machine, and the slot carries its outcome. The other is the
-hitbox reporting whatever touches the slot -- and an eject spawns the disc INSIDE the box it came
-out of, which the Blueprint handles by turning that device's own hitbox off for a moment. In single player
-the only birth that can land in a slot is that eject, so guarding the one box is enough; in coop
-the disc is also born on the other machine, in a box whose hitbox nobody turned off and where
-nobody ejected anything. So the rule sits on the disc rather than the box: a disc is in transit for
-a moment after it materialises, and no device swallows one in transit, on any peer. The window is
-anchored at the disc's own appearance on each machine, so both peers run one rule against one local
+A device takes a disc by two entries, and only one of them is a player. Pressing E with a disc in hand is deliberate, happens on one machine, and the slot carries its outcome. The
+other is the hitbox reporting whatever touches the slot -- and an eject spawns the disc INSIDE the box it came out of, which the Blueprint handles by turning that device's own
+hitbox off for a moment. In single player the only birth that can land in a slot is that eject, so guarding the one box is enough; in coop the disc is also born on the other
+machine, in a box whose hitbox nobody turned off and where nobody ejected anything. So the rule sits on the disc rather than the box: a disc is in transit for a moment after it
+materialises, and no device swallows one in transit, on any peer. The window is anchored at the disc's own appearance on each machine, so both peers run one rule against one local
 event and neither waits on a message; when it lapses, the native rule simply resumes.
 
-The window is one number for every device, because the mark is on the disc and a disc does not know
-which slot it came out of. It has to clear the frame or two the hitbox entry needs to fire, and it
-has to end before the device that ejected re-enables its own hitbox -- re-enabling a collider
-re-reports every body already inside it, which is how the game re-takes a disc still sitting in the
-slot, and that report comes once. The two devices disagree on the pause: a signal server waits a
-second, a laptop half of one. The window is set under the shorter of the two, so neither device's
-own re-take is touched and an ejecting peer behaves exactly as it does in single player.
+The window is one number for every device, because the mark is on the disc and a disc does not know which slot it came out of. It has to clear the frame or two the hitbox entry
+needs to fire, and it has to end before the device that ejected re-enables its own hitbox -- re-enabling a collider re-reports every body already inside it, which is how the game
+re-takes a disc still sitting in the slot, and that report comes once. The two devices disagree on the pause: a signal server waits a second, a laptop half of one. The window is
+set under the shorter of the two, so neither device's own re-take is touched and an ejecting peer behaves exactly as it does in single player.
 
 ### The signal servers
 
-A base runs dozens of signal boxes, and the game breaks them on its own timer and on world events:
-lightning, damage, triggers, the desk's virus. Three verbs write a box's state -- its break, the
-virus's typed break and its fix -- and the script-body gate watches all three by name. A client
-refuses every one of them through its whole connected session, since each break is a world event
-the host's own game makes, and its player's own repair -- the fix the gamemode's repair widget
-calls when the minigame succeeds -- goes to the host as an intent, which the host runs on its box
-when it is broken and within the player's reach, answering a refusal with its state to that player
-alone. The widget's points are the shared balance's, so a client's own credit from the widget is
-refused and the intent carries what the reward reads (the lol mode and the solve time): the host
-pays the repair (15, or 50 in lol mode, nothing for a box broken by damage) and a record under its
-own best time (30, or 100) in the same step as the fix, and a repair it refuses pays nothing. The
-lol mode and the solve time are the client's report, which the host cannot check: a time under a
-second settles no record, and the host's best rides the server row to every peer, so each widget
-judges a record against the best the host pays from. The repair count stays the player's; the
-points total is the host's, its payment counting it. The host polls each box's broken and
-damaged flags, the repair type its break rolled, and the three totals the gamemode keeps for the
-farm, broadcasts a change at once after a repair and within a second otherwise, and a client writes
-the flags and the type and calls the box's own re-skin, which is notify-free and so repaints
-without firing the notice a real break fires. The box list, the verbs, the label, the break state
-and the repair widget resolve in one engine wrapper (`ue_wrap/devices/serverbox`); the lane beside
-it owns the wire half -- the row, its width, the poll, the repair intent and who may author any of
-it (`coop/interactables/serverbox_sync`).
+A base runs dozens of signal boxes, and the game breaks them on its own timer and on world events: lightning, damage, triggers, the desk's virus. Three verbs write a box's state --
+its break, the virus's typed break and its fix -- and the script-body gate watches all three by name. A client refuses every one of them through its whole connected session, since
+each break is a world event the host's own game makes, and its player's own repair -- the fix the gamemode's repair widget calls when the minigame succeeds -- goes to the host as
+an intent, which the host runs on its box when it is broken and within the player's reach, answering a refusal with its state to that player alone. The widget's points are the
+shared balance's, so a client's own credit from the widget is refused and the intent carries what the reward reads (the lol mode and the solve time): the host pays the repair (15,
+or 50 in lol mode, nothing for a box broken by damage) and a record under its own best time (30, or 100) in the same step as the fix, and a repair it refuses pays nothing. The lol
+mode and the solve time are the client's report, which the host cannot check: a time under a second settles no record, and the host's best rides the server row to every peer, so
+each widget judges a record against the best the host pays from. The repair count stays the player's; the points total is the host's, its payment counting it. The host polls each
+box's broken and damaged flags, the repair type its break rolled, and the three totals the gamemode keeps for the farm, broadcasts a change at once after a repair and within a
+second otherwise, and a client writes the flags and the type and calls the box's own re-skin, which is notify-free and so repaints without firing the notice a real break fires. The
+box list, the verbs, the label, the break state and the repair widget resolve in one engine wrapper (`ue_wrap/devices/serverbox`); the lane beside it owns the wire half -- the row,
+its width, the poll, the repair intent and who may author any of it (`coop/interactables/serverbox_sync`).
 
-A box also takes up to three physical upgrades, a count of its own that its break dice weigh. A player
-installs one by using a held upgrade on the box, which destroys the upgrade, and takes one out with E at
-the box's upgrade bay, which hands a new upgrade over; both run on the machine of the player who acted.
-The two verbs are watched on the box's class at the script-body gate, and each sends what its body
-changed: a client sends the host an install or a take-out, naming the box by its place in the
-gamemode's list; the host applies it within the game's own limits, re-meshes the box and sends every
-box's count, which every peer adopts. An op that lost a race goes back to its author with the counts --
-a refused install is refunded by an upgrade the host spawns at the box, a refused take-out's upgrade is
-removed from its author's hand -- and a joiner gets every box's count at its world-ready
-(`coop/interactables/server_upgrade_sync`).
+A box also takes up to three physical upgrades, a count of its own that its break dice weigh. A player installs one by using a held upgrade on the box, which destroys the upgrade,
+and takes one out with E at the box's upgrade bay, which hands a new upgrade over; both run on the machine of the player who acted. The two verbs are watched on the box's class at
+the script-body gate, and each sends what its body changed: a client sends the host an install or a take-out, naming the box by its place in the gamemode's list; the host applies
+it within the game's own limits, re-meshes the box and sends every box's count, which every peer adopts. An op that lost a race goes back to its author with the counts -- a refused
+install is refunded by an upgrade the host spawns at the box, a refused take-out's upgrade is removed from its author's hand -- and a joiner gets every box's count at its
+world-ready (`coop/interactables/server_upgrade_sync`).
 
 ## Who owns what
 
@@ -570,13 +446,17 @@ removed from its author's hand -- and a joiner gets every box's count at its wor
 |---|---|---|
 | a door, a light group | the host | each is sent at its own verbs; a client's own door verb is an intent the host runs, and its own group writes are refused |
 | a security camera's `active` and `isLight` | the host | each is sent after the camera's use, `upd` and `updState` and the cursed camera's tick; a client's use and light button are intents the host runs |
+| a cremator's lever run (`isActive`) | the host | sent when its handle finishes; a client's copy keeps the host's want and drives its own handle to it, its own `useLever` is refused, and its handle press is an intent, carrying the state it wants, that the host judges and runs |
 | a light switch, a lid, the garage, an appliance, an oven's repair, a locker | any peer | symmetric state edges, relayed |
 | the power panel, the generators | the host | a client's press, repair, service, upgrade install and hit are ops the host takes from a player within reach; the host sends the breakers after its panel's apply and every generator's row after its verbs |
 | a keypad | the host | its verbs replayed on every client and its settled state after each chain; a client's own entries are an intent the host runs |
 | the fuse towers (the three coordinate towers and the radio tower) | the host | a row per tower whenever one changes; a client's presses are intents the host runs, its fuse pulls and inserts claims the host takes or refuses |
 | the turbine | the host | six floats a second |
 | a window, the grime | any peer, minimum wins | monotone decreases |
-| the drone | the host | a transform stream; the client's tick suppressed |
+| a spilled liquid's decal | the host | a client's spill from its hand and its wipe are requests |
+| the drone | the host | a timed transform stream; the client's tick and physics off |
+| a woodchipper's fuel and on/off | the host | a client's pour and press are intents the host judges; the host's state when it changes and every second while its fuel moves |
+| the robot cleaner (`prop_roomba_C`) | the host | it drives by physics, so a client refuses its tick and pickup at the script gate; the host watches `use` (the switch's press and the save's load both end in it), sends each change of `active` as `RoombaState` and claims the drive while it runs, so copies follow the pose stream; a client's press is a `RoombaIntent` the host judges by reach; a state that outruns its copy is held until the bind, and a joiner gets every cleaner's state at its ready edge (`coop/props/roomba_sync`) `[?]` (`harness/autotest/autotest_roomba.cpp`, `roomba_drill`) |
 
 ## Wire messages
 
@@ -587,26 +467,30 @@ removed from its author's hand -- and a joiner gets every box's count at its wor
 | `DoorVerbIntent` | a client to the host | a door's key, the verb, a hit's damage |
 | `CameraActiveState`, `CameraLightState` | the host to all | a camera's key and one bit |
 | `CameraToggleIntent` | a client to the host | a camera's key, which bit, the value wanted |
+| `CrematorState`, `CargoLiftState` | the host to all | a cremator's key and its lever run: on or off; a cargo lift's key and its direction |
+| `CrematorIntent`, `CargoLiftIntent` | a client to the host | a cremator's key and the state the press wants: the handle was pressed; a cargo lift's key and the direction its press wants |
+| `CrematorHit` | the host to the victim | a cremator's key and a hit on that peer's player: damage, or an ignite with its seconds |
 | `KeypadState` | the host to all | a verb the host's keypad ran, or the state a chain settled on: the buffer, the verdict, the set-new-code mode, the password, and whether the chain handed the verdict on |
 | `KeypadIntent` | a client to the host | a keypad's key and the entry: a digit, a submit, a cancel, a keycard's verdict, a reset |
 | `PowerControlState` | a client to the host; the host to all | the breakers a press flipped; the breakers, the lockout, a lever's click and each slot's last press taken |
 | `PowerGridState` | the host to all; a client to the host | every generator's row and each slot's last op taken; a repair, a service, an upgrade install or a hit |
 | `FuseTowerState` | the host to all; a client to the host | every tower's row (kind, broken, fuses, puzzle, panel, levers), each slot's last op taken and last claim refused; a press of a puzzle button, a lever or the retract, a fuse pulled or inserted |
 | `TurbineState`, `WindowCleanState`, `GrimeState` | each peer or the host | the driver floats; a decrease |
+| `SpillState`, `SpillIntent` | the host to all; a client to the host | a spill's class, transform, decal turn and dirt, or that it was wiped away; a client's spill from its hand, or its wipe |
+| `SpillPour`, `SpillPourIntent` | the host to all; a client to the host | where a bottle poured and who poured it; a pour of a bottle in a client's hand |
 | `DroneState` | the host to all | the drone's transform and flags, among them its leave timer |
 | `DroneFlyIntent` | a client to the host | the face pressed, the keyboard or the leave timer; the host finds the console by the sender's reach |
+| `WoodchipperState`, `WoodchipperIntent` | the host to all; a client to the host | a chipper's key, its fuel and on/off, or to a joiner which are on; a client's pour (the fuel its copy gained) or press (the state it wanted) |
 
 ## Late join
 
-Every channel snapshots the full state of every indexed instance to a joiner at its ready edge,
-open and closed alike, because the save the joiner loaded, the host's captured at its join, holds
-neither a state the game does not save (a server box's `active`, a sink's tap) nor one changed while
-the joiner loaded; an oven's repair is in that save, and the snapshot says it again; the keypads, the power masks, the turbine, the windows, the grime and the
-drone's pose are sent the same way.
+Every channel snapshots the full state of every indexed instance to a joiner at its ready edge, open and closed alike, because the save the joiner loaded, the host's captured at
+its join, holds neither a state the game does not save (a server box's `active`, a sink's tap) nor one changed while the joiner loaded; an oven's repair is in that save, and the
+snapshot says it again; the keypads, the power masks, the turbine, the windows, the grime and the drone's pose are sent the same way, and so is which woodchippers are on. Every
+live spill goes again at the ready edge, and a joiner keeps one it already has from the save at that place.
 
-The coordinate towers go to a joiner at the same edge, every tower's row. Its own world's load
-would have scrambled again any tower that was saved broken; that roll is refused, so the row is the
-state it shows, and the first rows a world takes play no sound.
+The coordinate towers go to a joiner at the same edge, every tower's row. Its own world's load would have scrambled again any tower that was saved broken; that roll is refused, so
+the row is the state it shows, and the first rows a world takes play no sound.
 
 ## Known limits
 
@@ -616,7 +500,9 @@ state it shows, and the first rows a world takes play no sound.
 | The coin collect has two entries; the interceptor sits on the overlap entry, and the E-press entry dispatches inside the Blueprint where it cannot fire, so a coin a client collects by pressing is credited on the client only and the host's next balance broadcast erases it | `[V]` `coop/items/coingun_sync` |
 | A point sack, a treasure chest and an achievement completion name the artifact; the host credits it and a replay does not pay twice. The coin gun's E-press is still the client's own credit until the next balance broadcast | `[V]` `coop/world/credit_intent`; the coin press remains `coop/items/coingun_sync` |
 | A cord's link is the host's: a client reports the plug its player made and the host's answer settles both copies, so two clients on one cord settle in arrival order and a claim on a cord the host's player is dragging is answered with the host's link. A socket's power, a generator's outlets and a Kerfus's charging are not this lane's. Not yet exercised in a two-peer game run | `[RD]` the cord and socket Blueprint call surface; `[?]` `coop/interactables/cord_sync`, `ue_wrap/devices/cord` |
+| A client's spill from its hand lands where its own flight put it, which the host takes as is within 15 m. A bottle's opening click and a liquid that leaves something other than a grime decal are not carried | `[V]` `prop_snack_beer_C`'s `openBottle` plays `impact_plastic_cue`; `coop/world/spill_sync` |
 | A client's light-group index has been reported dropping to zero after a join; not reproduced | `[?]` [issue 11](https://github.com/VOTV-MP/Multivoid/issues/11) |
+| A woodchipper's chip animation and chip sound, and the gas can's fuel on the other peers after a pour, are not carried; a client's pour is the fuel its own copy gained, which the host takes up to the room in the tank, and a prop a client holds over the hopper is not eaten while it is held | `[?]` `coop/interactables/woodchipper_sync`; no lane carries the can's fuel |
 
 ## Code map
 
@@ -626,9 +512,11 @@ state it shows, and the first rows a world takes play no sound.
 | cords and sockets | `coop/interactables/cord_sync`, `coop/interactables/cord_sync_watch`, `coop/interactables/cord_sync_sockets`, `ue_wrap/devices/cord` |
 | security cameras | `coop/interactables/camera_toggle_intent`, `coop/interactables/toggle_verbs`, `coop/interactables/interactable_sync`, `ue_wrap/devices/security_camera` |
 | keypads | `coop/interactables/keypad_sync`, `ue_wrap/devices/passwordlock` |
+| spilled liquids | `coop/world/spill_sync`, `ue_wrap/actors/grime_spill` |
 | power, turbine, windows, grime | `coop/world/power_panel`, `coop/world/power_grid`, `ue_wrap/devices/generator`, `coop/interactables/turbine_sync`, `coop/interactables/window_sync`, `coop/interactables/grime_sync`, `ue_wrap/devices/power_control`, `ue_wrap/devices/windturbine`, `ue_wrap/devices/base_window`, `ue_wrap/devices/grime` |
 | the fuse towers | `coop/world/fuse_tower_rows`, `coop/world/fuse_tower_ops`, `coop/world/fuse_tower_kind`, `ue_wrap/devices/coord_tower`, `ue_wrap/devices/radio_tower` |
 | the drone | `coop/interactables/drone_sync`, `coop/interactables/drone_call_intent`, `ue_wrap/devices/drone`, `ue_wrap/devices/drone_console` |
+| the woodchipper | `coop/interactables/woodchipper_sync`, `coop/interactables/woodchipper_gate`, `ue_wrap/actors/woodchipper` |
 | the signal servers | `coop/interactables/serverbox_sync`, `coop/interactables/server_upgrade_sync`, `ue_wrap/devices/serverbox` |
 | identity | `coop/element/portable_identity` |
 | tests and probes | `coop/dev/container_selftest`, `coop/dev/door_drill`, `coop/dev/lightswitch_probe`, `coop/dev/drone_probe`, `coop/dev/drone_call_drill`, `coop/dev/light_group_census`, `coop/dev/tower_drill` |

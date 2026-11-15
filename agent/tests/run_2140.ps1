@@ -6,15 +6,15 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
- & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/events_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" agent/tests/explosion_events_2140_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/events_stubs" /I "$PSScriptRoot/fire_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" "$PSScriptRoot/explosion_events_2140_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile general explosion controller failed'}
  & "$output/controller.exe"
  if($LASTEXITCODE -ne 0){throw 'General explosion controller failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/explosion_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" agent/tests/explosion_blast_2140_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/explosion_stubs" /I "$PSScriptRoot/fire_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" "$PSScriptRoot/explosion_blast_2140_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile general blast wrapper failed'}
  & "$output/wrapper.exe"
  if($LASTEXITCODE -ne 0){throw 'General blast wrapper failed'}
- & $Python agent/tests/blueprint_explosion_2140_test.py
+ & $Python "$PSScriptRoot/blueprint_explosion_2140_test.py"
  if($LASTEXITCODE -ne 0){throw 'Cooked general explosion evidence failed'}
  $cases=@(
  @{Name='sender';Suite='explosion_events';File='coop/props/explosion_events.cpp';Before='sender!=0||p.op!=1';After='p.op!=1'},
@@ -33,7 +33,7 @@ try {
   $harness=$harness.Replace('../../src/votv-coop/src/'+$case.File,($mutant -replace '\\','/'))
   $harness=$harness.Replace('../../src/votv-coop/src/',(($root -replace '\\','/')+'/src/votv-coop/src/'))
   $copy=Join-Path $output ($case.Name+'_test.cpp');[IO.File]::WriteAllText($copy,$harness)
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I agent/tests/events_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I "$PSScriptRoot/events_stubs" /I "$PSScriptRoot/fire_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile mutation failed: $($case.Name)"}
   & "$output/$($case.Name).exe"
   if($LASTEXITCODE -ne 1){throw "Expected assertion failure1: $($case.Name), got $LASTEXITCODE"}

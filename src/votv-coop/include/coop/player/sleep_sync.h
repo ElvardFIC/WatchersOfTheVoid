@@ -1,20 +1,10 @@
-// coop/player/sleep_sync.h -- who rests: each peer's sleep state, known to the host and to the other clients.
-// Game thread throughout.
-//
-// Every peer sleeps NATIVELY on its own machine: the game's own sleep entry, view, restore and wake
-// (a client's world is held at the normal rate by coop/player/sleep_rest). Nothing here holds a peer's
-// dilation, camera or wake, and nothing waits for anyone. What crosses the wire is the fact of rest:
-//   - each peer's state (awake, resting in a bed or fainted, dreaming in a nightmare) with the bed's
-//     class name, sent by a client to the host on a change and relayed by the host to every other client;
-//   - the host's own sleeping flag, which a client shows as one chat line when it rises.
-// sleep_rest permits shared clock acceleration only when every connected participant is resting.
-// Late join: a joiner gets the host flag and every slot, including explicit awake
-// rows. Refused delivery retains current-state debt for that recipient generation.
-// A client reports its initial state and repeats a non-awake state on host flags.
-// World/session/role changes clear snapshots, paced reports and delivery debt.
-//
-// Every peer retains its own native nightmare conditions and probability. A dream
-// scene is personal; the legacy DreamScene packet cannot start one on another peer.
+// coop/player/sleep_sync.h -- shares each peer sleep state with the host and clients.
+// Sleep and dreams remain native and personal on each machine; this lane carries
+// awake/resting/dreaming state and the bed class name. The host relays client
+// changes and its own sleeping flag. Shared clock acceleration requires every
+// connected participant to rest. Join snapshots include explicit awake rows.
+// Refused delivery retains current-state debt per recipient generation.
+// Nightmare conditions and probability remain local.
 
 #pragma once
 
@@ -52,6 +42,13 @@ void OnDisconnectForSlot(int slot);
 // The rest state of `slot` as this peer knows it: on the host, from the clients' reports and its own
 // polls; on a client, from the host's relays (slot 0 the host). Awake for a slot out of range.
 coop::net::SleepPeerState PeerState(int slot);
+
+// A slot's rest state changed as this peer knows it: the host's own polled state (slot 0), a client's report the host
+// applied, the host's relay a client took, and a leaver set back to awake. The state itself changed, not only its bed.
+// The subscriber runs inside the receive (or the poll), so it only records or does one engine call. One subscriber: a
+// second would turn this into a list. Game thread.
+using PeerRestFn = void (*)(int slot, coop::net::SleepPeerState state);
+void SubscribePeerRest(PeerRestFn fn);
 
 // Is the host asleep: on the host its own isSleep, on a client the last flag the host sent. For
 // instruments. Game thread.

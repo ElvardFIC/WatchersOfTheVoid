@@ -2,7 +2,8 @@
 
 #include "coop/interactables/comp_sync.h"
 
-#include "coop/interactables/desk_verb_effects.h"  // the replay's presser; a client's decode's gloss and stat
+#include "coop/requester_feedback/requester_feedback.h"  // the scope's requester; a client's decode's gloss
+#include "coop/interactables/desk_verb_intent.h"   // a client's decode's profile stat
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
@@ -89,7 +90,7 @@ int g_lastPaintedPhase = -1;  // -1 none, 0..2 level phases, 3 finished, 4 idle
 coop::blob_chunks::Assembler g_assembler;
 uint32_t g_nextSeq = 1;
 
-// comp_start's phase text by the row's level (analogDScreenTest.cpp :9787-9816), then the completion's and the stop's.
+// comp_start's phase text by the row's level (CXXHeaderDump/analogDScreenTest.cpp :9787-9816), then the completion's and the stop's.
 const wchar_t* PhaseText(int phase) {
     switch (phase) {
     case 0: return L"conversion";
@@ -154,7 +155,7 @@ void ApplyData(const std::vector<uint8_t>& blob) {
         return;
     }
     CMP::UpdComp(row.hasData);
-    // updComp paints the process text "idle" (analogDScreenTest.cpp :10365): the phase the wire says goes back on,
+    // updComp paints the process text "idle" (CXXHeaderDump/analogDScreenTest.cpp :10365): the phase the wire says goes back on,
     // a continued decode's next level at once.
     g_lastPaintedPhase = 4;
     PaintPhaseIfChanged(DerivePhase(g_wireActive, g_wireProgress));
@@ -184,7 +185,7 @@ void SetOwner(uint8_t slot, uint32_t seq) {
         UE_LOGI("comp_sync: HOST's refiner decode began as slot %u's (press #%u)", static_cast<unsigned>(slot), seq);
     g_owner = slot;
     g_ownerSeq = seq;
-    coop::desk_verb_effects::ForwardGlossesInBody(g_calcFn, slot == 0 ? 0xFF : slot, seq);
+    coop::requester_feedback::ForwardInBody(g_calcFn, slot == 0 ? 0xFF : slot, seq);
 }
 
 void HostStartPre(void* desk) {
@@ -201,9 +202,9 @@ void OnStartPost(const sg::Call& c) {
     if (!pre.valid || !pre.begins || !SessionAs(Role::Host)) return;
     CMP::CompScalars cs;
     if (!CMP::ReadCompScalars(c.object, cs) || !cs.decodeActive) return;  // it refused: nothing began
-    const uint8_t presser = coop::desk_verb_effects::ReplaySlot();
+    const uint8_t presser = coop::requester_feedback::CurrentSlot();
     if (presser == 0xFF) SetOwner(0, 0);  // the host's own press, or its load's restore
-    else SetOwner(presser, coop::desk_verb_effects::ReplaySeq());
+    else SetOwner(presser, coop::requester_feedback::CurrentSeq());
 }
 
 // ---- one step of the host's decode ---------------------------------------------------------------------------------
@@ -242,7 +243,7 @@ sg::Verdict OnStartPre(const sg::Call& c) {
 sg::Verdict OnCalcPre(const sg::Call& c) {
     if (c.function != g_calcFn) {
         g_calcFn = c.function;
-        if (g_owner != 0) coop::desk_verb_effects::ForwardGlossesInBody(g_calcFn, g_owner, g_ownerSeq);
+        if (g_owner != 0) coop::requester_feedback::ForwardInBody(g_calcFn, g_owner, g_ownerSeq);
     }
     g_step = Step{};
     if (!SessionAs(Role::Host)) return sg::Verdict::Run;
@@ -272,7 +273,7 @@ void OnCalcPost(const sg::Call& c) {
                 static_cast<unsigned>(g_owner), delta);
         return;
     }
-    coop::desk_verb_effects::SendStat(g_owner, g_ownerSeq, L"signals_processed", delta);
+    coop::desk_verb_intent::SendStat(g_owner, g_ownerSeq, L"signals_processed", delta);
     ++g_counts.processedSent;
 }
 
@@ -423,7 +424,7 @@ void OnPeerLeft(uint8_t slot) {
             static_cast<unsigned>(slot));
     g_owner = 0;
     g_ownerSeq = 0;
-    coop::desk_verb_effects::ForwardGlossesInBody(nullptr, 0xFF, 0);
+    coop::requester_feedback::ForwardInBody(nullptr, 0xFF, 0);
 }
 
 void OnDisconnect() {

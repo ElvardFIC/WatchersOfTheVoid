@@ -37,12 +37,12 @@ void* Instance();
 bool ReadDishAim(DishAim& out);
 
 // canPing: the committed triangle's sides are each at most 740, its inradius above 1, and the panel's three vertex
-// markers, which glide to the committed coordinates, stand on them (coordsInPlace; ui_coordinates.cpp:385-406,
+// markers, which glide to the committed coordinates, stand on them (coordsInPlace; CXXHeaderDump/ui_coordinates.cpp:385-406,
 // :588-604). The atlas starts a ping only with it set.
 bool ReadCanPing(bool& out);
 
 // The two terms of canPing the committed coordinates carry, computed as the widget computes them: each side at most
-// 740 and an inradius above 1 (ui_coordinates.cpp:546-600). The third, coordsInPlace, is the panel's own animation.
+// 740 and an inradius above 1 (CXXHeaderDump/ui_coordinates.cpp:546-600). The third, coordsInPlace, is the panel's own animation.
 bool AimCanPing(const DishAim& aim);
 
 // The coordinate area's size, the widget's own getAreaSize (its sign canvas's slot size): the space the committed

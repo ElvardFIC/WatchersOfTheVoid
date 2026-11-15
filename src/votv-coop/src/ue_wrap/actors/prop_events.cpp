@@ -53,13 +53,6 @@ void* Resolve(BaseEvent& e) {
 
 }  // namespace
 
-bool CallBaseGrabPrelude(void* prop) {
-    if (!prop) return false;
-    void* fn = Resolve(g_grabPrelude);
-    if (!fn) return false;
-    ParamFrame f(fn);  // the player and the hit result stay zeroed: the base body reads neither
-    return f.valid() && Call(prop, f);
-}
 
 GrabPreludeResult ReplayRemoteGrabPrelude(void* prop) {
     if (!prop || !R::IsLive(prop)) return GrabPreludeResult::NotReady;
@@ -112,5 +105,7 @@ bool AskBool(void* prop, const wchar_t* fnName, const wchar_t* outName, bool& ou
 bool ReadIgnoreSave(void* prop, bool& out) { return AskBool(prop, L"ignoreSave", L"ignoreSave", out); }
 
 bool ReadCanPickup(void* prop, bool& out) { return AskBool(prop, L"canPickup", L"return", out); }
+
+
 
 }  // namespace ue_wrap::prop

@@ -11,6 +11,7 @@
 #include "ue_wrap/core/ftext_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/reflection_props.h"
 #include "ue_wrap/desk/coords_panel.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -58,6 +59,8 @@ int32_t g_offActiveDownload = -1;       // bool
 int32_t g_offActiveCoords = -1;         // bool
 int32_t g_offActiveComp = -1;           // bool
 int32_t g_offCoordIsPing = -1;          // bool
+int32_t g_offRemapValue = -1;           // FVector2D: X the lower bound, Y the upper
+int32_t g_offVisualizerMode = -1;       // bool
 // The derived download-allowed flag is not a field here (see the header), and the comp-pane
 // fields live in ue_wrap/desk/comp_pane; the comp max level stays, since it rides the
 // desk-state marshal.
@@ -65,6 +68,8 @@ int32_t g_offCoordCoordLog2Text = -1;   // FString -- the LIVE log (coord_coordL
 
 struct FieldSlot { const wchar_t* name; int32_t* off; };
 FieldSlot g_fields[] = {
+    { L"remapValue",          &g_offRemapValue },
+    { L"visualizerMode",      &g_offVisualizerMode },
     { L"DL_poFilterOffset",   &g_offDlPoFilterOffset },
     { L"DL_FrFilterOffset",   &g_offDlFrFilterOffset },
     { L"DL_poFilterSpeed",    &g_offDlPoFilterSpeed },
@@ -97,8 +102,8 @@ FieldSlot g_fields[] = {
 // paints, and never from a periodic caller. That is why callers name PAINTERS rather than taking
 // the whole chain: a cooldown charge, which ships every 250 ms while a peer holds the scan, paints
 // nothing, since no verb below reads coord_cooldown. Each verb's scalar dependencies, read off its
-// bytecode, are on its row in the array; none of the nine reads a SIM output, which is why
-// WriteSimOutputs runs none of them.
+// bytecode, are on its row in the array; none of them reads a SIM output (updRemap reads only
+// remapValue), which is why WriteSimOutputs runs none of them.
 struct RefreshSlot { const wchar_t* name; void* fn; };
 // ORDER IS THE CONTRACT: slot i is Painter bit i (console_desk.h). A caller selects verbs by those
 // bits, so re-ordering this array silently re-points every selection.
@@ -112,11 +117,14 @@ RefreshSlot g_refresh[] = {
     { L"updPolarityLights",  nullptr },   // kPaintPolarityLights
     { L"updMaxLevelLights",  nullptr },   // kPaintMaxLevelLights
     { L"updateCoordCoords",  nullptr },   // kPaintCoordCoords
+    { L"updRemap",           nullptr },   // kPaintRemap
 };
 constexpr size_t kRefreshCount = sizeof(g_refresh) / sizeof(g_refresh[0]);
 static_assert(kPaintAll == (1u << kRefreshCount) - 1u,
               "a painter verb was added or removed without its Painter bit");
 constexpr size_t kRefreshCoordCoords = 8;  // kPaintCoordCoords' slot, dispatched alone below
+constexpr size_t kRefreshRemap = 9;        // kPaintRemap's slot, dispatched alone by RepaintRemap
+static_assert(kPaintRemap == (1u << kRefreshRemap), "kRefreshRemap is not kPaintRemap's slot");
 void* g_writeToCoordLogFn = nullptr;  // writeToCoordLog_2 (the LIVE log writer)
 
 // The signal-catch consume surface. The signal-spawn struct's member offsets come from the
@@ -170,6 +178,8 @@ int32_t g_offSignalSound = -1;       // signalSound (UAudioComponent* -- playbac
 void* g_stopSoundFn = nullptr;           // desk stopSound()
 void* g_playSignalFn = nullptr;          // desk playSignal (the deck-playback mirror replay)
 void* g_spawnDirsFn = nullptr;           // desk spawnDirs() (the scan arrows)
+void* g_setCanvasFn = nullptr;           // desk setCanvas(visualizerMode), the signal view's draw
+void* g_endCanvasFn = nullptr;           // desk endCanvas(), which closes it
 
 std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;
@@ -232,6 +242,8 @@ void ResolvePass() {
     if (!g_stopSoundFn) g_stopSoundFn = R::FindFunction(g_cls, L"stopSound");
     if (!g_playSignalFn) g_playSignalFn = R::FindFunction(g_cls, L"playSignal");
     if (!g_spawnDirsFn) g_spawnDirsFn = R::FindFunction(g_cls, L"spawnDirs");
+    if (!g_setCanvasFn) g_setCanvasFn = R::FindFunction(g_cls, L"setCanvas");
+    if (!g_endCanvasFn) g_endCanvasFn = R::FindFunction(g_cls, L"endCanvas");
 
     if (all && !g_coreResolved) {
         g_coreResolved = true;
@@ -245,11 +257,12 @@ void ResolvePass() {
         UE_LOGI("console_desk: offsets[2/2] -- %s", dump);
         int fns = 0;
         for (auto& r : g_refresh) if (r.fn) ++fns;
-        UE_LOGI("console_desk: resolved -- 19/19 fields, %d/9 refresh verbs, "
+        constexpr size_t kFieldCount = sizeof(g_fields) / sizeof(g_fields[0]);
+        UE_LOGI("console_desk: resolved -- %zu/%zu fields, %d/%zu refresh verbs, "
                 "writeToCoordLog_2=%s, widget=%s, "
                 "catch sig/row/dld=0x%X/0x%X/0x%X rowName/mesh=0x%X/0x%X "
                 "form/ping=%s/%s",
-                fns,
+                kFieldCount, kFieldCount, fns, kRefreshCount,
                 g_writeToCoordLogFn ? "yes" : "NO",
                 g_offWidget >= 0 ? "yes" : "NO",
                 g_offCoordSignalData, g_offDLRow, g_offDLData,
@@ -320,6 +333,9 @@ bool ReadScalars(Scalars& out) {
     out.activeCoords      = *OffPtr<bool>(d, g_offActiveCoords);
     out.activeComp        = *OffPtr<bool>(d, g_offActiveComp);
     out.coordIsPing       = *OffPtr<bool>(d, g_offCoordIsPing);
+    out.remapMin          = *OffPtr<float>(d, g_offRemapValue);
+    out.remapMax          = *OffPtr<float>(d, g_offRemapValue + static_cast<int32_t>(sizeof(float)));
+    out.visualizerMode    = *OffPtr<bool>(d, g_offVisualizerMode);
     return true;
 }
 
@@ -348,6 +364,9 @@ bool WriteScalars(const Scalars& in, uint32_t painters) {
     *OffPtr<bool>(d, g_offDlActiveFrFilter) = in.dlActiveFrFilter;
     *OffPtr<bool>(d, g_offDlActivePoFilter) = in.dlActivePoFilter;
     *OffPtr<bool>(d, g_offCoordIsPing)      = in.coordIsPing;
+    *OffPtr<float>(d, g_offRemapValue)      = in.remapMin;
+    *OffPtr<float>(d, g_offRemapValue + static_cast<int32_t>(sizeof(float))) = in.remapMax;
+    // visualizerMode is not written here: setCanvas writes it and draws (ApplyVisualizerMode).
     // Repaint through the blueprint's own painters -- only the ones the caller named. The comp-pane
     // repaint lives in ue_wrap/desk/comp_pane.
     for (size_t i = 0; i < kRefreshCount; ++i) {
@@ -695,6 +714,56 @@ bool ApplyPlayVolumeEffects(int32_t value) {
     if (mult < 0.1f) mult = 0.1f;
     if (mult > 5.0f) mult = 5.0f;
     return ue_wrap::component_calls::SetVolumeMultiplier(comp, mult);
+}
+
+bool ApplyVisualizerMode(bool spectrogram) {
+    void* d = Instance();
+    if (!d || !g_setCanvasFn || !g_endCanvasFn) return false;
+    // setCanvas dereferences the desk's screen widget (its visualizer images); with the widget not
+    // live the verb would write the flag and skip the picture, so the caller is told to try later.
+    if (!AtlasWidget()) return false;
+    ue_wrap::ParamFrame f(g_setCanvasFn);
+    if (!f.valid() || !f.Set<bool>(L"visualizerMode", spectrogram) || !ue_wrap::Call(d, f)) return false;
+    return ue_wrap::component_calls::CallParamless(d, g_endCanvasFn);
+}
+
+bool RepaintRemap() {
+    void* d = Instance();
+    void* fn = g_refresh[kRefreshRemap].fn;
+    // updRemap writes the screen widget's SARV text and the visualizer materials: refused while that
+    // widget is not live (the Blueprint would log a None access and paint nothing).
+    if (!d || !fn || !AtlasWidget()) return false;
+    return ue_wrap::component_calls::CallParamless(d, fn);
+}
+
+bool RepaintCapLevel() {
+    void* d = Instance();
+    // upgraded_pcUpgrades writes the screen widget's cap text: refused while that widget is not live, as updRemap.
+    if (!d || !AtlasWidget()) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(d), L"upgraded_pcUpgrades");
+    return fn && ue_wrap::component_calls::CallParamless(d, fn);
+}
+
+bool ReadCapLabel(std::wstring& tag, std::wstring& text) {
+    void* d = Instance();
+    void* w = AtlasWidget();
+    if (!d || !w) return false;
+    static int32_t sOffButton = -1, sOffText = -1, sOffTags = -1, sOffTextBlockText = -1;
+    if (sOffButton < 0) sOffButton = R::FindPropertyOffset(R::ClassOf(d), L"button_comp_maxLevel");
+    if (sOffText < 0) sOffText = R::FindPropertyOffset(R::ClassOf(w), L"text_comp_maxlvl");
+    if (sOffTags < 0)
+        if (void* ac = R::FindClass(L"ActorComponent")) sOffTags = R::FindPropertyOffset(ac, L"ComponentTags");
+    if (sOffTextBlockText < 0)
+        if (void* tb = R::FindClass(L"TextBlock")) sOffTextBlockText = R::FindPropertyOffset(tb, L"Text");
+    if (sOffButton < 0 || sOffText < 0 || sOffTags < 0 || sOffTextBlockText < 0) return false;
+    void* button = *reinterpret_cast<void**>(static_cast<uint8_t*>(d) + sOffButton);
+    void* block = *reinterpret_cast<void**>(static_cast<uint8_t*>(w) + sOffText);
+    if (!button || !R::IsLive(button) || !block || !R::IsLive(block)) return false;
+    struct NameArray { const R::FName* data; int32_t num; int32_t max; };
+    const auto* tags = reinterpret_cast<const NameArray*>(static_cast<const uint8_t*>(button) + sOffTags);
+    tag = tags->data && tags->num > 0 ? R::ToString(tags->data[0]) : std::wstring{};
+    text = ue_wrap::ftext_utils::FTextToString(static_cast<const uint8_t*>(block) + sOffTextBlockText);
+    return true;
 }
 
 bool PlayScanEffects() {

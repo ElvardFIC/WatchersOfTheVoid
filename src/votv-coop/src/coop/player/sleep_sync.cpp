@@ -45,6 +45,7 @@ bool           g_localSleeping = false;   // isSleep
 // relayed it.
 SleepPeerState g_state[coop::net::kMaxPeers] = {};
 WireKey        g_bed[coop::net::kMaxPeers] = {};
+PeerRestFn g_onPeerRest = nullptr;
 bool           g_hostSleeping = false;    // the host: its isSleep as last published. A client: the host's last flag.
 // A client: the state last sent to the host.
 SleepPeerState g_sentState = SleepPeerState::Awake;
@@ -193,7 +194,7 @@ coop::roster_ledger::PerSlotState<uint32_t> g_reportsApplied;
 // a changed state is relayed to every client, so a sender past its burst costs every peer a message. A state still
 // owed when the player leaves is dropped with the slot; one still owed otherwise is paid like any other: only a
 // sender past its burst is ever owed, and it could send the same state again. MTA applies a client's element data
-// at once (CGame.cpp:2757); paced here for the relay's cost.
+// at once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2757); paced here for the relay's cost.
 constexpr coop::net::IntentBudget kRestBudget{4.0f, 1.0f};
 struct PendingRest {
     SleepPeerState state = SleepPeerState::Awake;
@@ -230,12 +231,19 @@ bool HoldsRest(int slot, SleepPeerState state, const WireKey& bed) {
     return g_state[slot] == state && SameBed(g_bed[slot], bed);
 }
 
-// HOST: a client's changed rest state, stored and relayed to every client but the reporter, as MTA's element-data
-// relay skips its source (CGame.cpp:2761, the skip at :2768). MTA relays to joined players only; ours is the same
-// through SendReliableToSlot's pre-world gate (coop/net/session.cpp:99).
-void ApplyRest(coop::net::Session* s, int slot, SleepPeerState state, const WireKey& bed) {
+void SetPeerState(int slot, SleepPeerState state, const WireKey& bed) {
+    if (slot < 0 || slot >= coop::net::kMaxPeers) return;
+    const bool changed = g_state[slot] != state || !SameBed(g_bed[slot], bed);
     g_state[slot] = state;
     g_bed[slot] = bed;
+    if (changed && g_onPeerRest) g_onPeerRest(slot, state);
+}
+
+// HOST: a client's changed rest state, stored and relayed to every client but the reporter, as MTA's element-data
+// relay skips its source (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2761, the skip at :2768). MTA relays to joined players only; ours is the same
+// through SendReliableToSlot's pre-world gate (coop/net/session.cpp:99).
+void ApplyRest(coop::net::Session* s, int slot, SleepPeerState state, const WireKey& bed) {
+    SetPeerState(slot, state, bed);
     ++g_reportsApplied[slot];
     SendPeerRest(s, -1, slot, slot);
     UE_LOGI("sleep_sync: slot %d is now %d (bed '%.*s')", slot, static_cast<int>(state),
@@ -316,8 +324,7 @@ void Tick() {
             if(!Current(s,epoch))return;
         }
         if (!HoldsRest(0, g_localState, g_localBed)) {
-            g_state[0] = g_localState;
-            g_bed[0] = g_localBed;
+            SetPeerState(0, g_localState, g_localBed);
             if (s->connected()) SendPeerRest(s, -1, 0);
         }
         return;
@@ -355,7 +362,7 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         if (p.op != static_cast<uint8_t>(SleepOp::ClientRest)) return Refuse("op for the host", senderSlot);
         if (senderSlot == 0 || senderSlot >= coop::net::kMaxPeers) return Refuse("sender", senderSlot);
         if (p.slot != 0) return Refuse("slot", senderSlot);
-        // MTA acts on a joined player's reports only (CGame.cpp:2376; coop/interactables/dish_calib_sync.cpp).
+        // MTA acts on a joined player's reports only (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2376; coop/interactables/dish_calib_sync.cpp).
         if (!s->IsSlotWorldReady(senderSlot)) return Refuse("slot", senderSlot);
         ConformPeers(s);
         const SleepPeerState state = static_cast<SleepPeerState>(p.state);
@@ -387,8 +394,7 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         if (p.slot >= coop::net::kMaxPeers) return Refuse("slot", senderSlot);
         const SleepPeerState state = static_cast<SleepPeerState>(p.state);
         if (!HoldsRest(p.slot, state, p.bed)) {
-            g_state[p.slot] = state;
-            g_bed[p.slot] = p.bed;
+            SetPeerState(p.slot, state, p.bed);
             UE_LOGI("sleep_sync: peer %u is now %d (bed '%.*s')", static_cast<unsigned>(p.slot),
                     static_cast<int>(state), static_cast<int>(p.bed.len), p.bed.data);
         }
@@ -427,10 +433,11 @@ void OnDisconnectForSlot(int slot) {
     g_pending[slot]={};g_generation[slot]=0;g_ready[slot]=false;
     g_hostDebt[slot]=0;g_restDebt[slot]={};g_nextTry[slot]=0;
     if (g_state[slot] == SleepPeerState::Awake) return;  // every client already holds it awake
-    g_state[slot] = SleepPeerState::Awake;
-    std::memset(&g_bed[slot], 0, sizeof(WireKey));
+    SetPeerState(slot, SleepPeerState::Awake, WireKey{});
     SendPeerRest(s, -1, slot);
 }
+
+void SubscribePeerRest(PeerRestFn fn) { g_onPeerRest = fn; }
 
 SleepPeerState PeerState(int slot) {
     return (slot >= 0 && slot < static_cast<int>(coop::net::kMaxPeers)) ? g_state[slot]

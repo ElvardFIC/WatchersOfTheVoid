@@ -62,6 +62,8 @@ constexpr size_t   kMaxUnansweredClaims = kMaxQueued;
 constexpr coop::net::IntentBudget kOpBudget{8.0f, 8.0f};
 // A spend waits for its insert's claim; a player's inserts come seconds apart, so a few a slot cover any that race.
 constexpr int kSpendsPerSlot = 4;
+// The class a tower's insert takes, as the hand lane announces a hand item of it (hand_item compares without case).
+constexpr const wchar_t* kFuseClass = L"prop_fuse_C";
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 uint64_t g_epoch = 0;
@@ -1127,6 +1129,11 @@ uint64_t RollsRefused() { return g_rollsRefused; }
 uint16_t LastSentSeq() { return g_seq; }
 uint16_t LastAck() { return g_lastAck; }
 uint64_t Reaped() { return g_reaped; }
+
+void DevSendInsert(uint8_t kind, int32_t tower, int32_t index) {
+    if (auto* s = Connected(); IsClient(s) && kind < coop::net::kFuseTowerKinds)
+        ClientSend(s, coop::net::kFuseTowerOpInsert, static_cast<FK::Kind>(kind), tower, index);
+}
 
 bool RedOpen() {
     static const bool red = [] {

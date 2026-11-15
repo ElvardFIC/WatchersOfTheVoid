@@ -20,13 +20,13 @@ try {
  Extract $source @('FindCompanionLocation') $placement
  Extract ([IO.File]::ReadAllText((Join-Path $checkout 'src/votv-coop/src/coop/interactables/atv_sync.cpp'))) @('IsLocalGrabber','IsHeldForMount','OnMountPre','IsOccupiedByOther') $mount
  function Compile-Spawn($exe){
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/I$output" "/Fo$exe.obj" "/Fe$exe" agent/tests/atv_spawn_lifetime_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/I$output" "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/atv_spawn_lifetime_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Spawn lifetime fixture compile failed'}
  }
  function Compile-Placement($exe){
   $header=Join-Path $output 'placement-source.h'
   [IO.File]::WriteAllText($header,('#define ATV_PLACEMENT_SOURCE "'+$placement.Replace('\','/')+'"'+"`n"+'#define ATV_MOUNT_SOURCE "'+$mount.Replace('\','/')+'"'+"`n"))
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/atv_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/FI$header" "/Fo$exe.obj" "/Fe$exe" agent/tests/atv_2149_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/atv_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/FI$header" "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/atv_2149_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Parking lifetime fixture compile failed'}
  }
  $exe=Join-Path $output 'spawn.exe';Compile-Spawn $exe

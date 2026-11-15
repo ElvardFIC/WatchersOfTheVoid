@@ -11,11 +11,15 @@
 #include "coop/save/join_window_baseline.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
+#include "coop/session/rig_verdict.h"
 #include "ui/multiplayer_menu.h"    // IsPauseMenuOpen
 
+#include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/engine/save_capture.h"
+#include "ue_wrap/world/world_singleton.h"
 
 #include <chrono>
 #include <cstdint>
@@ -42,22 +46,41 @@ Arm ArmNow() {
 // Armed: waiting for the session to settle. WaitMenu: Escape sent, waiting for the pause menu.
 // Done: the click was made, or the drill gave up. The latch is per PROCESS: the quit ends the
 // session, and a drill that started over with the next one would quit again.
-enum class Phase : uint8_t { Armed, WaitMenu, Done };
+// With pause_quit_event the drill first starts an event and waits for the game to count it (WaitEvent).
+enum class Phase : uint8_t { Armed, WaitEvent, WaitMenu, Done };
 Phase g_phase = Phase::Armed;
+
+bool EventArm() {
+    static const bool on = coop::config::ResolveFlag(::coop::config_registry::rows::pause_quit_event);
+    return on;
+}
 Clock::time_point g_escapeAt{};
-Clock::time_point g_lastFind{};
 
 // A fail-safe bound on a wait that is otherwise on readiness (the menu opening), not a clock the
 // drill's verdict rests on.
 constexpr auto kAbortAfter = std::chrono::seconds(30);
-// The walk that finds the menu instance is a one-shot-rate call.
-constexpr auto kFindEvery = std::chrono::seconds(1);
 
 const char* Me() { return ArmNow() == Arm::Host ? "host" : "client"; }
 
 void Abort(const char* why) {
     UE_LOGW("[PAUSE-QUIT] %s ABORT: %s", Me(), why);
+    coop::rig_verdict::Say("pause-quit", coop::rig_verdict::Outcome::Invalid, "%s", why);
     g_phase = Phase::Done;
+}
+
+// The game's own event count raised the way a creature or a recording raises it: lib_C::setEvent(true). The
+// pause menu's Main menu button then meets a running event, which is what the watch in coop/player/leave_in_event
+// answers. False when the call did not resolve or run.
+bool StartEvent() {
+    void* const gm = ue_wrap::world_singleton::Gamemode();
+    void* const lib = R::FindClassDefaultObject(L"lib_C");
+    void* const fn = lib ? R::FindFunction(R::ClassOf(lib), L"setEvent") : nullptr;
+    if (!gm || !fn) return false;
+    ue_wrap::ParamFrame f(fn);
+    f.Set<bool>(L"isEventActive", true);
+    f.Set<bool>(L"deactivateAmbientTrack", false);
+    f.Set<void*>(L"__WorldContext", gm);
+    return f.valid() && ue_wrap::Call(lib, f);
 }
 
 // What `rig: READY joined` stands on, the settled test the chat drill's client uses.
@@ -95,31 +118,7 @@ void SendEscape() {
     R::CallFunction(player, fn, frame.empty() ? nullptr : frame.data());
     UE_LOGI("[PAUSE-QUIT] %s: Escape sent", Me());
     g_escapeAt = Clock::now();
-    g_lastFind = Clock::time_point{};
     g_phase = Phase::WaitMenu;
-}
-
-// A ui_menu_C reads isPause true while it is the in-game pause menu. The property is read on the
-// class (the function walks a class's property chain), then the bit from the instance.
-bool IsPauseInstance(void* menu) {
-    static int32_t off = -1;
-    static uint8_t mask = 0;
-    if (off < 0 && !R::FindBoolProperty(R::ClassOf(menu), P::name::UiMenuIsPauseProp, off, mask))
-        return false;
-    return (*(static_cast<const uint8_t*>(menu) + off) & mask) != 0;
-}
-
-// The pause menu: the live ui_menu_C whose isPause reads true. Not a world filter (the widget is
-// owned by the GameInstance, so it has no world), and FindObjectsByClass can return a departed
-// widget, hence the liveness test. Null while none is found; sets `ambiguous` for two or more.
-void* FindPauseMenu(bool& ambiguous) {
-    void* found = nullptr;
-    for (void* obj : R::FindObjectsByClass(P::name::UiMenuClass)) {
-        if (!R::IsLive(obj) || !IsPauseInstance(obj)) continue;
-        if (found) { ambiguous = true; return nullptr; }
-        found = obj;
-    }
-    return found;
 }
 
 // The click handler of the "Main menu" button. It is synchronous: its script calls
@@ -129,27 +128,29 @@ void PressMainMenu(void* menu) {
     void* fn = R::FindFunction(R::ClassOf(menu), P::name::PauseMenuQuitClickFn);
     if (!fn) return Abort("the Main menu click handler was not found on ui_menu_C");
     const unsigned long long before = coop::player::run_end_travel::MenuTravelsSeen();
+    const bool eventNow = ue_wrap::save_capture::GameEventState() == ue_wrap::save_capture::EventState::On;
     std::vector<uint8_t> frame = ZeroFrame(fn);
     R::CallFunction(menu, fn, frame.empty() ? nullptr : frame.data());
     g_phase = Phase::Done;
     if (coop::player::run_end_travel::MenuTravelsSeen() == before) {
         UE_LOGW("[PAUSE-QUIT] %s FAIL: the click did not reach loadLevel (an event is active, or out "
                 "of bounds)", Me());
+        coop::rig_verdict::Say("pause-quit", coop::rig_verdict::Outcome::Fail,
+                               "the Main menu press did not reach the menu travel (the game counts an event: %d)",
+                               eventNow ? 1 : 0);
         return;
     }
     UE_LOGI("[PAUSE-QUIT] %s: Main menu pressed", Me());
+    coop::rig_verdict::Say("pause-quit", coop::rig_verdict::Outcome::Pass,
+                           "the Main menu press reached the menu travel (the game counts an event: %d)", eventNow ? 1 : 0);
 }
 
 void WaitForMenu() {
     if (Clock::now() - g_escapeAt > kAbortAfter)
         return Abort("the pause menu did not open (in bed, sitting, an interface open?)");
     if (!coop::multiplayer_menu::IsPauseMenuOpen()) return;
-    if (g_lastFind.time_since_epoch().count() != 0 && Clock::now() - g_lastFind < kFindEvery) return;
-    g_lastFind = Clock::now();
-    bool ambiguous = false;
-    void* menu = FindPauseMenu(ambiguous);
-    if (ambiguous) return Abort("two pause menus");
-    if (menu) PressMainMenu(menu);
+    // The game's own reference to the menu; null for a tick or two after a level change, then asked again.
+    if (void* menu = coop::multiplayer_menu::PauseMenu()) PressMainMenu(menu);
 }
 
 }  // namespace
@@ -160,14 +161,25 @@ void Tick(coop::net::Session* s) {
     const bool host = s->role() == coop::net::Role::Host;
     if (host != (arm == Arm::Host)) return;
     if (g_phase == Phase::Armed) {
-        if (host ? HostReady(*s) : ClientReady(*s)) SendEscape();
+        if (!(host ? HostReady(*s) : ClientReady(*s))) return;
+        if (!EventArm()) return SendEscape();
+        if (!StartEvent()) return Abort("lib_C::setEvent did not resolve or run");
+        UE_LOGI("[PAUSE-QUIT] %s: event started", Me());
+        g_escapeAt = Clock::now();
+        g_phase = Phase::WaitEvent;
+        return;
+    }
+    if (g_phase == Phase::WaitEvent) {
+        // The game's own getEvent, asked until it counts the event; a bound, not a clock the verdict rests on.
+        if (ue_wrap::save_capture::GameEventState() == ue_wrap::save_capture::EventState::On) return SendEscape();
+        if (Clock::now() - g_escapeAt > kAbortAfter) Abort("the game did not count the event the drill started");
         return;
     }
     WaitForMenu();
 }
 
 void OnDisconnect() {
-    if (g_phase == Phase::WaitMenu) g_phase = Phase::Done;
+    if (g_phase == Phase::WaitMenu || g_phase == Phase::WaitEvent) g_phase = Phase::Done;
 }
 
 }  // namespace coop::dev::pause_quit_drill

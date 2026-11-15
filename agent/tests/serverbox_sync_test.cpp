@@ -1,5 +1,6 @@
 #include "../../src/votv-coop/src/coop/interactables/serverbox_sync.cpp"
 #include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #include <cassert>
 #include <cstdio>
 #include <functional>

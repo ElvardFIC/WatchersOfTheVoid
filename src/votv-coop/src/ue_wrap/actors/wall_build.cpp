@@ -13,9 +13,6 @@ std::wstring Key(void* wall) {
     const int off = field.Of(wall);
     return off < 0 ? std::wstring{} : save_record::ReadFNameAt(wall, off);
 }
-bool Damage(void* wall, float amount) {
-    return DamageWhile(wall,amount,[]{return true;});
-}
 bool DamageWhile(void* wall,float amount,const std::function<bool()>& callerCurrent) {
     if(!callerCurrent || !callerCurrent())return false;
     if (placed_save::Type(wall) != placed_save::Kind::Wall || !std::isfinite(amount) || amount <= 0) return false;
@@ -48,9 +45,6 @@ bool RestoreMaterial(void* wall, const wchar_t* name) {
     bool ok = false;
     return f.Set<reflection::FName>(L"B", row) && Call(wall, f) && ref.Get() && world == world_identity::Generation() &&
         f.GetRaw(L"return", &ok, sizeof(ok)) && ok;
-}
-bool Feed(void* wall, void* material) {
-    return FeedWhile(wall,material,[]{return true;});
 }
 bool FeedWhile(void* wall, void* material,const std::function<bool()>& callerCurrent) {
     namespace R = reflection;
@@ -91,4 +85,14 @@ bool FeedWhile(void* wall, void* material,const std::function<bool()>& callerCur
         !wallRef.Get() || !materialRef.Get() || !types() || !componentCurrent() || !feedFn.Get()) return false;
     return Call(wall, feed);
 }
+
+
+bool Damage(void* wall, float amount) {
+    return DamageWhile(wall,amount,[]{return true;});
+}
+
+bool Feed(void* wall, void* material) {
+    return FeedWhile(wall,material,[]{return true;});
+}
+
 }

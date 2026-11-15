@@ -16,7 +16,10 @@
 
 #pragma once
 
+#include "ue_wrap/core/cached_obj_ref.h"
+
 #include <cstddef>
+#include <vector>
 
 namespace coop::net { class Session; }
 
@@ -67,5 +70,23 @@ size_t PendingCapDrops();
 // mirror-spawn scope, which is all it needs, since every connected peer broadcasts its own
 // ambient spawns. Net disconnect.
 void OnDisconnect();
+
+namespace dev {   // the act drill's unpack steps read this
+// While on, every spawn finished on the game thread is recorded, whatever the filters after it decide; turning it on
+// clears the record. prop_act_host brackets an unpack's roll with it, so the record is exactly the actors that call made.
+void CaptureBirths(bool on);
+const std::vector<ue_wrap::CachedObjRef>& CapturedBirths();
+// While armed, every PropSpawn the session's funnel took is recorded by its element id (coop/net/prop_spawn_hook.h):
+// SpawnSent when the send entered the stream or the backlog, SpawnRefused when the session refused it. Arming clears the
+// record; disarming leaves the seam null. A birth's eid is minted before its spawn goes out (the census walk mints with
+// no send), so a drill that says "the spawn reached the peers" reads this, never the eid. Game thread.
+void ArmSpawnRecord(bool on);
+bool SpawnSent(uint32_t eid);
+bool SpawnRefused(uint32_t eid);
+// Is this birth still in the watcher's pending-finished queue, waiting for its drain (the express that sends its
+// spawn)? A birth is queued where it finishes, inside the roll that made it, so once the roll has returned a birth that
+// is not here has been drained or was never queued: nothing will send it later. Game thread.
+bool StillPending(void* actor);
+}  // namespace dev
 
 }  // namespace coop::host_spawn_watcher

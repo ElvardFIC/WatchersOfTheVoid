@@ -9,6 +9,7 @@
 #include "ue_wrap/actors/hook.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -16,6 +17,7 @@
 #include <array>
 #include <map>
 #include <unordered_map>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -40,6 +42,8 @@ std::unordered_map<void*, Hook> g_hooks;
 std::map<std::wstring, Retired> g_retired;
 std::map<std::wstring, Request> g_pending;
 std::array<uint64_t, coop::players::kMaxPeers> g_nextRequest{};
+std::vector<std::wstring> g_cut[coop::players::kMaxPeers];
+uint64_t g_asked = 0, g_taken = 0, g_refusedAnswers = 0, g_goneCopies = 0;
 
 bool Host() {return g_session && g_session->role() == coop::net::Role::Host;}
 bool OwnerPhase(void* actor) {
@@ -124,6 +128,7 @@ sg::Verdict OnVerb(const sg::Call& c) {
     if(!g_pending.count(key) && g_pending.size()<8) {
         if(++g_seq==0)++g_seq;
         g_pending.emplace(key,Request{Make(key,0,g_seq),D::NowMs()+8000,0});
+        ++g_asked;
     }
     return sg::Verdict::Cancel;
 }
@@ -169,7 +174,7 @@ void Receive(const Packet& p,uint8_t sender) {
     if(!Host()) {
         if(sender!=0 || p.op==0)return;
         if(p.op==1) {if(g_retired.count(key) || g_retired.size()<kMaxRetired)Retire(key);}
-        else if(auto it=g_pending.find(key);it!=g_pending.end() && it->second.packet.seq==p.seq)g_pending.erase(it);
+        else { ++g_refusedAnswers; if(auto it=g_pending.find(key);it!=g_pending.end() && it->second.packet.seq==p.seq)g_pending.erase(it); }
         return;
     }
     if(sender==0 || p.op!=0 || p.seq==0 || !g_session->IsSlotWorldReady(sender))return;
@@ -227,7 +232,7 @@ void Tick() {
         void* actor=row.ref.Get();
         if(!actor) {
             if(auto it=g_hooks.find(row.ref.Raw());it!=g_hooks.end() && !it->second.ref.Get())g_hooks.erase(it);
-            if(Host() && !g_retired.count(row.key) && g_retired.size()<kMaxRetired)Retire(row.key);
+            if(Host() && !g_retired.count(row.key) && g_retired.size()<kMaxRetired) { ++g_taken; Retire(row.key); }
         } else if(!Host() && !row.query && sg::NameWatchLive(L"actionOptionIndex",kTag) &&
                   sg::NameWatchLive(L"unhook_",kTag)) {
             // Only our spawned mirrors were parked with collision disabled.
@@ -257,10 +262,32 @@ void SendAllToSlot(int slot) {
     if(!Current() || !Host() || slot<=0 || slot>=coop::players::kMaxPeers)return;
     for(auto& [key,row]:g_retired)row.mask|=1u<<slot;
 }
+
+void CaptureJoinHooks(int slot) {
+    if(!Current() || !Host() || slot<=0 || slot>=coop::players::kMaxPeers)return;
+    auto& cut=g_cut[slot];cut.clear();D::CollectAnchoredKeys(cut);
+    std::sort(cut.begin(),cut.end());cut.erase(std::unique(cut.begin(),cut.end()),cut.end());
+    UE_LOGI("hook_retrieve: slot %d's save cut with %zu anchored hook(s) standing",slot,cut.size());
+}
+void SendJoinGone(int slot) {
+    if(!Current() || !Host() || slot<=0 || slot>=coop::players::kMaxPeers)return;
+    std::vector<std::wstring> cut;cut.swap(g_cut[slot]);size_t sent=0;
+    for(const auto& key:cut){if(D::FindHookByKey(key))continue;const Packet p=Make(key,1);
+        if(g_session->SendReliableToSlot(slot,coop::net::ReliableKind::HookRetrieve,&p,sizeof(p)))++sent;}
+    UE_LOGI("hook_retrieve: slot %d world-ready -- %zu of its %zu anchored hook(s) were taken since its save was cut",slot,sent,cut.size());
+}
+
 void OnPeerLeftSlot(int slot) {
     if(slot<0 || slot>=coop::players::kMaxPeers)return;
+    g_cut[slot].clear();
     g_nextRequest[slot]=0;
     for(auto& [key,row]:g_retired)row.mask&=~(1u<<slot);
 }
-void OnDisconnect() {Clear();g_session=nullptr;g_world=0;}
+void OnDisconnect() {Clear();for(auto& cut:g_cut)cut.clear();g_session=nullptr;g_world=0;}
+uint64_t GrantedCount() { return 0; }
+uint64_t AskedCount() { return g_asked; }
+uint64_t TakenCount() { return g_taken; }
+uint64_t RefusedAnswerCount() { return g_refusedAnswers; }
+uint64_t GoneCopyCount() { return g_goneCopies; }
+void* FindHook(const std::wstring& key) { return D::FindHookByKey(key); }
 }

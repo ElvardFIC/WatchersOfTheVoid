@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include "coop/player/shelter_spot.h"
+
 #include <cstdint>
 
 namespace coop::net { class Session; }
@@ -35,6 +37,10 @@ void Tick(coop::net::Session& session, void* localPawn);
 // are resolved, the dead flag's offset is known and a session is live. Any thread.
 bool ReviveAvailable();
 
+// The piece ReviveAvailable lacks, in words (the verbs, the dead flag's offset, the session), or null when it is
+// available: for a caller that refuses to answer a death and must say why. Any thread.
+const char* ReviveMissing();
+
 // The seam publishes its own readiness here, so this module never has to name it back; the arm
 // at the death edge is `ReviveAvailable() && the seam can cancel`. Any thread.
 void NoteRunEndSeamReady(bool ready);
@@ -44,6 +50,10 @@ void NoteRunEndSeamReady(bool ready);
 // for the death chain, an ending's own class otherwise -- and is carried only to name the ending
 // in the revive's line. Game thread (the gate's callback contract).
 void NoteRunEndCancelled(void* author, const wchar_t* authorClass, bool authorIsLocalPawn);
+
+// Detach every black screen on the viewport now (the widget a travel's site puts up, which only the travel would
+// dispose of). True once none is on it. Game thread.
+bool ClearBlackScreenNow();
 
 // A run-ending travel a peer's puppet authored here was refused: this machine's player did not die
 // and is not revived, but the copy's death chain may have put a black screen on this viewport, which
@@ -71,6 +81,10 @@ bool ArmedForThisDeath();
 // Did the last revive complete its conjunction? The travel counters live with the seam that
 // sees them (`coop/player/run_end_travel`).
 bool LastReviveSucceeded();
+
+// Where the last revive put the player and by which rule (`bed` or `kpp-fallback`; kind None before
+// any revive of this session). A drill grades the landing against it. Game thread.
+coop::shelter_spot::Target LastReviveTarget();
 
 // How many revives' screen cleanups have ended, cleared or given up; a cleanup cut short by another revive or a session
 // start is not counted. A drill waits on it rather than a clock. Any thread.

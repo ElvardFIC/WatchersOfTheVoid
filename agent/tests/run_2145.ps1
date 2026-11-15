@@ -7,7 +7,7 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($name in @('cord','extinguisher','flashlight')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_2145_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_2145_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
@@ -30,7 +30,7 @@ try {
    $header=Join-Path $faultRoot ($mutation.Name+'.h')
    [IO.File]::WriteAllText($header,('#define FLASHLIGHT_STATE_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
    $exe=Join-Path $faultRoot ($mutation.Name+'.exe')
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/FI$header" "/Fo$faultRoot/$($mutation.Name).obj" "/Fe$exe" agent/tests/flashlight_2145_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/FI$header" "/Fo$faultRoot/$($mutation.Name).obj" "/Fe$exe" "$PSScriptRoot/flashlight_2145_test.cpp" /link /OPT:REF
    if($LASTEXITCODE -ne 0){throw "Flashlight control compile failed: $($mutation.Name)"}
    $savedPreference=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& $exe $mutation.Name 2>&1 | Out-String;$status=$LASTEXITCODE}finally{$ErrorActionPreference=$savedPreference}

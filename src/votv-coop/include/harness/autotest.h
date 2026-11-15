@@ -1,13 +1,15 @@
-// harness/autotest.h -- the autotest island's interface: one Run* and *Thread pair per autonomous
-// routine, each in its own harness/autotest_*.cpp (dispatch table: autotest_dispatch.cpp). A
-// routine is gated by its VOTVCOOP_RUN_* env var, spawned from the play loop on its own thread,
-// and does all engine work through GT::Post, never touching UObject state off the game thread.
+// harness/autotest.h -- the autotest island's interface. Each autonomous routine is a Run* and
+// *Thread pair declared in harness/autotest/drill_threads.h and defined in its own
+// harness/autotest/autotest_*.cpp (dispatch table: autotest_dispatch.cpp). A routine is gated by
+// its VOTVCOOP_RUN_* env var, spawned from the play loop on its own thread, and does all engine
+// work through GT::Post, never touching UObject state off the game thread.
 
 #pragma once
 
 #include <windows.h>
 
-#include "harness/autotest_trash.h"   // the trash carry drills
+#include "harness/autotest/drill_threads.h"   // every routine's Run*/*Thread pair
+#include "harness/autotest_trash.h"           // the trash carry drills
 
 namespace harness::autotest {
 

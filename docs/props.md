@@ -2,33 +2,24 @@
 
 ## Purpose
 
-Everything a player can pick up, carry, throw, drop, stick to a wall, put in a pocket or take out
-of a container: how it is named across peers, where the mod catches its birth and death, who
-owns it at rest and in a hand, and what happens to a prop whose own Blueprint keeps changing
-it. Trash piles and clumps are a family of their own on [piles.md](piles.md); the item in a
-player's hand is on [players.md](players.md); the tools that leave a persistent actor behind, the
-grappling hook and rope among them, are on [deployables.md](deployables.md).
+Everything a player can pick up, carry, throw, drop, stick to a wall, put in a pocket or take out of a container: how it is named across peers, where the mod catches its birth and
+death, who owns it at rest and in a hand, and what happens to a prop whose own Blueprint keeps changing it. Trash piles and clumps are a family of their own on
+[piles.md](piles.md); the item in a player's hand is on [players.md](players.md); the tools that leave a persistent actor behind, the grappling hook and rope among them, are on
+[deployables.md](deployables.md).
 
 ## How it works
 
 ### Identity
 
-Explosion surface scorches use the same session-scoped dynamic cleaning identity
-as liquid deposits. Exact host explosion/salt-rocket scorchMark factories provide
-the native hit transform and material; client explosions do not trace their own
-surfaces. Birth and join are quiet and retirement is retained for blocked peers.
-Private computer-game explosions inherit that method but stay local. Observed
-source provenance survives same-world reconnect; unknown host scorches remain in
-static cleaning and are not published as new dynamic births. Full save/world-reload
-provenance migration remains open.
+Explosion surface scorches use the same session-scoped dynamic cleaning identity as liquid deposits. Exact host explosion/salt-rocket scorchMark factories provide the native hit
+transform and material; client explosions do not trace their own surfaces. Birth and join are quiet and retirement is retained for blocked peers. Private computer-game explosions
+inherit that method but stay local. Observed source provenance survives same-world reconnect; unknown host scorches remain in static cleaning and are not published as new dynamic
+births. Full save/world-reload provenance migration remains open.
 
-A prop is `Aprop_C` or a subclass, and every keyed prop carries the game's own save key: a
-string the prop's construction script mints as a fresh GUID when none is set, and the save
-persists. The mod reads it and never overwrites it, with one exception: on a receiver, the
-host's key is written into a mirror before its spawn finishes, so both peers hold the same
-name. A save-loaded prop has the same key on both peers because both loaded the same bytes.
-An element id rides alongside the key on every message (`coop/props/prop_element_tracker`,
-`coop/props/prop_synth_key` for the families whose Blueprints mint no key).
+A prop is `Aprop_C` or a subclass, and every keyed prop carries the game's own save key: a string the prop's construction script mints as a fresh GUID when none is set, and the
+save persists. The mod reads it and never overwrites it, with one exception: on a receiver, the host's key is written into a mirror before its spawn finishes, so both peers hold
+the same name. A save-loaded prop has the same key on both peers because both loaded the same bytes. An element id rides alongside the key on every message
+(`coop/props/prop_element_tracker`, `coop/props/prop_synth_key` for the families whose Blueprints mint no key).
 
 ### Where a prop is caught
 
@@ -41,401 +32,304 @@ Nothing about a prop is reflected as replication, so the mod watches four seams:
 | was spawned by the spawn menu or extracted from a container on the host | the engine's finish-spawning call, because those births run their initialisation inside the Blueprint and that call is where the actor is finished |
 | was destroyed | the engine's destroy call on either role: eaten, broken, picked up into a pocket (`coop/props/prop_lifecycle`); a prop that vanishes inside a Blueprint (the truck, culling, a lifespan) is caught by the host's death-watch and destroyed by id on every peer (`coop/props/registry_reaper`) |
 
-A birth message carries the prop's class, key, id, transform and physics flags. For a class that
-keeps save state of its own -- a tape reel's progress, a floppy disc's files -- a second message
-follows it on the same lane with the prop's whole save record, the bytes the prop's own `getData`
-produces, addressed by key (`coop/props/prop_save_data`). Which classes those are is not a list we
-keep: it is whether the class declares a `getData` of its own, read from the live class chain, so a
-save-backed class the game adds is carried without a change here. A record that arrives for a prop
-this peer has not created yet waits under its key until that prop appears, because a key survives
-the destroy-and-recreate that made the record need to travel in the first place. A newer record
-for the same key replaces the waiting one whether it applies at once or waits too, so an older
-record never lands on top of a newer one.
+A birth message carries the prop's class, key, id, transform and physics flags. For a class that keeps save state of its own -- a tape reel's progress, a floppy disc's files -- a
+second message follows it on the same lane with the prop's whole save record, the bytes the prop's own `getData` produces, addressed by key (`coop/props/prop_save_data`). Which
+classes those are is not a list we keep: it is whether the class declares a `getData` of its own, read from the live class chain, so a save-backed class the game adds is carried
+without a change here. A record that arrives for a prop this peer has not created yet waits under its key until that prop appears, because a key survives the destroy-and-recreate
+that made the record need to travel in the first place. A newer record for the same key replaces the waiting one whether it applies at once or waits too, so an older record never
+lands on top of a newer one.
 
-Drive boxes and reel cases also publish after each native `upd` mutation, including consecutive
-changes in one frame. A timed notification window would discard a distinct insertion or lid change
-without publishing its final record. Mirrored applications and a joining client's load churn stay
-excluded so records do not echo. `[V]` `.github/ci/prop_record_refresh_drill.py` executes the
-production callback with isolated engine boundaries; two-peer gameplay remains a separate check.
+Drive boxes and reel cases also publish after each native `upd` mutation, including consecutive changes in one frame. A timed notification window would discard a distinct insertion
+or lid change without publishing its final record. Mirrored applications and a joining client's load churn stay excluded so records do not echo. `[V]`
+`.github/ci/prop_record_refresh_drill.py` executes the production callback with isolated engine boundaries; two-peer gameplay remains a separate check.
 
-On the host, a prop born during play -- a device's eject, a drop, a place -- gets its record from
-the finish-spawning drain a tick after the birth, because the Blueprint that spawned it fills its
-state in after the finish call returns: a disc's eject loads it from the slot's JSON there. The
-birth's own initialisation is too early for a record, and without the drain a disc the host
-ejected reached every client blank. The drain logs its traffic once a minute
-(`HOST BIRTH RECORDS`).
+A canned food (`prop_cannedFood_C` and its variants, a `prop_C` and not of the `prop_food_C` family) keeps `opened` and `foods` in its record, and the can opener, enough impact
+damage and eating change them in place, each ending in `Init`. `Init` also runs for changes that touch neither, so every class's `init` is watched at the script gate, and a can
+publishes only when the two differ from what this peer last knew, a can it has not seen comparing with its class's defaults (`coop/props/prop_can_state`). A record landing here
+updates what is known and does not go back. `[V]` `harness/autotest/autotest_can_state.cpp`: two cans, each opened on one peer and eaten from on the other, read the same `opened`,
+`foods` and mesh on both peers after every step, with one record per change; the client walks to the host first, every step waits on the can's state, and the host judges the
+client's rows (`can-drill: VERDICT`). The verbs ran by reflection; the can opener's and the use key's own routes into them are `[RD]`.
 
-Point-sack redemption is a client intent: the host authorizes reach, destroys its copy, and pays
-only once that incarnation has stopped being live (`coop/items/point_sack_intent`). A successful dispatch with the sack still live pays
-nothing. A joining client's action is also intercepted: a refused send leaves the sack intact
-for another press after joining. `[?]` Concurrent redemption needs a two-peer test; a consumed sack whose payment fails
-has no automatic recovery.
+On the host, a prop born during play -- a device's eject, a drop, a place -- gets its record from the finish-spawning drain a tick after the birth, because the Blueprint that
+spawned it fills its state in after the finish call returns: a disc's eject loads it from the slot's JSON there. The birth's own initialisation is too early for a record, and
+without the drain a disc the host ejected reached every client blank. The drain logs its traffic once a minute (`HOST BIRTH RECORDS`).
+
+Point-sack redemption is a client intent: the host authorizes reach, destroys its copy, and pays only once that incarnation has stopped being live (`coop/items/point_sack_intent`).
+A successful dispatch with the sack still live pays nothing. A joining client's action is also intercepted: a refused send leaves the sack intact for another press after joining.
+`[?]` Concurrent redemption needs a two-peer test; a consumed sack whose payment fails has no automatic recovery.
 
 ### How a birth finds its local actor
 
-A birth names a key, so the receiver looks that key up first and, finding it, converges the actor
-it already has rather than making a second one. When the key resolves to nothing there is still a
-case to answer: the per-peer natural spawners -- mushrooms, underground garbage -- place the same
-logical thing on each peer with a different key and at slightly different spots, and a birth taken
-at face value would stand a duplicate beside the copy this peer already grew. So a birth with no
-key match falls back to a scan for a prop of the same class, carrying the same `list_props` row,
-within 30 cm of where the birth says it is; the first such prop is adopted, re-keyed to the wire
-key and bound. With no candidate at all, a fresh mirror is made
-(`coop/props/remote_prop_spawn`, `coop/props/prop_fresh_spawn`).
+A birth names a key, so the receiver looks that key up first and, finding it, converges the actor it already has rather than making a second one. When the key resolves to nothing
+there is still a case to answer: the per-peer natural spawners -- mushrooms, underground garbage -- place the same logical thing on each peer with a different key and at slightly
+different spots, and a birth taken at face value would stand a duplicate beside the copy this peer already grew. So a birth with no key match falls back to a scan for a prop of the
+same class, carrying the same `list_props` row, within 30 cm of where the birth says it is; the first such prop is adopted, re-keyed to the wire key and bound. With no candidate at
+all, a fresh mirror is made (`coop/props/remote_prop_spawn`, `coop/props/prop_fresh_spawn`).
 
-What that scan must never take is an actor that only looks like a world prop. A player's hand
-item is one: it is a real actor of the right class, it stands at that player's hands, and it
-belongs to the hand lane, which destroys it the moment the hand changes ([players.md](players.md)).
-Adopting one binds a wire identity to an actor that is about to disappear for reasons of its own,
-and the prop it was meant to name never appears on that peer at all. The hand axis -- this peer's
-own hotbar actor and every peer's display mirror -- is excluded from the scan, the same set the
-prop census leaves out of its own walk.
+What that scan must never take is an actor that only looks like a world prop. A player's hand item is one: it is a real actor of the right class, it stands at that player's hands,
+and it belongs to the hand lane, which destroys it the moment the hand changes ([players.md](players.md)). Adopting one binds a wire identity to an actor that is about to disappear
+for reasons of its own, and the prop it was meant to name never appears on that peer at all. The hand axis -- this peer's own hotbar actor and every peer's display mirror -- is
+excluded from the scan, the same set the prop census leaves out of its own walk.
 
 ### Who authors a prop
 
-At rest, the host. A client never authors the existence of a shared-world prop: its own fresh
-spawn of a keyed prop is not broadcast. Instead a client's actions become intents the host
-performs (`coop/props/prop_drop_intent`):
+At rest, the host. A client never authors the existence of a shared-world prop: its own fresh spawn of a keyed prop is not broadcast. Instead a client's actions become intents the
+host performs (`coop/props/prop_drop_intent`):
 
-- **Pick up.** The client's pickup destroys the world actor; that destroy crosses the seam, the
-  host destroys its copy, and the key is parked, which records that the host holds no copy now.
-- **Place.** The client's fresh spawn is caught at the finish-spawning seam and sent as a drop
-  intent naming the parked key, the class and the transform; the host spawns it as the sole
-  author and the mirror comes back down the ordinary birth broadcast.
-- **Births the client cannot avoid.** A reel ejected from a caddy, a module or a drive taken from
-  a rack, an item extracted from a container all materialise on the client first; they go
-  through the same door, class-checked at the host, born asleep where the class needs it.
-- **Births a player asked for.** The sandbox spawn menu and the toolgun. These cannot be named by
-  class -- the menu is the whole catalog, and the world's own spawners, morphs and impacts mint
-  those same classes per peer, so a class test would double the world. They are admitted on
-  AUTHORSHIP instead: the birth seam asks whether a player's own spawn verb is on the stack, which
-  is a fact only that instant holds, since the VM still has the calling Blueprint frame there
-  (`coop/props/prop_spawn_authoring`). Such a birth crosses as an ordinary drop intent and is NOT
-  slept on the host -- it was dropped at the player's aim and must fall there as it falls here.
+- **Pick up.** The client's pickup destroys the world actor; that destroy crosses the seam, the host destroys its copy, and the key is parked, which records that the host holds no
+  copy now. - **Place.** The client's fresh spawn is caught at the finish-spawning seam and sent as a drop intent naming the parked key, the class and the transform; the host
+  spawns it as the sole author and the mirror comes back down the ordinary birth broadcast. - **Births the client cannot avoid.** A reel ejected from a caddy, a module or a drive
+  taken from a rack, an item extracted from a container all materialise on the client first; they go through the same door, class-checked at the host, born asleep where the class
+  needs it. - **Births a player asked for.** The sandbox spawn menu and the toolgun. These cannot be named by class -- the menu is the whole catalog, and the world's own spawners,
+  morphs and impacts mint those same classes per peer, so a class test would double the world. They are admitted on AUTHORSHIP instead: the birth seam asks whether a player's own
+  spawn verb is on the stack, which is a fact only that instant holds, since the VM still has the calling Blueprint frame there (`coop/props/prop_spawn_authoring`). Such a birth
+  crosses as an ordinary drop intent and is NOT slept on the host -- it was dropped at the player's aim and must fall there as it falls here.
 
-Any other keyed prop a client creates is dropped at that door and never reaches the host: that is
-the world's own churn, which every peer produces for itself.
+Any other keyed prop a client creates is dropped at that door and never reaches the host: that is the world's own churn, which every peer produces for itself.
 
 ### The data row a prop carries
 
-A prop resolves one row of the game's master table when it initialises -- `list_props`, 2,471 rows,
-keyed by the prop's own name -- and copies the whole row into `propData` (all but one path: a prop
-spawned with `ingoreFix` set takes only the mesh from the row and keeps its own flags). Four of
-its seventeen fields are switches the game itself reads on the interaction path: `heavy` picks
-lift versus drag,
-`canHold` refuses the grab with the same "too heavy" hint a heavy prop gets, `canCollect` keeps the
-prop out of the pocket, and `ignoreInteractions` makes the prop no target at all -- the use press
-plays the deny sound and returns, and the look-at prompt never appears over it. In the shipped
-table 188 rows are heavy, 196 refuse holding, 28 refuse collecting and 8 ignore interactions; a
-prop whose name matches no row is holdable and collectable.
+A prop resolves one row of the game's master table when it initialises -- `list_props`, 2,471 rows, keyed by the prop's own name -- and copies the whole row into `propData` (all
+but one path: a prop spawned with `ingoreFix` set takes only the mesh from the row and keeps its own flags). Four of its seventeen fields are switches the game itself reads on the
+interaction path: `heavy` picks lift versus drag, `canHold` refuses the grab with the same "too heavy" hint a heavy prop gets, `canCollect` keeps the prop out of the pocket, and
+`ignoreInteractions` makes the prop no target at all -- the use press plays the deny sound and returns, and the look-at prompt never appears over it. In the shipped table 188 rows
+are heavy, 196 refuse holding, 28 refuse collecting and 8 ignore interactions; a prop whose name matches no row is holdable and collectable.
 
-This mod reads exactly one of them, `heavy`. That costs nothing wherever the game's own trace
-chooses the subject, because the game applies the rest itself; it costs something wherever a lane
-picks the subject on its own, which today is the client's pile cone described in
-[piles.md](piles.md).
+This mod reads exactly one of them, `heavy`. That costs nothing wherever the game's own trace chooses the subject, because the game applies the rest itself; it costs something
+wherever a lane picks the subject on its own, which today is the client's pile cone described in [piles.md](piles.md).
 
 ### Holding, throwing, dropping
 
-While a prop is held, its holder owns it. The holder streams the held prop's world transform every
-frame, unreliable and newest-wins, under a generation it mints at the grab
-(`coop/player/local_streams`). A receiver resolves the prop by key, turns its physics off, and
-follows the stream with a fixed-delay snapshot interpolation that renders one interval behind the
-newest pose on its own clock (`coop/props/remote_prop`, `coop/props/active_drive`). A grab changes
-the prop as well as moving it, on the grabbing machine only: the base prop's grab prelude clears its
-lifespan, broadcasts that it was touched and wakes and unfreezes it, and a prop carrying the
-wall-attach component runs the component's unstick instead. So the first pose of a hold runs the
-same prelude on the receiver's copy -- a fire extinguisher on its wall mount, a drive in a slot, a
-prop the toolgun froze or a save left asleep, a spawner's prop on a lifespan -- the unstick with the
-tool, since the holder had the prop off the wall. The release closes the hold, as do a stick and a
-slot that takes the prop from the hand, so a pose still in flight from an ended hold starts nothing:
-MTA's sync time context, minted here by the holder rather than assigned. A driven copy the game here
-switches back to simulating, as a laptop exit does to a chair another peer carries, is re-latched
-kinematic. A copy static here with no unstick is not driven, since the game cannot hold a body that
-does not simulate; the refusal is logged once per hold. On release, a reliable message carries the
-prop's transform, its frozen and sleep and its linear and angular velocity at that instant -- the
-game's throw is not an impulse but the tracking velocity the physics engine accumulated while the
-player flicked the camera. The receiver's copy takes the flags and lets go from the holder's
-transform, so lost last poses still end where the holder's did, and gets the velocity back unless it
-ended frozen in a slot or a mount, where it stays; a stuck wall-attachable keeps the place its stick
-gave it. A release for a prop something else moves now -- this peer's own grab, another hold, the
-host's driven-prop channel -- changes nothing but its own hold. A release the holder numbered also
-makes the receiver call the prop's own thrown event, so the sound and the trail come from the engine.
-A stream that stops for half a second, or a holder that switches to another prop, is an implicit release.
-Grab and throw sounds the game plays only for the local player are synthesised on the receiver at
-the prop's position (`coop/props/prop_sound`), and the pocket blip is relayed
-(`coop/items/inventory_pickup_sync`).
+While a prop is held, its holder owns it. The holder streams the held prop's world transform every frame, unreliable and newest-wins, under a generation it mints at the grab
+(`coop/player/local_streams`). A receiver resolves the prop by key, turns its physics off, and follows the stream with a fixed-delay snapshot interpolation that renders one
+interval behind the newest pose on its own clock (`coop/props/remote_prop`, `coop/props/active_drive`). A grab changes the prop as well as moving it, on the grabbing machine only:
+the base prop's grab prelude clears its lifespan, broadcasts that it was touched and wakes and unfreezes it, and a prop carrying the wall-attach component runs the component's
+unstick instead. So the first pose of a hold runs the same prelude on the receiver's copy -- a fire extinguisher on its wall mount, a drive in a slot, a prop the toolgun froze or a
+save left asleep, a spawner's prop on a lifespan -- the unstick with the tool, since the holder had the prop off the wall. The release closes the hold, as do a stick and a slot
+that takes the prop from the hand, so a pose still in flight from an ended hold starts nothing: MTA's sync time context, minted here by the holder rather than assigned. A driven
+copy the game here switches back to simulating, as a laptop exit does to a chair another peer carries, is re-latched kinematic. A copy static here with no unstick is not driven,
+since the game cannot hold a body that does not simulate; the refusal is logged once per hold. On release, a reliable message carries the prop's transform, its frozen and sleep and
+its linear and angular velocity at that instant -- the game's throw is not an impulse but the tracking velocity the physics engine accumulated while the player flicked the camera.
+The receiver's copy takes the flags and lets go from the holder's transform, so lost last poses still end where the holder's did, and gets the velocity back unless it ended frozen
+in a slot or a mount, where it stays; a stuck wall-attachable keeps the place its stick gave it. A release for a prop something else moves now -- this peer's own grab, another
+hold, the host's driven-prop channel -- changes nothing but its own hold. A release the holder numbered also makes the receiver call the prop's own thrown event, so the sound and
+the trail come from the engine. A stream that stops for half a second, or a holder that switches to another prop, is an implicit release. Grab and throw sounds the game plays only
+for the local player are synthesised on the receiver at the prop's position (`coop/props/prop_sound`), and the pocket blip is relayed (`coop/items/inventory_pickup_sync`).
 
 ### Wall attachments
 
-The stick commit captures the support actor and exact scene component after the game's native
-attachment. `PropStickState` carries the support element id when available, plus class/name and
-component-name identity. Receivers set the sender's pose and physics flags, then KeepWorld-attach
-to that exact component; they do not depend on a second local trace. If a join's prop arrives before
-its support, the state waits up to ten seconds for the support to materialize. The join snapshot
-sends this state after the prop birth, and support EndPlay retires the manually attached mirror.
-Unstick still uses the component's native verb. The receiver does not replay the native stick's
-cosmetic effect or glide.
+The stick commit captures the support actor and exact scene component after the game's native attachment. `PropStickState` carries the support element id when available, plus
+class/name and component-name identity. Receivers set the sender's pose and physics flags, then KeepWorld-attach to that exact component; they do not depend on a second local
+trace. If a join's prop arrives before its support, the state waits up to ten seconds for the support to materialize. The join snapshot sends this state after the prop birth, and
+support EndPlay retires the manually attached mirror. Unstick still uses the component's native verb. The receiver does not replay the native stick's cosmetic effect or glide.
 
 ### Toolgun flags
 
-Every `tool_*_C::init(toolgun)` action reads the toolgun's `outHit` target before and after the
-tool body. If that keyed prop's static, frozen or sleep flags changed, `PropToolFlags` sends the
-final live state through the host to all ready peers, including when the prop is idle and has no
-hold or position stream. Receivers use the base `setPropProps` body so subclass-only `active`
-state is not changed. A peer whose local player is holding the prop leaves its state to the hold
-and release path. Late joiners already receive the host's current flags in their prop snapshot.
-Changes made later by a tool timer or a different event are outside this `init` action boundary.
+Every `tool_*_C::init(toolgun)` action reads the toolgun's `outHit` target before and after the tool body. If that keyed prop's static, frozen or sleep flags changed,
+`PropToolFlags` sends the final live state through the host to all ready peers, including when the prop is idle and has no hold or position stream. Receivers use the base
+`setPropProps` body so subclass-only `active` state is not changed. A peer whose local player is holding the prop leaves its state to the hold and release path. Late joiners
+already receive the host's current flags in their prop snapshot. Changes made later by a tool timer or a different event are outside this `init` action boundary.
 
-A throw is the game's own `throwShit` on the local pawn: it sets the launch velocity, and every throw
-path calls it (`mainPlayer_C`'s hand throw, the grabbed prop's fire press, the host's own). A
-script-gate watch on it, filtered to the local pawn by identity, numbers the throw with a sequence that
-is never 0 and records it (`coop/props/prop_throw`). The sequence rides the release and the drop intent;
-0 means the prop was not thrown, and a fast release with none plays no thrown event. The host then
-elects the thrower the prop's syncer, the way MTA's server elects an unoccupied vehicle's: a client's
-release from the prop's last holder, or the drop intent of a hand throw once the host's spawn has its
-element id, opens a driven row naming the thrower under a new generation and sends the grant unasked
-(`PropSyncAnswer`, whose `seq` is the sequence). The thrower's copy has flown since the throw and is
-never parked; it streams its pose, velocity and clock on the drive channel, the host's copy follows
-the first admitted row, and every other client receives the host's republish. A row's velocity, a release's,
-a drop intent's and an End's are clamped to the throw's bounds (`coop/net/throw_bounds.h`; a throw's spin
-meets throwShit's ceiling, every other spin a looser body ceiling), and the host relays a client's release
-to the other clients itself, after the clamp. The election also needs the release within reach of the
-thrower's puppet on the host (the claim's reach); out of reach, the release applies as a plain release.
+A throw is the game's own `throwShit` on the local pawn: it sets the launch velocity, and every throw path calls it (`mainPlayer_C`'s hand throw, the grabbed prop's fire press, the
+host's own). A script-gate watch on it, filtered to the local pawn by identity, numbers the throw with a sequence that is never 0 and records it (`coop/props/prop_throw`). The
+sequence rides the release and the drop intent; 0 means the prop was not thrown, and a fast release with none plays no thrown event. The host then elects the thrower the prop's
+syncer, the way MTA's server elects an unoccupied vehicle's: a client's release from the prop's last holder, or the drop intent of a hand throw once the host's spawn has its
+element id, opens a driven row naming the thrower under a new generation and sends the grant unasked (`PropSyncAnswer`, whose `seq` is the sequence). The thrower's copy has flown
+since the throw and is never parked; it streams its pose, velocity and clock on the drive channel, the host's copy follows the first admitted row, and every other client receives
+the host's republish. A row's velocity, a release's, a drop intent's and an End's are clamped to the throw's bounds (`coop/net/throw_bounds.h`; a throw's spin meets throwShit's
+ceiling, every other spin a looser body ceiling), and the host relays a client's release to the other clients itself, after the clamp. The election also needs the release within
+reach of the thrower's puppet on the host (the claim's reach); out of reach, the release applies as a plain release.
 
-A thrown prop's rows cost trust, never display. A row whose step does not agree with the speed a prop can
-fly is shown like any other (the host's copy and every other client follow it) and counted on the row; a
-passing row resets the run. After `kMaxRefusedRows` failures in a row, or twice that many over the flight,
-the thrower's right is revoked: the host takes the prop back from the last passing row's pose and velocity
-under a new generation (when no row passed, from the release pose at rest), and one line names the slot and
-the counts. This diverges from MTA, which bounds nothing on an unoccupied-vehicle
-syncer's packet; ours follows the rule that a client's discontinuity costs trust. The host's own grab
-throw opens a coast row that streams it to rest. The host's grab, a flight past its bound, a grant that
-no row follows, a thrower who leaves, a thrower who falls silent (no admitted row for `kThrowSilenceMs`,
-judged per host tick; a claim's row keeps the once-a-second pass and its 5 s) and any end of a thrown prop
-nothing was admitted for hand the prop to the host; its copy then continues from the last passing row's pose and velocity (from the release
-pose at rest when rows came and none passed; its own state when none came) and every copy follows the host. `[?]` until the throw arms read them.
+A thrown prop's rows cost trust, never display. A row whose step does not agree with the speed a prop can fly is shown like any other (the host's copy and every other client follow
+it) and counted on the row; a passing row resets the run. After `kMaxRefusedRows` failures in a row, or twice that many over the flight, the thrower's right is revoked: the host
+takes the prop back from the last passing row's pose and velocity under a new generation (when no row passed, from the release pose at rest), and one line names the slot and the
+counts. This diverges from MTA, which bounds nothing on an unoccupied-vehicle syncer's packet; ours follows the rule that a client's discontinuity costs trust. The host's own grab
+throw opens a coast row that streams it to rest. The host's grab, a flight past its bound, a grant that no row follows, a thrower who leaves, a thrower who falls silent (no
+admitted row for `kThrowSilenceMs`, judged per host tick; a claim's row keeps the once-a-second pass and its 5 s) and any end of a thrown prop nothing was admitted for hand the
+prop to the host; its copy then continues from the last passing row's pose and velocity (from the release pose at rest when rows came and none passed; its own state when none came)
+and every copy follows the host. `[?]` until the throw arms read them.
 
-Joining mid-flight: a peer that becomes world-ready while a thrown prop flies gets the host's copy from
-the prop's spawn, the drive's resend of the admitted pose (`OnPeerWorldReady`), and then the relayed
-rows of the elected syncer, each carrying the row's generation. A joiner is never the thrower, so it is
-never elected. `[?]` until the join arm of the throw drill reads it.
+Joining mid-flight: a peer that becomes world-ready while a thrown prop flies gets the host's copy from the prop's spawn, the drive's resend of the admitted pose
+(`OnPeerWorldReady`), and then the relayed rows of the elected syncer, each carrying the row's generation. A joiner is never the thrower, so it is never elected. `[?]` until the
+join arm of the throw drill reads it.
 
 ### Dragged by a hook
 
-A prop nobody is holding can still be in motion: a hook's constraint pulls it along behind the
-player, an anchored hook ties it to something that moves, and after the hook lets go it slides until
-it rests. The held-prop stream never sees it, since that stream is sourced from the player's grab
-slot alone, so the host keeps a set of the props the hooks on its machine are tied to -- its own,
-the anchored ones it adopted, its mirrors of the clients' hooks, and the save's and the level's own
--- fed by the hook lane rather than by a per-frame walk, and streams each one's pose while it moves
-(`coop/props/prop_drive_host`). Every hook's constraint exists on the host and nowhere else ([deployables.md](deployables.md)),
-so this one set is every prop any hook can move. A broom's push is
-the set's second feeder: every stroke is the host's ([piles.md](piles.md)), and each prop a stroke
-pushes coasts under the stream until it rests, while a prop a verb already holds stays that verb's
-(`coop/items/broom_push`). The trash a stroke knocks out of a dispenser pile coasts too, from its
-spawn: the host catches the finish of each spawn the pile's own `broomed` body makes, and the
-streams open after the tick's spawns are named, so each has its id by then. The third feeder is
-the host's own births: a prop it spawns simulating -- a spawn-menu barrel in mid-air, a forage
-drop, a prop built from a client's intent -- coasts from its birth until it rests, since every
-peer would otherwise simulate its own fall and the copies came to rest apart; at most 32 props
-are coasting at once, and a burst past that falls locally (`coop/props/host_spawn_watcher`). A
-prop that a pushed prop knocks has no verb of its own and is not streamed. A receiver parks the prop on the first pose
-and follows the stream the way a carried trash clump is followed -- the fixed-delay interpolation,
-frozen at the last pose across a gap -- where a held prop snaps to each pose; a reliable end edge
-carries the final pose, the host's physics flags and the velocity once the prop has rested or a hand
-has taken it, and closes the stream's generation so a pose still in flight cannot park the prop
-again (`coop/props/prop_drive_stream`). A hand always wins: a claimed prop somebody grabs leaves the
-set and rides the held-prop stream, and a receiver yields at once to its own player's grab, which
-no stream from the host knows of yet, handing back the physics its park took.
+A prop nobody is holding can still be in motion: a hook's constraint pulls it along behind the player, an anchored hook ties it to something that moves, and after the hook lets go
+it slides until it rests. The held-prop stream never sees it, since that stream is sourced from the player's grab slot alone, so the host keeps a set of the props the hooks on its
+machine are tied to -- its own, the anchored ones it adopted, its mirrors of the clients' hooks, and the save's and the level's own -- fed by the hook lane rather than by a
+per-frame walk, and streams each one's pose while it moves (`coop/props/prop_drive_host`). Every hook's constraint exists on the host and nowhere else
+([deployables.md](deployables.md)), so this one set is every prop any hook can move. A broom's push is the set's second feeder: every stroke is the host's ([piles.md](piles.md)),
+and each prop a stroke pushes coasts under the stream until it rests, while a prop a verb already holds stays that verb's (`coop/items/broom_push`). The trash a stroke knocks out
+of a dispenser pile coasts too, from its spawn: the host catches the finish of each spawn the pile's own `broomed` body makes, and the streams open after the tick's spawns are
+named, so each has its id by then. The third feeder is the host's own births: a prop it spawns simulating -- a spawn-menu barrel in mid-air, a forage drop, a prop built from a
+client's intent -- coasts from its birth until it rests, since every peer would otherwise simulate its own fall and the copies came to rest apart; at most 32 props are coasting at
+once, and a burst past that falls locally (`coop/props/host_spawn_watcher`). A prop that a pushed prop knocks has no verb of its own and is not streamed. A receiver parks the prop
+on the first pose and follows the stream the way a carried trash clump is followed -- the fixed-delay interpolation, frozen at the last pose across a gap -- where a held prop snaps
+to each pose; a reliable end edge carries the final pose, the host's physics flags and the velocity once the prop has rested or a hand has taken it, and closes the stream's
+generation so a pose still in flight cannot park the prop again (`coop/props/prop_drive_stream`). A hand always wins: a claimed prop somebody grabs leaves the set and rides the
+held-prop stream, and a receiver yields at once to its own player's grab, which no stream from the host knows of yet, handing back the physics its park took.
 
-A mirror's physics and collision are set to what the game's own initialisation would have
-produced on this peer (`coop/props/prop_wire_parity`); a fresh mirror starts kinematic while it
-is remote-owned. A spawn or destroy the receiver applied is marked so the symmetric observer
-does not broadcast it back (`coop/props/prop_echo_suppress`).
+A mirror's physics and collision are set to what the game's own initialisation would have produced on this peer (`coop/props/prop_wire_parity`); a fresh mirror starts kinematic
+while it is remote-owned. A spawn or destroy the receiver applied is marked so the symmetric observer does not broadcast it back (`coop/props/prop_echo_suppress`).
+
+### Frozen and static by the toolgun
+
+The toolgun's prop-properties tool (`tool_propProps_C`) sets a prop's static, frozen and sleep: its `init` is the whole press, calling the prop's own `setPropProps` with the four
+values the spawn menu gave the tool, and it then destroys itself. A client's press is cancelled at the script gate and goes to the host as `PropPropsIntent`: the element it hit,
+its camera point, the shot's hit point and the tool's four values. A hit on a keyed prop with no element id is refused with a notice, as the remover refuses it; an actor the
+session does not share runs natively. The host judges the press in the remover's order (`coop/props/prop_tool_flags`): the sender's world and posed body, a live prop element that
+is not trash or a kerfur, the right `multivoid.gameplay.toolgun.propprops` (granted by default), a toolgun in the sender's hand, no other peer holding the prop, and a shot the
+host's eye could have made (`coop/props/toolgun_sight`, with the limits it shares with the remover). It runs the game's setter on its own copy, so a class that overrides it (a
+landmine, a TV) takes its own path as in single player, and publishes the static, frozen and sleep it reads back from the actor, with the active value it ran the setter with, as
+`PropPropsState` to every peer. The host's own press is published from the tool's post row. A refused press returns the reason to its sender alone, with the host's current flags
+when the host had resolved the prop (a press on an element that is no prop, or before the host is ready, carries none): the client shows the reason and puts its copy back through
+`prop_C`'s own setter if it differs.
+
+Every peer that receives `PropPropsState`, the sender included, replays the press on its copy through the same setter with the host's four values, each state a press, so the
+collision follows a static flag and an override runs its own path; an element it does not know is dropped. A joiner's save-loaded copy gets a prop's static from the save and from
+the join-window correction (`coop/save/join_window_baseline`), which now compares static as well as frozen and sleep and sets it through `prop_C`'s own setter, and frozen and sleep
+also from its snapshot row. A copy this player holds, or a drive moves, waits for its release before the newest press is replayed on it (an older state parked for the copy is
+dropped when a newer one reaches it); the drive's end edge converges static as well as frozen and sleep.
 
 ### Sticking to a wall
 
-A prop sticks through its wall-attach component, which the wall-attachable props (the cameras, the
-signs) and the plasma TV carry. The component commits its stick inside the Blueprint; the one
-visible seam is the commit entry, reached through a latent delay that the engine resumes through the
-function dispatch. The sticking peer broadcasts the frozen or static state and the commit pose
-before its own hold breaks, on the same ordered lane as the release so the order is structural; the
-receiver re-poses the prop and dispatches the component's own force-stick, so the attach, the effect
-and the destroy binding are the game's (`coop/props/prop_stick_sync`). The unstick crosses too,
-since a crowbar's pry frees a pryable sign with nobody holding it: the script gate watches the
-component's unstick on every route, the unsticking peer broadcasts the prop's pose and velocity, and
-a receiver runs the same unstick with the tool and lets its copy go.
+A prop sticks through its wall-attach component, which the wall-attachable props (the cameras, the signs) and the plasma TV carry. The component commits its stick inside the
+Blueprint; the one visible seam is the commit entry, reached through a latent delay that the engine resumes through the function dispatch. The sticking peer broadcasts the frozen
+or static state and the commit pose before its own hold breaks, on the same ordered lane as the release so the order is structural; the receiver re-poses the prop and dispatches
+the component's own force-stick, so the attach, the effect and the destroy binding are the game's (`coop/props/prop_stick_sync`). The unstick crosses too, since a crowbar's pry
+frees a pryable sign with nobody holding it: the script gate watches the component's unstick on every route, the unsticking peer broadcasts the prop's pose and velocity, and a
+receiver runs the same unstick with the tool and lets its copy go.
+
+### A nametag
+
+A nametag item (`prop_nametag_C`) carries a tag. Its left click reads the player's interaction hit and, on a prop, writes the tag into the prop's `nametag`, runs the prop's
+`setNametag` -- which takes down the floating label it had and builds one for a tag that is not None -- and destroys the item. A prop's nametag is base save state: a world's save
+carries it, but a prop's spawn row carries identity only and its record's base half is the receiver's own, so before this lane a tag reached another peer only through a save: a
+client's tag stayed on its own copy, and the host's reached no client. The nametag is the host's (`coop/props/prop_nametag`). The host player's click runs the game's own, and the
+watch on its exit tells every client. A client's click is refused there and asked of the host with the prop's key and the tag; the host applies it when the prop is within the
+sender's reach and a nametag is in the sender's hand as the hand lane has applied it (the request waits while that hand state is still owed), within the sender's budget (two at
+once, one a second, per occupant of the slot), and tells every client, the sender included, whose held item then goes as the game's use takes it; the item is the client's own, so
+it is spent there. A request the host refuses is answered to its sender alone with the reason, and the item stays. The messages are the `PropNametag` kind: op 1 the client's
+request, op 2 the host's tag, op 3 its refusal, a chunked blob on the Default lane, so it is ordered with the hand state and the spawns. A tag is the first line of a notebook page,
+which the game does not bound in length, so a tag crosses at the length an FName holds, 1023 UTF-16 units; the host reads every length from the message and refuses what does not
+add up or is not valid UTF-16, with the reason. A tag the host cannot publish is logged once. `[V]` the rig proved this lane's final bytes (`coop/dev/nametag_drill`, run, host and
+window green, both reds red): a client's tag lands on the host's cup once and its item is spent; the host player's tag reaches the client's copy; a tag the host puts on between a
+joiner's save being cut and its world being ready is on its copy at the join's end (window mode). The reds: `nametag_client_runs` (the click asks the host nothing: the client says
+fail at once) and `nametag_no_join_replay` (window mode: the copy stays untagged).
 
 ### Containers
 
-A container's contents are not on the container: every container reads them from one global
-per-peer array in the save object, addressed by an index the container holds, and every mutating
-verb runs inside the Blueprint, below the two dispatch seams a hook can intercept. The
-script-body gate does see it -- that is how this lane learns a container changed -- but it runs on
-the presser's own machine, and no local body can wait for an answer from across the network. So
-the host publishes the contents (`coop/props/container_contents_sync`): one slice of its
-array per live container is sent at a joiner's ready edge and on change, and a client's mirror is
-display only. A client's only slice is a thrown container's birth, bounded by its arrival rate;
-the host refuses every other client slice and answers the author with its own truth
-(`coop/props/container_truth`). A change a client makes to a shared container is an act the host
-judges, and an extraction on a client is a container-extract birth through the intent door above. The game arms a
-container's overlap box (the trigger a thrown prop enters to be filed) when a record leaves the container by a player's
-take, through the container's own `dingus`; the host's raw record edit never runs it, so the host calls `dingus` once a
-client's take is final (`container_act_host`) `[?]`. Whether that box is armed is the host's own physical state: every
-slice the host publishes carries it in a flags byte (`coop/props/container_arming`, `container_slice_wire`), a native hook
-on `SetCollisionEnabled` marks the container for publication when the box changes (a host take, a broken container, a
-roomba's own writes included), and a client's mirror takes its box from the byte and cancels its own `dingus` on a shared
-container, so a mirror's trigger is never armed by a client alone `[?]`. A prop a client drives into an armed box is
-judged by the host at the host's own overlap, with no client message: the host's copy is kinematic there, so the box's
-own body would refuse it, and a PRE on `putObjectIn_overlap` judges it instead (the box is armed, a held or claimed
-driver is within reach, no client holds the container, the body's silent gates pass, the prop fits), ends the driver's
-row or drive so the copy simulates, and lets the game's body file it. Every such put is filed, refused with its reason, or
-dropped and counted. A put that cannot be judged yet waits for the edge it needs: a client's hold ending, the prop's id
-binding, or the container changing (the last two for at most 2 s, then it is refused as unread); the host's own put on a
-held container waits too. A prop still in the box by then with no driver is pre-checked the same way and the game's body
-runs on it, since it fires no second overlap, and the game's own body may still refuse it. A refusal stands while the
-same drive does, until the container changes. A client's own copy of the call on a shared mirror is cancelled when it
-comes from the container's own overlap graph. A joiner needs no replay: the put is one host step, so a joiner seeded
-before it receives the prop's destroy and the container's publication, and one seeded after receives the container with
-the record `[?]`. The open and closed state is a keyed-device channel like a
-door's ([devices.md](devices.md)). The full break-and-spill behaviour, and the single-slot verbs, are reverse-engineered
-and designed and not built.
+A container's contents are not on the container: every container reads them from one global per-peer array in the save object, addressed by an index the container holds, and every
+mutating verb runs inside the Blueprint, below the two dispatch seams a hook can intercept. The script-body gate does see it -- that is how this lane learns a container changed --
+but it runs on the presser's own machine, and no local body can wait for an answer from across the network. So the host publishes the contents
+(`coop/props/container_contents_sync`): one slice of its array per live container is sent at a joiner's ready edge and on change, and a client's mirror is display only. A client's
+only slice is a thrown container's birth, bounded by its arrival rate; the host refuses every other client slice and answers the author with its own truth
+(`coop/props/container_truth`). A change a client makes to a shared container is an act the host judges, and an extraction on a client is a container-extract birth through the
+intent door above. The game arms a container's overlap box (the trigger a thrown prop enters to be filed) when a record leaves the container by a player's take, through the
+container's own `dingus`; the host's raw record edit never runs it, so the host calls `dingus` once a client's take is final (`container_act_host`) `[?]`. Whether that box is armed
+is the host's own physical state: every slice the host publishes carries it in a flags byte (`coop/props/container_arming`, `container_slice_wire`), a native hook on
+`SetCollisionEnabled` marks the container for publication when the box changes (a host take, a broken container, a roomba's own writes included), and a client's mirror takes its
+box from the byte and cancels its own `dingus` on a shared container, so a mirror's trigger is never armed by a client alone `[?]`. A prop a client drives into an armed box is
+judged by the host at the host's own overlap, with no client message: the host's copy is kinematic there, so the box's own body would refuse it, and a PRE on `putObjectIn_overlap`
+judges it instead (the box is armed, a held or claimed driver is within reach, no client holds the container, the body's silent gates pass, the prop fits), ends the driver's row or
+drive so the copy simulates, and lets the game's body file it. Every such put is filed, refused with its reason, or dropped and counted. A put that cannot be judged yet waits for
+the edge it needs: a client's hold ending, the prop's id binding, or the container changing (the last two for at most 2 s, then it is refused as unread); the host's own put on a
+held container waits too. A prop still in the box by then with no driver is pre-checked the same way and the game's body runs on it, since it fires no second overlap, and the
+game's own body may still refuse it. A refusal stands while the same drive does, until the container changes. A client's own copy of the call on a shared mirror is cancelled
+whoever calls it (the container's own overlap graph, a drone sack's trigger, a cleaner's own graph, which a client never runs), since the mirror is display only. A joiner needs no
+replay: the put is one host step, so a joiner seeded before it receives the prop's destroy and the container's publication, and one seeded after receives the container with the
+record `[?]`. The open and closed state is a keyed-device channel like a door's ([devices.md](devices.md)). The full break-and-spill behaviour, and the single-slot verbs, are
+reverse-engineered and designed and not built.
 
 ### A record that changes in place
 
-A prop's save record crosses on every birth path and on no other, so a prop whose record changes
-while it sits there tells no one. Two classes do that under a player's hand: the drive box and
-the tape reel case. Each has a lid and its contents in the record, taking the lid off spawns it
-in the presser's hands, and putting a drive or a reel in destroys the held one and stores it in
-the record. The lane watches each class's own `upd()`, which every mutation ends in, and
-republishes the record: the host broadcasts it, a client's goes to the host as an intent the
-host re-publishes. The far side applies it through the prop's `loadData`, whose `upd()` redraws
-the reel case; the drive box's look follows its name, which a record does not carry, so the
-receiver re-derives it from `opened` (`coop/props/prop_record_refresh`).
+A prop's save record crosses on every birth path and on no other, so a prop whose record changes while it sits there tells no one. Two classes do that under a player's hand: the
+drive box and the tape reel case. Each has a lid and its contents in the record, taking the lid off spawns it in the presser's hands, and putting a drive or a reel in destroys the
+held one and stores it in the record. The lane watches each class's own `upd()`, which every mutation ends in, and republishes the record: the host broadcasts it, a client's goes
+to the host as an intent the host re-publishes. The far side applies it through the prop's `loadData`, whose `upd()` redraws the reel case; the drive box's look follows its name,
+which a record does not carry, so the receiver re-derives it from `opened` (`coop/props/prop_record_refresh`).
 
 ### Notebook
 
-A notebook's pages are `text` on the prop, which its own `getData` and `loadData` save, so the
-text is the prop's save record and crosses on the record lane above with no message of its own.
-`coop/interactables/notebook_sync` adds what that lane cannot know, the editor.
+A notebook's pages are `text` on the prop, which its own `getData` and `loadData` save, so the text is the prop's save record and crosses on the record lane above with no message
+of its own. `coop/interactables/notebook_sync` adds what that lane cannot know, the editor.
 
-- **One editor at a time.** The open editor claims the notebook, a claim keyed by the prop
-  (`coop/interactables/device_occupancy`); a second peer pressing E on it is denied.
-- **What the editor wrote.** The editing peer publishes the notebook's record when it closes the
-  editor and, while it holds the claim, at the editor's own commit (focus leaving the box, or the
-  game's commit) when `text` differs from the last text published or applied, at most once every
-  2 s; a change the gate held back goes with the next commit or the close. Live text crosses at a
-  commit and at the close, not per keystroke: the widget writes `text` only then, and the lane reads
-  that array, never the box. The host's own edit publishes the canonical the same way.
-- **Who the host believes.** The host takes a client's record for a notebook from the slot that
-  holds its claim, or from any slot while nobody holds it: a free notebook is anyone's to change,
-  which a torn page added to it is. A record from another slot while a peer holds it is refused
-  and logged. The rule is judged where the record lands, so a record that parked first (the
-  host did not index the notebook yet) is judged by it too, and is republished to the other
-  peers only when it lands, never at arrival. It is registered with
-  `coop/props/prop_record_gates`; the record lane names no class.
-- **The close reaches the host while its sender holds.** A client keeps the claim after it closes
-  the editor until the host's
-  republish of its last publish comes back (the lane's acknowledgement: the canonical record for
-  that notebook's Key arriving after its publish), and lets go anyway after 10 s, logged. Opening
-  an editor while that wait is pending ends it: the old claim goes, then the new open is handled.
-  A host's own close needs no wait: it is the canonical.
-- **No echo onto the editor.** A peer that holds the claim and has published the notebook in this
-  claim applies no record for it, whether it arrives live or from the park: its own edit is the
-  newer state. Before its first publish it has nothing newer to protect, so the previous editor's
-  close, which the host sent before the grant and the grant overtook, is applied, and the open
-  editor's page is reloaded from the notebook's `text` through the widget's own page load
-  (`init`), so the box shows what was applied and the lane measures later edits from it. Text
-  typed in the box and not yet committed at that instant is dropped by the reload; the window is
-  the round trip after the grant. If the reload does not dispatch, a warning says so once. The
-  mark, the wait and the baseline reset when the claim ends, by whatever route: a release, a lost
-  race, the world going down, the session ending.
-- **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
-  sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
-  verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
-  the host's rule takes it while nobody holds the notebook. While another peer has the notebook open
-  the verb is cancelled at its start on the peer that ran it, when the hand holds a torn sheet: the
-  sheet stays in the player's hand and a notice names the holder, because the game cannot merge two
-  writers and the open editor's close would overwrite the page on every peer. Any other use of a
-  held notebook runs as the game has it. One window remains: a page added before this peer has heard
-  the other peer's claim (about one round trip after that peer opened the editor) stays on this peer
-  and is overwritten at that holder's close. The root fix, the host running the page add on behalf of
-  the peer that pressed it, is a recorded follow-up and not built.
-- **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
-  single-player game, so the box's uncommitted text is lost there and nothing is published.
-- **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
-  published text included, and the claim table, so it reads the text as last published and is
-  denied the editor while another peer holds it; the close then reaches it as an ordinary record.
-- **The ceiling.** A record over 32 KiB is refused with a log line and stays on the editing peer.
+- **One editor at a time.** The open editor claims the notebook, a claim keyed by the prop (`coop/interactables/device_occupancy`); a second peer pressing E on it is denied. -
+  **What the editor wrote.** The editing peer publishes the notebook's record when it closes the editor and, while it holds the claim, at the editor's own commit (focus leaving the
+  box, or the game's commit) when `text` differs from the last text published or applied, at most once every 2 s; a change the gate held back goes with the next commit or the
+  close. Live text crosses at a commit and at the close, not per keystroke: the widget writes `text` only then, and the lane reads that array, never the box. The host's own edit
+  publishes the canonical the same way. - **Who the host believes.** The host takes a client's record for a notebook from the slot that holds its claim, or from any slot while
+  nobody holds it: a free notebook is anyone's to change, which a torn page added to it is. A record from another slot while a peer holds it is refused and logged. The rule is
+  judged where the record lands, so a record that parked first (the host did not index the notebook yet) is judged by it too, and is republished to the other peers only when it
+  lands, never at arrival. It is registered with `coop/props/prop_record_gates`; the record lane names no class. - **The close reaches the host while its sender holds.** A client
+  keeps the claim after it closes the editor until the host's republish of its last publish comes back (the lane's acknowledgement: the canonical record for that notebook's Key
+  arriving after its publish), and lets go anyway after 10 s, logged. Opening an editor while that wait is pending ends it: the old claim goes, then the new open is handled. A
+  host's own close needs no wait: it is the canonical. - **No echo onto the editor.** A peer that holds the claim and has published the notebook in this claim applies no record for
+  it, whether it arrives live or from the park: its own edit is the newer state. Before its first publish it has nothing newer to protect, so the previous editor's close, which the
+  host sent before the grant and the grant overtook, is applied, and the open editor's page is reloaded from the notebook's `text` through the widget's own page load (`init`), so
+  the box shows what was applied and the lane measures later edits from it. Text typed in the box and not yet committed at that instant is dropped by the reload; the window is the
+  round trip after the grant. If the reload does not dispatch, a warning says so once. The mark, the wait and the baseline reset when the claim ends, by whatever route: a release,
+  a lost race, the world going down, the session ending. - **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the sheet's text to the
+  notebook's and destroys the sheet, with no editor open and no claim. The verb's end publishes the notebook's record when its page count grew, from whichever peer ran it; the
+  host's rule takes it while nobody holds the notebook. While another peer has the notebook open the verb is cancelled at its start on the peer that ran it, when the hand holds a
+  torn sheet: the sheet stays in the player's hand and a notice names the holder, because the game cannot merge two writers and the open editor's close would overwrite the page on
+  every peer. Any other use of a held notebook runs as the game has it. One window remains: a page added before this peer has heard the other peer's claim (about one round trip
+  after that peer opened the editor) stays on this peer and is overwritten at that holder's close. The root fix, the host running the page add on behalf of the peer that pressed
+  it, is a recorded follow-up and not built. - **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the single-player game, so the box's
+  uncommitted text is lost there and nothing is published. - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last published text included, and
+  the claim table, so it reads the text as last published and is denied the editor while another peer holds it; the close then reaches it as an ordinary record. - **The ceiling.**
+  A record over 56,092 bytes (one blob, less the slot set's head: `coop/props/disc_record_ceiling.h`, the disc slot's ceiling too) is refused with its size logged once per key and
+  stays on the editing peer.
 
-A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route
-(`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no save
-record and do not cross; that paper has a claim only. `[RD]` for the Blueprints, `[?]` until the
-notebook drill has run.
+A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route (`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no
+save record and do not cross; that paper has a claim only. `[RD]` for the Blueprints, `[?]` until the notebook drill has run.
 
 ### Sleeping bags and mattresses
 
-`prop_sleepingbag_C` exposes `actionOptionIndex` and has an `unwrapOnBed` field. Its generated
-Blueprint graph carries a `FinishSpawningActor` result typed as `sleepingbagWrap_C`. The wrapped
-form derives from `bed_C`, which derives from `Aprop_C`; it exposes `fold()`, whose graph carries a
-`FinishSpawningActor` result typed as `prop_sleepingbag_C`. The blue, brown, Stolas and mattress
-forms are subclasses of these two base classes. `[RD]`
+`prop_sleepingbag_C` exposes `actionOptionIndex` and has an `unwrapOnBed` field. Its generated Blueprint graph carries a `FinishSpawningActor` result typed as `sleepingbagWrap_C`.
+The wrapped form derives from `bed_C`, which derives from `Aprop_C`; it exposes `fold()`, whose graph carries a `FinishSpawningActor` result typed as `prop_sleepingbag_C`. The
+blue, brown, Stolas and mattress forms are subclasses of these two base classes. `[RD]`
 
-The deployed Blueprint form finishes with `Key=None`; after `FinishSpawningActor` the host assigns
-it a random prop key (the persisted kind) and retries the ordinary lifecycle express. The client gates the
-`actionOptionIndex` press of the packed bag (action 4, the unroll) and of the deployed bag (action
-7, whose graph calls `fold()`); it watches the press and not `fold()` itself, which the deployed
-bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It
-sends the source prop's host element id and the action byte, and cancels its local Blueprint
-verb once the host was asked; a press the client cannot send (the source has no host prop id, or the
-send fails) runs on its own copy as it would with no lane. The host checks that the sender is in
-reach, that no other peer holds the prop, and that the named prop is still in the expected form
-with the action byte of that form, then invokes that same Blueprint verb on its copy. The Blueprint
-owns the replacement birth and source destruction; the host spawn watcher and prop lifecycle carry
-those edges to every peer. The joiner's host save and ordinary prop snapshot seed whichever form is
-live. The client does not choose the replacement class or transform. `[RD]`
-`coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`,
-`coop/props/prop_lifecycle`. Whether a deployed bag already in the host's world before the session
-(loaded from a save) carries a key is not measured; one without a key gets no host prop id and its
-press takes the local path above. `[?]`
+The deployed Blueprint form finishes with `Key=None`; after `FinishSpawningActor` the host assigns it a random prop key (the persisted kind) and retries the ordinary lifecycle
+express. The client gates the `actionOptionIndex` press of the packed bag (action 4, the unroll) and of the deployed bag (action 7, whose graph calls `fold()`); it watches the
+press and not `fold()` itself, which the deployed bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It sends the source prop's host
+element id and the action byte, and cancels its local Blueprint verb once the host was asked; a press the client cannot send (the source has no host prop id, or the send fails)
+runs on its own copy as it would with no lane. The host checks that the sender is in reach, that no other peer holds the prop, and that the named prop is still in the expected form
+with the action byte of that form, then invokes that same Blueprint verb on its copy. The Blueprint owns the replacement birth and source destruction; the host spawn watcher and
+prop lifecycle carry those edges to every peer. The joiner's host save and ordinary prop snapshot seed whichever form is live. The client does not choose the replacement class or
+transform. `[RD]` `coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle`. Whether a deployed bag already
+in the host's world before the session (loaded from a save) carries a key is not measured; one without a key gets no host prop id and its press takes the local path above. `[?]`
 
-Unfolding is relayed as the interaction action byte so the Blueprint retains its own placement and
-mattress branches. The host runs it with the sender's remote-player puppet, preserving the game's
-player-relative checks. The intent is refused if the source lacks a host prop id, is out of reach,
-or has already changed form. `[RD]` the packed Blueprint graph uses two sphere traces, checks the
-target bed, spawns the wrapped actor and destroys its source; the wrapped graph's `fold()` spawns a
-packed actor and destroys its source. `[V]` sleepingbag CFG and generated SDK parameters.
+Unfolding is relayed as the interaction action byte so the Blueprint retains its own placement and mattress branches. The host runs it with the sender's remote-player puppet,
+preserving the game's player-relative checks. The intent is refused if the source lacks a host prop id, is out of reach, or has already changed form. `[RD]` the packed Blueprint
+graph uses two sphere traces, checks the target bed, spawns the wrapped actor and destroys its source; the wrapped graph's `fold()` spawns a packed actor and destroys its source.
+`[V]` sleepingbag CFG and generated SDK parameters.
 
-A mattress lying on a bunk bed (`bed_bunkMattress_C`) is taken off by its action 7, which spawns the
-packed mattress and destroys the source the same way; that press rides the same intent with the
-mattress's host element id and the action byte, and the host accepts only that class and action. The
-packed mattress is a `prop_sleepingbag_C` and keys itself like any prop, so the ordinary prop
-lifecycle carries it. `[V]` `bed_bunkMattress` and `prop_sleepingbag_mattress` Blueprint decompiles.
+A mattress lying on a bunk bed (`bed_bunkMattress_C`) is taken off by its action 7, which spawns the packed mattress and destroys the source the same way; that press rides the same
+intent with the mattress's host element id and the action byte, and the host accepts only that class and action. The packed mattress is a `prop_sleepingbag_C` and keys itself like
+any prop, so the ordinary prop lifecycle carries it. `[V]` `bed_bunkMattress` and `prop_sleepingbag_mattress` Blueprint decompiles.
 
 ### Props that change on their own
 
-A joiner loads the host's save, so every keyed world prop is a real save-loaded actor with its
-full Blueprint brain ticking on every peer, and no wire carries arbitrary per-prop scalars. A
-prop whose brain advances a local accumulator (concrete drying, a wall curing, food rotting, a
-plant growing) therefore simulates on each peer independently and drifts; a prop whose change
-is derived from the shared clock does not. The rule is that the host owns autonomous
-progression, in one of three shapes chosen per prop: park the brain and let the host author the
-progression through the existing lanes (the pile shape); a host corrector that re-snaps a
-deterministic, clamped accrual when the game keeps re-enabling the tick (the tape reel, at one
-hertz); or an anchor, a start stamp every peer computes from, valid only while the rate is
-constant ([architecture.md](architecture.md), where the authority is going). The reel corrector
-is built; food's temperature, ripeness and use count are the host's (`coop/props/prop_food_sync`); concrete is designed and not built.
+A joiner loads the host's save, so every keyed world prop is a real save-loaded actor with its full Blueprint brain ticking on every peer, and no wire carries arbitrary per-prop
+scalars. A prop whose brain advances a local accumulator (concrete drying, a wall curing, food rotting, a plant growing) therefore simulates on each peer independently and drifts;
+a prop whose change is derived from the shared clock does not. The rule is that the host owns autonomous progression, in one of three shapes chosen per prop: park the brain and let
+the host author the progression through the existing lanes (the pile shape); a host corrector that re-snaps a deterministic, clamped accrual when the game keeps re-enabling the
+tick (the tape reel, at one hertz); or an anchor, a start stamp every peer computes from, valid only while the rate is constant ([architecture.md](architecture.md), where the
+authority is going). The reel corrector is built; food's temperature, ripeness and use count are the host's (`coop/props/prop_food_sync`); concrete is designed and not built.
 
 ## Who owns what
 
 | State | Owner | Shape |
 |---|---|---|
 | a prop at rest: existence, transform, physics | the host | the birth broadcast; a client's births are intents |
-| a held prop | the holder | a per-frame stream under a generation the grab mints; the release carries the transform, the velocity and the frozen and sleep flags, and closes the generation |
+| a held prop | the holder; the host keeps one hold per keyed prop | a per-frame stream under a generation the grab mints; the release carries the transform, the velocity and the frozen and sleep flags, and closes the generation; a second hold is refused |
 | a thrown prop after release | each peer's physics, from the same velocity | no stream in flight |
 | a prop a hook drags, and one still sliding after the hook lets go | the host | a per-tick stream while it moves; the end edge hands the velocity back |
 | a prop's key | the game, once; the host's copy wins on a mirror | never rewritten on the owner |
 | container contents | the host | slices of its object array; an extraction is an intent |
+| a prop's nametag | the host | a client's tag is a request by the prop's key; the host applies it and tells every client |
 | a stuck prop, and its unstick | the peer that sticks or frees it; every peer runs the component's own verb | one reliable message |
 | a self-changing prop's progression | the host | park, corrector or anchor, per prop |
 | notebook editor occupancy | the host arbitrates | a claim keyed by the owning prop |
@@ -449,10 +343,14 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 | `PropPose` (stream) | the holder to all | the held prop's world transform, per frame, and its hold's generation |
 | `PropSpawn`, `PropDestroy` | the host to all; a destroy from either role | class, key, id, transform, physics flags, the birth scalar; the key and id |
 | `PropRelease` | the holder to all | the prop's transform, its inherited linear and angular velocity and its frozen and sleep at the edge, the hold it closes and the throw sequence (0 = not a throw); a client's goes through the host, which clamps it and sends it on |
+| `PropHoldRefused` | the host to every client | a hold the host refused, by its holder's slot and generation, the prop's key, and the slot whose hold keeps the prop |
+| `FoodState`, `FoodBite`, `FoodRelease`, `FoodHand` | the host to all; a client to the host; a client to the host; the holder to all | a world food's temperature, ripeness, uses and poison; a client's bite; the condition of a food a client let go; the condition of the food in a hand |
+| `PropPropsIntent`, `PropPropsState` | a client to the host; the host to all, or to the sender alone for a refusal | a client's press of the prop-properties tool with the tool's four values; a prop's static, frozen and sleep read back from the host's copy, or the reason the press was refused `[?]` |
 | `PropDrivePose` (stream) | the host to all; a syncing client to the host | the poses of the props under a hook's drive or a broom's push that moved since their last one, with the claim generation; a client's rows of the prop its own interaction moves, which the host judges before it relays one `[?]` |
 | `PropDriveEnd` | the host to all; a syncing client to the host | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation; a client's End is admitted when it is the row's syncer `[?]` |
 | `PropSyncClaim`, `PropSyncAnswer` | a client to the host; the host to that client | a client's request to sync a prop its interaction moves, and the host's grant, refusal (with the reason) or revoke (with the generation); the host also grants a thrown prop to its thrower unasked, `seq` being the throw sequence `[?]` |
 | `PropDropIntent`, `ReelEjectIntent` | a client to the host | a place, a throw or an unavoidable birth, for the host to author, with the placed root's velocity and the throw sequence |
+| `PropNametag` | a client to the host (op 1); the host to all (op 2), or to the requester alone (op 3) | a prop's nametag: the prop's key and the tag; the slot whose item it was; a refusal |
 | `PropStickState` | the peer that sticks or frees it, to all | frozen or static, the commit pose and the hold the stick ended; or an unstick, with the pose and velocity |
 | `PropToolFlags` | a tool's user to all, via the host | the keyed prop's static, frozen and sleep flags at the end of a toolgun action |
 | `PropScaleState` (202) | holder to host; validated host state to all | key, id, hold generation and root scale; never blindly relayed |
@@ -471,196 +369,110 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 
 ## Late join
 
-The join page owns the mechanism: explicit deletes for the props the joiner's save had that are
-gone from the host's world, then the snapshot bracket with one spawn per live keyed prop (adopted by
-key, created when missing, transform converged), then position corrections for what the host moved
-during the window, then the membership sweep that removes the locals the host never claimed. A keyed
-prop's frozen and sleep converge with its snapshot row and its correction, and a flag change without
-a move gets a correction too, so an extinguisher taken off its mount during the window is loose on
-the joiner; a wall-attach component's owner converges its stuck state there through the component's
-own unstick or force-stick, so a sign pried in the window is off its wall. A stuck prop otherwise
-reaches a joiner through the save, which carries the frozen and static state. Container slices are
-sent per live container at the ready edge. A joiner gets no held-prop or driven-prop pose until its
-world is ready, since the release and the end edge that close them are not sent to a world that is
-not ready either: a prop held at the join resolves on the first pose after it, and at the ready edge
-the host re-sends every driven prop's pose, the resting ones included, which the delta gate would
-otherwise never send. An end edge that reaches a joiner before the prop it names is kept until the
-prop resolves.
+The join page owns the mechanism: explicit deletes for the props the joiner's save had that are gone from the host's world, then the snapshot bracket with one spawn per live keyed
+prop (adopted by key, created when missing, transform converged), then position corrections for what the host moved during the window, then the membership sweep that removes the
+locals the host never claimed. A keyed prop's frozen and sleep converge with its snapshot row and its correction (static with the correction), and a flag change without a move gets
+a correction too, so an extinguisher taken off its mount during the window is loose on the joiner; a wall-attach component's owner converges its stuck state there through the
+component's own unstick or force-stick, so a sign pried in the window is off its wall. A stuck prop otherwise reaches a joiner through the save, which carries the frozen and static
+state. A prop's nametag comes with the save, and a tag put on after the save's cut with the host's connect replay: each prop whose tag the session published is named to the joiner
+alone with the tag it carries then, ahead of the snapshot's props, so a copy the save loaded takes it at once and a prop the snapshot births takes it when it appears: the client
+keeps the tag by key until the key index shows the prop, and drops it with its world or session. A prop the host's index could not answer for is asked again each tick `[?]`.
+Container slices are sent per live container at the ready edge. A joiner gets no held-prop or driven-prop pose until its world is ready, since the release and the end edge that
+close them are not sent to a world that is not ready either: a prop held at the join resolves on the first pose after it, and at the ready edge the host re-sends every driven
+prop's pose, the resting ones included, which the delta gate would otherwise never send. An end edge that reaches a joiner before the prop it names is kept until the prop resolves.
 
 ## Known limits
 
-`[RD]` The wallbuilder's instant-completion path calls buildWall with isCheat=true
-after creating a contour. Its native availability follows Custom Content. `[V]`
-The client asks the host to complete only a new contour created for that player;
-the host checks source identity, rule and reach, reserves the contour and invokes
-the native completion once. Requests/replies retry, and a native fault is terminal
-to avoid replaying partial output. The successor and contour retirement join through
-the placement stream. `[?]` Two-peer completion/effects and paid cement transactions
-still need gameplay verification and further work.
+`[RD]` The wallbuilder's instant-completion path calls buildWall with isCheat=true after creating a contour. Its native availability follows Custom Content. `[V]` The client asks
+the host to complete only a new contour created for that player; the host checks source identity, rule and reach, reserves the contour and invokes the native completion once.
+Requests/replies retry, and a native fault is terminal to avoid replaying partial output. The successor and contour retirement join through the placement stream. `[?]` Two-peer
+completion/effects and paid cement transactions still need gameplay verification and further work.
 
-`[V]` Hand-tool display state is bound to player identity and hand generation. A
-stalled extinguisher stream stops remote particles/audio after 1.5 seconds, and
-stow or departure retires the previous tool's effect. Owners keep native consumption;
-display receipt does not trace, clean or consume supplies. Audio follows actual
-playback state, including recovery when a component remains active after its voice
-stops. Offline lifecycle and audio-call checks pass. `[?]` Two-peer spray appearance
-and durable shared resource transactions still require verification/work.
+`[V]` Hand-tool display state is bound to player identity and hand generation. A stalled extinguisher stream stops remote particles/audio after 1.5 seconds, and stow or departure
+retires the previous tool's effect. Owners keep native consumption; display receipt does not trace, clean or consume supplies. Audio follows actual playback state, including
+recovery when a component remains active after its voice stops. Offline lifecycle and audio-call checks pass. `[?]` Two-peer spray appearance and durable shared resource
+transactions still require verification/work.
 
-`[RD]` A grill's lid changes its native heating rate; removing it creates the bbq_1
-item through the player's native action. `[V]` Kitchen snapshots carry lid visibility,
-fire/fuel state and the actual cooking-loop play state/volume. Replica cooking audio
-does not start from local overlap or timeline decisions. The repaint changes no
-ingredients, heat or fuel and does not restart an unchanged loop. Missing components
-and failed join sends retry with the latest state. Client coal/lid changes enter a
-per-key host queue: coal adds to the current host count, while lid edits change
-only the lid field. Ordinary and parked client records preserve host coal/lid/burn;
-initial item records may restore their original stock. `[?]` Two-peer sound/lid
-behavior, capacity races, personal coal refunds and simultaneous lid-output
-inventory transactions still need gameplay verification and transaction work.
+`[RD]` A grill's lid changes its native heating rate; removing it creates the bbq_1 item through the player's native action. `[V]` Kitchen snapshots carry lid visibility, fire/fuel
+state and the actual cooking-loop play state/volume. Replica cooking audio does not start from local overlap or timeline decisions. The repaint changes no ingredients, heat or fuel
+and does not restart an unchanged loop. Missing components and failed join sends retry with the latest state. Client coal/lid changes enter a per-key host queue: coal adds to the
+current host count, while lid edits change only the lid field. Ordinary and parked client records preserve host coal/lid/burn; initial item records may restore their original
+stock. `[?]` Two-peer sound/lid behavior, capacity races, personal coal refunds and simultaneous lid-output inventory transactions still need gameplay verification and transaction
+work.
 
-`[RD]` A pressure washer creates prop_sponge_p, sets its power after FinishSpawning
-and gives it a ten-second lifetime. The bucket drip and whole-throw paths use
-different sound arguments; the whole throw emits one wade/splash pair. `[V]`
-Water births capture their final native transform and velocity; the host authors
-flight, collision, cleaning and retirement. Both the projectile's own and its
-parent sponge's client hit paths are refused. Canonical BeginPlay supplies the
-washer's initial particle; the owner's predicted initial copy is removed. Launch
-and impact cues are transient, validated and ordered, with owner exclusion and
-short readiness retry. `[?]` Two-peer timing/appearance, dynamic grime/spill births
-and durable personal water/soap accounting remain unverified or unfinished.
+`[RD]` A pressure washer creates prop_sponge_p, sets its power after FinishSpawning and gives it a ten-second lifetime. The bucket drip and whole-throw paths use different sound
+arguments; the whole throw emits one wade/splash pair. `[V]` Water births capture their final native transform and velocity; the host authors flight, collision, cleaning and
+retirement. Both the projectile's own and its parent sponge's client hit paths are refused. Canonical BeginPlay supplies the washer's initial particle; the owner's predicted
+initial copy is removed. Launch and impact cues are transient, validated and ordered, with owner exclusion and short readiness retry. `[?]` Two-peer timing/appearance, dynamic
+grime/spill births and durable personal water/soap accounting remain unverified or unfinished.
 
-`[RD]` Sponge foam follows the native five-unit soap debit and its trace Location/Normal.
-`[V]` The host validates source and point reach, then sends a transient surface particle
-and attached sponge burst. Recipients consume no soap and perform no cleaning. Each
-visual stage retries independently; expired bursts and old join history are discarded.
-Native remote-hand output is refused. Offline controller/native-wrapper checks cover
-identity, reach, malformed geometry, retry, ordering and teardown. `[?]` Actual two-peer
+`[RD]` Sponge foam follows the native five-unit soap debit and its trace Location/Normal. `[V]` The host validates source and point reach, then sends a transient surface particle
+and attached sponge burst. Recipients consume no soap and perform no cleaning. Each visual stage retries independently; expired bursts and old join history are discarded. Native
+remote-hand output is refused. Offline controller/native-wrapper checks cover identity, reach, malformed geometry, retry, ordering and teardown. `[?]` Actual two-peer
 appearance/timing and atomic soap accounting still require work.
 
-`[RD]` The watoy's native activation creates an independent zero-gravity component,
-starts a volume timeline and derives audio pitch from speed. `[V]` Its world activation
-is host-authoritative, with driven-prop poses while active. Personal hand actors remain
-native on their owner; display mirrors receive sound and particle state, fenced by
-player identity and hand generation. Native component initialization, timers and retirement
-continue; only its force, initial velocity and gravity writes are refused on remote
-copies. A join receives current state without the old start cue. Missing actors/audio/
-particles retry, and owned presentation components are released on expiry or teardown.
-Offline controller and actual wrapper checks cover these paths. `[?]` Two-peer physical
-motion, sound timing, picking up an active toy and stow/drop/save transitions still need
-gameplay checks. Native saves do not preserve a running zero-gravity component, and
-the channel does not add that persistence or sample-accurate audio/particle playback.
+`[RD]` The watoy's native activation creates an independent zero-gravity component, starts a volume timeline and derives audio pitch from speed. `[V]` Its world activation is
+host-authoritative, with driven-prop poses while active. Personal hand actors remain native on their owner; display mirrors receive sound and particle state, fenced by player
+identity and hand generation. Native component initialization, timers and retirement continue; only its force, initial velocity and gravity writes are refused on remote copies. A
+join receives current state without the old start cue. Missing actors/audio/ particles retry, and owned presentation components are released on expiry or teardown. Offline
+controller and actual wrapper checks cover these paths. `[?]` Two-peer physical motion, sound timing, picking up an active toy and stow/drop/save transitions still need gameplay
+checks. Native saves do not preserve a running zero-gravity component, and the channel does not add that persistence or sample-accurate audio/particle playback.
 
-Simultaneous holds use the same lowest-slot priority on every receiver, including the local
-holder. The losing local physics handle or weapon releases through its native cleanup before
-the winning drive parks the body. Rejected holds retain their identity so a delayed release
-cannot throw the prop after the winner lets go. This resolves conflicting writers after their
-poses arrive; it is not a host grant before the initial local grab.
+Simultaneous holds use the same lowest-slot priority on every receiver, including the local holder. The losing local physics handle or weapon releases through its native cleanup
+before the winning drive parks the body. Rejected holds retain their identity so a delayed release cannot throw the prop after the winner lets go. This resolves conflicting writers
+after their poses arrive; it is not a host grant before the initial local grab.
 
-Root scale changes travel reliably at up to 20 updates per second, with a one-second heartbeat
-and a final sample before release. The host accepts a client sample only for its current driven
-actor and hold generation, and binds pending requests to the slot occupant. A client waits for
-an unresolved actor, preserves its own live local hold and applies the latest host scale without
-teleporting the body. Existing snapshot copies also converge scale. Skeletal bone scaling and
-arbitrary non-prop creature physics are outside this root-prop lane; ATV and appliance targets
-are read by their dedicated channels.
+Root scale changes travel reliably at up to 20 updates per second, with a one-second heartbeat and a final sample before release. The host accepts a client sample only for its
+current driven actor and hold generation, and binds pending requests to the slot occupant. A client waits for an unresolved actor, preserves its own live local hold and applies the
+latest host scale without teleporting the body. Existing snapshot copies also converge scale. Skeletal bone scaling and arbitrary non-prop creature physics are outside this
+root-prop lane; ATV and appliance targets are read by their dedicated channels.
 
-The personal inventory profile captures the live held record before hashing, preserving its
-stored transform and requiring matching class/key and actor lifetime. Pocket pickup of a
-supported mutable world item waits until its record enters the reliable queue. A client's final
-food bite is submitted before generic destruction, with a durable retry if transport refuses;
-the host retains its source long enough to create the verified box wrapper, banana husk or
-empty coffee cup. Remote hand displays cannot create these outputs. Poison and
+The personal inventory profile captures the live held record before hashing, preserving its stored transform and requiring matching class/key and actor lifetime. Pocket pickup of a
+supported mutable world item waits until its record enters the reliable queue. A client's final food bite is submitted before generic destruction, with a durable retry if transport
+refuses; the host retains its source long enough to create the verified box wrapper, banana husk or empty coffee cup. Remote hand displays cannot create these outputs. Poison and
 other eater effects remain native on the consuming player's machine.
 
-Cooking food carries `cookProgress` in the live food state, the placement request and
-native float group 2 of its saved record. Held profile snapshots refresh that field before
-hashing. The host owns world cooking and cooked replacements; a personal held food keeps
-its owner's native cooking, with only the measured `cookItem` factories admitted as births.
-Remote hand displays and client world copies cannot run cooking ticks or those factories.
-An early food state waits in a bounded retry table until its actor and fields are ready.
-Hand samples also name the owning player and wait for the matching hand generation;
-an unresolved local correction blocks default-state publication. A replacement hand
-publishes even when its condition matches the previous hand. Failed join unicasts and
-remote-hand sends retry independently of the broadcast baseline, using current values.
-`[V]` Offline checks cover class/actor recycling, world changes, missing fields,
-pending samples, native output exclusions and send refusal. `[?]` Simultaneous personal
-consumption, conditioned food recipes, other spill factories and liquid stock accounting remain open.
-Food publication and native writes retain actor/hand generation, player and current
-revision through callbacks. A newer nested sample wins, an older send requests a
-fresh correction, and joins retain individual recipient epochs/readiness. Bite
-observations expire with their actual script invocation; final-bite transport
-retries own immutable payloads and cannot erase a newer same-key request.
+Cooking food carries `cookProgress` in the live food state, the placement request and native float group 2 of its saved record. Held profile snapshots refresh that field before
+hashing. The host owns world cooking and cooked replacements; a personal held food keeps its owner's native cooking, with only the measured `cookItem` factories admitted as births.
+Remote hand displays and client world copies cannot run cooking ticks or those factories. An early food state waits in a bounded retry table until its actor and fields are ready.
+Hand samples also name the owning player and wait for the matching hand generation; an unresolved local correction blocks default-state publication. A replacement hand publishes
+even when its condition matches the previous hand. Failed join unicasts and remote-hand sends retry independently of the broadcast baseline, using current values. `[V]` Offline
+checks cover class/actor recycling, world changes, missing fields, pending samples, native output exclusions and send refusal. `[?]` Simultaneous personal consumption, conditioned
+food recipes, other spill factories and liquid stock accounting remain open. Food publication and native writes retain actor/hand generation, player and current revision through
+callbacks. A newer nested sample wins, an older send requests a fresh correction, and joins retain individual recipient epochs/readiness. Bite observations expire with their actual
+script invocation; final-bite transport retries own immutable payloads and cannot erase a newer same-key request.
 
-Beer/wine/coffee spills use `drink_spill_sync`: kind233 carries a100-byte native launch
-request and exact terminal acknowledgement; kind232 carries host-only decal state.
-The host validates the owning hand/driven-hold generation, kind, launch shape,
-velocity and reach, then runs the native projectile. Its tracing, bounce, decal
-birth and electrical shortCircuit remain on the host. Client drink spheres
-freeze physics/collision immediately; Tick and all impact graph entries are refused.
-The native BeginPlay entry and other grime projectile kinds keep their behavior.
-The sphere has no visible mesh; no flight-pose presentation channel is required.
-The native60-second lifespan remains intact. A consumed hand item can be proved
-from one of four recently retired generations, for1500ms in the same world and
-occupancy. Host break/fire deposits also enroll.
-The coffee cup uses its own native scale from remaining portions and trace size5.
-Its inventory copy stays with its owner; world cups follow host food simulation,
-including a remote physical hold. Existing native empty-cup output stays intact.
-Each canonical static decal gets a session/world nonce and birth id, separating
-its cleaning minimum from old static grime at the same coordinates. Saved decals
-join quietly and use an existing matching actor once. Local temporary projectiles
-retire after immutable launch capture; partial construction is terminal, and failed births/joins/retirements
-retry per recipient. Native orientation/material/process and measured impact sound
-are carried to every live observer, including the owner who no longer simulates
-impact. Joins stay quiet; the native host impact does not play twice. Other grime
-factories and atomic liquid debit/refund remain outside this path.
-Kind234 carries60-byte native source-sound requests, acknowledgements and canonical
-cues. The exact native call's frame/end/local identifies its sound point. Beer/wine
-uses fuel1,.5 volume,1 pitch and att_default; coffee uses water_splash_Cue,.5,1.25
-and att_small. Source audio excludes the owner, preserves local/recipient FIFO and
-expires without join replay. Accepted spatial cues can outlive the origin's roster
-entry; per-person replay history prevents the next occupant inheriting old counters.
-Unavailable optional source-audio metadata does not block the host flight path.
-Gasoline-bottle break/fire graphs use kind3 for their native host projectile and
-gasoline decal. A selected local-hand bottle can submit its captured launch with
-an empty world key, native scale1/size5 and current or recently consumed exact-class
-proof. World bottles remain host-owned; mirrors cannot create spill factories.
-Unbound client gas projectiles are removed. Gasoline has no pour-audio request.
-Canonical
-gasoline identities also address the fire lane. The exact gasoline ignite body
-keeps its Box, fuelSpeed.25, igniteChance1 and igniteScale1.25. Host flame state
-creates/refreshes/extinguishes native client presentation, while gas fireDamage,
-world spread and self expiry remain host decisions. External extinguishing requests
-the canonical outcome; local-player fire traces remain native. Saved adoption,
-cleaning joins and retirement share the dynamic decal lane. Fire requests retain
-their originating person and connection through native probes and transport.
-Preparation failures can retry, while attempted native ignite/extinguish calls
-cannot replay partial additive fuel. Missing flame metadata defers presentation.
-Final extinguishing state retains delivery until every ready recipient accepts;
-one blocked peer does not stop the others.
-Observed looping toy music starts carry episode, position and pitch. Retained
-sends include queue age; receivers add receive age and bounded half-RTT before
-Play(StartTime). The actual looping SoundWave duration controls wrapping. The
-same episode does not restart on heartbeats; stopped/replaced audio or sound
-recovers once at the current known position. An already-playing first observation,
-unavailable metadata or unsupported sound has unknown phase and keeps ordinary
-state replication. Action/touch observations bind native invocations and people;
-plush Alt-use captures its input before the native activation callback.
-Sampling, cached playback, native actions/touches and queued squeaks retain the
-canonical actor key through reads, sends and native audio preparation; a renamed
-actor cannot inherit an older source's observation or presentation. An already
-dispatched Activate consumes its transient cue, including native source teardown.
-Client music commands wait for host-world readiness before transport.
-their requests retain the same person and connection. Acoustic timing and
-hand/world phase continuity remain unverified.
-Paid garden uses reserve storage under a unique script invocation. An untracked
-nested callback cannot consume an outer reservation, and Cancel/fault cleanup
-removes only inactive invocations. Queued care/harvest retains its local player,
-slot and connection epoch through guarded chunk sends. Care/harvest wire payloads
-carry that original player number; zero, oversized, legacy or replaced occupants
-are refused. Native authority probes retain session/world/role/readiness and the
-peer epoch before gameplay dispatch. Completed care can outlive the local crop
-copy; resource rejection/refund remains separate.
-These paths have offline native-contract and regression coverage; two-peer gameplay is open.
+Beer/wine/coffee spills use `drink_spill_sync`: kind233 carries a100-byte native launch request and exact terminal acknowledgement; kind232 carries host-only decal state. The host
+validates the owning hand/driven-hold generation, kind, launch shape, velocity and reach, then runs the native projectile. Its tracing, bounce, decal birth and electrical
+shortCircuit remain on the host. Client drink spheres freeze physics/collision immediately; Tick and all impact graph entries are refused. The native BeginPlay entry and other
+grime projectile kinds keep their behavior. The sphere has no visible mesh; no flight-pose presentation channel is required. The native60-second lifespan remains intact. A consumed
+hand item can be proved from one of four recently retired generations, for1500ms in the same world and occupancy. Host break/fire deposits also enroll. The coffee cup uses its own
+native scale from remaining portions and trace size5. Its inventory copy stays with its owner; world cups follow host food simulation, including a remote physical hold. Existing
+native empty-cup output stays intact. Each canonical static decal gets a session/world nonce and birth id, separating its cleaning minimum from old static grime at the same
+coordinates. Saved decals join quietly and use an existing matching actor once. Local temporary projectiles retire after immutable launch capture; partial construction is terminal,
+and failed births/joins/retirements retry per recipient. Native orientation/material/process and measured impact sound are carried to every live observer, including the owner who
+no longer simulates impact. Joins stay quiet; the native host impact does not play twice. Other grime factories and atomic liquid debit/refund remain outside this path. Kind234
+carries60-byte native source-sound requests, acknowledgements and canonical cues. The exact native call's frame/end/local identifies its sound point. Beer/wine uses fuel1,.5
+volume,1 pitch and att_default; coffee uses water_splash_Cue,.5,1.25 and att_small. Source audio excludes the owner, preserves local/recipient FIFO and expires without join replay.
+Accepted spatial cues can outlive the origin's roster entry; per-person replay history prevents the next occupant inheriting old counters. Unavailable optional source-audio
+metadata does not block the host flight path. Gasoline-bottle break/fire graphs use kind3 for their native host projectile and gasoline decal. A selected local-hand bottle can
+submit its captured launch with an empty world key, native scale1/size5 and current or recently consumed exact-class proof. World bottles remain host-owned; mirrors cannot create
+spill factories. Unbound client gas projectiles are removed. Gasoline has no pour-audio request. Canonical gasoline identities also address the fire lane. The exact gasoline ignite
+body keeps its Box, fuelSpeed.25, igniteChance1 and igniteScale1.25. Host flame state creates/refreshes/extinguishes native client presentation, while gas fireDamage, world spread
+and self expiry remain host decisions. External extinguishing requests the canonical outcome; local-player fire traces remain native. Saved adoption, cleaning joins and retirement
+share the dynamic decal lane. Fire requests retain their originating person and connection through native probes and transport. Preparation failures can retry, while attempted
+native ignite/extinguish calls cannot replay partial additive fuel. Missing flame metadata defers presentation. Final extinguishing state retains delivery until every ready
+recipient accepts; one blocked peer does not stop the others. Observed looping toy music starts carry episode, position and pitch. Retained sends include queue age; receivers add
+receive age and bounded half-RTT before Play(StartTime). The actual looping SoundWave duration controls wrapping. The same episode does not restart on heartbeats; stopped/replaced
+audio or sound recovers once at the current known position. An already-playing first observation, unavailable metadata or unsupported sound has unknown phase and keeps ordinary
+state replication. Action/touch observations bind native invocations and people; plush Alt-use captures its input before the native activation callback. Sampling, cached playback,
+native actions/touches and queued squeaks retain the canonical actor key through reads, sends and native audio preparation; a renamed actor cannot inherit an older source's
+observation or presentation. An already dispatched Activate consumes its transient cue, including native source teardown. Client music commands wait for host-world readiness before
+transport. their requests retain the same person and connection. Acoustic timing and hand/world phase continuity remain unverified. Paid garden uses reserve storage under a unique
+script invocation. An untracked nested callback cannot consume an outer reservation, and Cancel/fault cleanup removes only inactive invocations. Queued care/harvest retains its
+local player, slot and connection epoch through guarded chunk sends. Care/harvest wire payloads carry that original player number; zero, oversized, legacy or replaced occupants are
+refused. Native authority probes retain session/world/role/readiness and the peer epoch before gameplay dispatch. Completed care can outlive the local crop copy; resource
+rejection/refund remains separate. These paths have offline native-contract and regression coverage; two-peer gameplay is open.
 
 | Limit | Evidence |
 |---|---|
@@ -684,9 +496,12 @@ These paths have offline native-contract and regression coverage; two-peer gamep
 | sleeping bag and mattress replacement | `coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle` |
 | the birth and death seams | `coop/props/prop_lifecycle`, `coop/props/host_spawn_watcher`, `coop/props/prop_element_tracker`, `coop/props/prop_synth_key`, `coop/props/registry_reaper`, `coop/props/prop_echo_suppress` |
 | the receivers | `coop/props/remote_prop` (held), `coop/props/remote_prop_spawn` (birth: adopt, converge, create), `coop/props/prop_fresh_spawn` (the materialiser), `coop/props/prop_wire_parity`, `coop/props/active_drive`, `coop/props/prop_sound` |
+| one holder per prop | `coop/props/prop_hold_claim`, `coop/props/prop_hold` (who holds a prop on the host) |
+| the prop-properties tool | `coop/props/prop_tool_flags`; the toolgun's sight and limits, shared with the remover: `coop/props/toolgun_sight`, `coop/props/toolgun_limits` |
 | a client's intents | `coop/props/prop_drop_intent`; a thrown prop: `coop/props/prop_throw`, `coop/net/throw_bounds` |
 | the stick and exact support attach | `coop/props/prop_stick_sync`, `ue_wrap/engine/engine_attach`, `ue_wrap/engine/actor_end_play` |
 | a prop under a hook's drive or a broom's push | `coop/props/prop_drive_host` (the host's set and stream), `coop/props/prop_drive_stream` (the receiver), `coop/items/hook_prop_claim` (the hook lane feeding it), `coop/items/hook_constraint` (the tie itself, host-only), `coop/items/broom_push` (the broom's push feeding it) |
+| the robot cleaner | `coop/props/roomba_sync`; `harness/autotest/autotest_roomba.cpp` (`roomba_drill`) |
 | containers | `coop/props/container_contents_sync`, `coop/items/save_record_wire`, `coop/interactables/interactable_sync` |
 | a record that changes in place | `coop/props/prop_record_refresh` (the drive box, the reel case) |
 | watoy activation, sound and particle state | `coop/props/watoy_sync`, `ue_wrap/actors/watoy` |

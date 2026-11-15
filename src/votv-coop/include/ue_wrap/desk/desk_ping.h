@@ -1,6 +1,6 @@
 // ue_wrap/desk/desk_ping.h -- the main desk's ping machine (analogDScreenTest_C) and its verdict: the run flag, the
 // stage and the three accumulators process_coords advances, and spaceRenderer_C::gatherSignal, which the machine calls
-// in the same process_coords call that takes it to stage 3 (analogDScreenTest.cpp:1440-1491, spaceRenderer.cpp:542).
+// in the same process_coords call that takes it to stage 3 (CXXHeaderDump/analogDScreenTest.cpp:1440-1491, CXXHeaderDump/spaceRenderer.cpp:542).
 // The cheat menu's isntaCatchSignal calls the same verdict outside the machine (:7226). Engine-wrapper layer
 // (principle 7), no network or coop state. Game thread, every function. Implementation: src/ue_wrap/desk/desk_ping.cpp.
 
@@ -21,7 +21,7 @@ inline constexpr const wchar_t* kVerdict = L"gatherSignal";          // the rend
 inline constexpr const wchar_t* kLogLine = L"writeToCoordLog_2";     // the desk's coordinate-log append
 inline constexpr const wchar_t* kPingSound = L"playPingSound";       // the desk's ping-sound component
 
-// A failed ping's sound, as engine::SoundName names it (analogDScreenTest.cpp:1491).
+// A failed ping's sound, as engine::SoundName names it (CXXHeaderDump/analogDScreenTest.cpp:1491).
 inline constexpr const wchar_t* kPingFailedSound =
     L"SoundWave /Game/audio/newsounds/effects/newdesk_panelCoord_pingFailed.newdesk_panelCoord_pingFailed";
 
@@ -36,7 +36,7 @@ bool WriteProgress(void* desk, const Progress& value);
 // What the desk's ping progress shows on this peer: the machine's own fields, and the `alpha` scalar of the first
 // edge-line material and the first inner-line material of the coordinates panel (dynmat_linesEdges[0],
 // dynmat_linesInner[0]), which the desk's reset loops drive from coord_ping_outer and coord_ping_inner
-// (analogDScreenTest.cpp:1189,1210).
+// (CXXHeaderDump/analogDScreenTest.cpp:1189,1210).
 struct ObserverView {
     bool isPing = false;
     int32_t stage = 0;

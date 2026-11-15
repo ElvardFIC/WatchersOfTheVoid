@@ -3,12 +3,20 @@
 // The pair belongs together: both are the client-side half of host-only persistence, and both are
 // client-only and verify from the log the module itself writes.
 //   - RunAutonomousSaveBlockTest drives saveSlot.saveToSlot, so the native SaveGameToSlot block is
-//     observable without waiting for an autosave or a menu trigger.
+//     observable without waiting for an autosave or a menu trigger. After the settle the live
+//     saveSlot_C is resolved and its saveToSlot called by reflection, driving
+//     UGameplayStatics::SaveGameToSlot (the hook target); the client log shows the invoke line and
+//     then the block line, so the hook cancels the write rather than merely installing. The host
+//     runs nothing. Env VOTVCOOP_RUN_SAVEBLOCK_TEST=1.
 //   - RunAutonomousSaveBtnDisableTest drives mainPlayer_C::InpActEvt_Escape, so the pause-menu
-//     Save-button grey-out is observable without a real ESC press.
+//     Save-button grey-out is observable without a real ESC press (a real ESC is impossible
+//     autonomously): save_button_disable's observer disables the live pause-menu button_Save and
+//     logs the GetIsEnabled read-back; the visual grey needs a human glance. Env
+//     VOTVCOOP_RUN_SAVEBTN_TEST=1.
 
 #include "harness/autotest.h"
 
+#include "ui/multiplayer_menu.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -112,7 +120,7 @@ DWORD WINAPI SaveBlockTestThread(LPVOID /*arg*/) {
 // CLIENT-ONLY. Proves that the InpActEvt_Escape POST observer in coop/save/save_button_disable.cpp
 // actually DISABLES the pause-menu Save button, not merely that it installed. The pause menu is
 // input-driven and a real ESC press cannot be produced autonomously, so the hooked input event is
-// driven by reflection: find the live GameInstance-owned ui_menu_C, force its isPause flag true so
+// driven by reflection: take the gamemode's own ui_menu_C, force its isPause flag true so
 // the observer treats it as the pause menu without a real PlayerController or SetGamePaused, then
 // CallFunction(mainPlayer_C::InpActEvt_Escape), which routes through ProcessEvent and fires
 // OnEscapePost exactly as a real ESC does. The module logs its read-back on apply.
@@ -134,7 +142,7 @@ void RunAutonomousSaveBtnDisableTest() {
 
     auto done = std::make_shared<std::atomic<int>>(0);  // 0=pending 1=drove -1=resolve-fail
     GT::Post([done] {
-        void* menu = R::FindObjectByClass(P::name::UiMenuClass);
+        void* menu = coop::multiplayer_menu::GamemodeMenu();  // the gamemode's own reference
         void* mp = R::FindObjectByClass(P::name::MainPlayerClass);
         if (!menu || !mp) {
             UE_LOGW("savebtn_test: ui_menu_C=%p mainPlayer_C=%p not loaded -- cannot drive", menu, mp);

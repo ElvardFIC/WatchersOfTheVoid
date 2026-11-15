@@ -1,6 +1,7 @@
 // Actual hit guard plus unchanged controller functions extracted by the runner.
 #include "../../src/votv-coop/src/coop/interactables/atv_hit_guard.cpp"
 #include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #include "coop/net/session.h"
 #include "ue_wrap/core/script_gate.h"
 #include <array>

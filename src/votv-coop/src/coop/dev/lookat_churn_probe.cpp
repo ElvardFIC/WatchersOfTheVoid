@@ -308,7 +308,7 @@ unsigned g_cmpAgreed   = 0;  // of the REBUILT ones, all five pairs equal: not t
 unsigned g_cmpNoStore  = 0;  // of the REBUILT ones, the body left the stored set as it found it
 // Bodies that dropped the aim AND rebuilt: their locals are not the compare's operands. A drop that
 // somehow did NOT rebuild is not counted here, which costs nothing only because lookAtLookedAway
-// always calls buildActionList (mainPlayer.cpp:20273) -- true of the current cook, not by
+// always calls buildActionList (CXXHeaderDump/mainPlayer.cpp:20273) -- true of the current cook, not by
 // construction, so read this as "dropped and rebuilt", never as "dropped".
 unsigned g_cmpDropPath = 0;
 unsigned g_cmpNested   = 0;  // a LookAtFunction body inside another one (expected: 0)

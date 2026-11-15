@@ -9,8 +9,12 @@
 #include "coop/element/registry.h"
 #include "coop/props/prop_act_host.h"
 #include "coop/props/prop_act_request.h"
+#include "coop/props/host_spawn_watcher.h"
+#include "coop/props/prop_food_sync.h"
 #include "coop/props/remote_prop.h"
 
+#include "ue_wrap/actors/food.h"
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/prop_flags.h"
 #include "ue_wrap/actors/prop_gather.h"
 #include "ue_wrap/core/asset_load.h"
@@ -29,7 +33,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cwchar>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace coop::dev::prop_act_drill::detail {
 namespace {
@@ -44,6 +51,7 @@ namespace DP  = coop::dev::drill_props;
 using ue_wrap::FVector;
 
 constexpr const wchar_t* kMre     = L"/Game/objects/prop_food_mre.prop_food_mre_C";
+constexpr const wchar_t* kKit     = L"/Game/objects/prop_medkit_pack.prop_medkit_pack_C";
 constexpr const wchar_t* kPills   = L"/Game/objects/prop_sleeppills.prop_sleeppills_C";
 constexpr const wchar_t* kSoap    = L"/Game/objects/prop_food_soap.prop_food_soap_C";
 constexpr const wchar_t* kPlush   = L"/Game/objects/prop_eriePlush.prop_eriePlush_C";
@@ -197,6 +205,15 @@ const char* BinFail(void* bin, const char* why) {
     return why;
 }
 
+// The prep's own bounds: the physics settle or the bin's take had no event by its bound, so the run measured nothing. The
+// diagnostic line is the same; the returned text carries the prefix the core reads as INVALID, never as a FAIL.
+const char* BinInvalid(void* bin, const char* why) {
+    BinFail(bin, why);
+    static std::string text;
+    text = std::string("INVALID: ") + why;
+    return text.c_str();
+}
+
 // The wastebasket is loaded as the game loads it: an item dropped into its Box settles, and the bin's own tick freezes it
 // and attaches it, which turns the bin's canCollect off (checkPickup). The bin must first have come to rest (its place
 // unchanged across two polls) and stand upright; then a small item (the pills) is dropped above it and awaited to rest in
@@ -209,7 +226,7 @@ const char* LoadBin(void* bin, uint64_t sinceMs, bool* done) {
         const bool rest = g_bin.haveBinAt && Unmoved(g_bin.binAt, binAt);
         g_bin.binAt = binAt;
         g_bin.haveBinAt = true;
-        if (!rest) return sinceMs > kBinLoadBoundMs ? BinFail(bin, "the bin never came to rest") : nullptr;
+        if (!rest) return sinceMs > kBinLoadBoundMs ? BinInvalid(bin, "the bin never came to rest") : nullptr;
         const FVector up = E::GetActorUpVector(bin);
         if (up.X == 0.f && up.Y == 0.f && up.Z == 0.f) return BinFail(bin, "the bin's up vector is unread");
         if (up.Z <= kBinUprightZ) return BinFail(bin, "the bin came to rest on its side");
@@ -237,25 +254,36 @@ const char* LoadBin(void* bin, uint64_t sinceMs, bool* done) {
         g_bin.itemAt = at;
         g_bin.haveItemAt = true;
         if (!rest)
-            return sinceMs - g_bin.phaseMs > kBinLoadBoundMs ? BinFail(bin, "the item never came to rest") : nullptr;
+            return sinceMs - g_bin.phaseMs > kBinLoadBoundMs ? BinInvalid(bin, "the item never came to rest") : nullptr;
         g_bin.rested = true;
         g_bin.phaseMs = sinceMs;
         const float dx = at.X - binAt.X, dy = at.Y - binAt.Y, dz = at.Z - binAt.Z;
         if (dx * dx + dy * dy + dz * dz > kBinInsideCm * kBinInsideCm) return BinFail(bin, "the item did not land in the bin");
     }
-    return sinceMs - g_bin.phaseMs > kBinTakeBoundMs ? BinFail(bin, "the bin never took the item") : nullptr;
+    return sinceMs - g_bin.phaseMs > kBinTakeBoundMs ? BinInvalid(bin, "the bin never took the item") : nullptr;
 }
 
 // A frozen heavy prop, on the host's copy and on the client's (frozen is not synced, and the client's own hold of a
 // heavy prop would answer "too heavy"): the game's own setter, with active off.
 const char* FreezeHost(void* actor, uint64_t, bool* done) {
-    if (!ue_wrap::prop::CallSetPropProps(actor, false, true, false)) return "setPropProps could not freeze the host's copy";
+    if (!ue_wrap::prop::CallSetPropProps(actor, false, true, false, false)) return "setPropProps could not freeze the host's copy";
     *done = true;
     return nullptr;
 }
 
 const char* FreezeCopy(void*, void* mirror) {
-    return ue_wrap::prop::CallSetPropProps(mirror, false, true, false) ? nullptr : "setPropProps could not freeze this client's copy";
+    return ue_wrap::prop::CallSetPropProps(mirror, false, true, false, false) ? nullptr : "setPropProps could not freeze this client's copy";
+}
+
+// An MRE poisons one content with the chance in its own `poisonChance`, a value its purchase sets and a spawned one has
+// at 0. The host's copy is given 1, so the open poisons a content and the client's judge has a carrier to find.
+const char* PoisonMre(void* actor, uint64_t, bool* done) {
+    const int32_t off = ue_wrap::reflection::FindPropertyOffset(ue_wrap::reflection::ClassOf(actor), L"poisonChance");
+    if (off < 0) return "the MRE declares no poisonChance";
+    const float always = 1.f;
+    std::memcpy(static_cast<uint8_t*>(actor) + off, &always, sizeof(always));
+    *done = true;
+    return nullptr;
 }
 
 constexpr Row kRows[] = {
@@ -264,7 +292,8 @@ constexpr Row kRows[] = {
     {"hold food",    kFood,    L"prop_food_C",        Verb::Hold,   Ends::Hand,      nullptr},
     {"hold pills",   kPills,   L"prop_sleeppills_C",  Verb::Hold,   Ends::Hand,      nullptr},
     {"eat last use", kFood,    L"prop_food_C",        Verb::Use,    Ends::Gone,      &SetLastUse},
-    {"mre",          kMre,     L"prop_food_mre_C",    Verb::Use,    Ends::Gone,      nullptr},
+    {"mre",          kMre,     L"prop_food_mre_C",    Verb::Use,    Ends::Unpacked,  nullptr, Target::Host, true, false,
+     nullptr, nullptr, false, PAH::Tally::kCount, &PoisonMre, nullptr, true},
     {"soap",         kSoap,    L"prop_food_soap_C",   Verb::Soap,   Ends::Gone,      &SetUpSoap},
     {"pills",        kPills,   L"prop_sleeppills_C",  Verb::Use,    Ends::Gone,      nullptr},
     // The plush offers no option, so its last use is asked and refused. Then the classes the judge reads by their own
@@ -280,7 +309,7 @@ constexpr Row kRows[] = {
     {"frozen heavy hold", kHeater, L"prop_heater_C",  Verb::Hold,   Ends::Taken,     &FreezeCopy, Target::Host, true, false,
      nullptr, nullptr, false, PAH::Tally::kCount, &FreezeHost},
     // The calls that are the client's own (no request), the pocket and the hold of a kerfur's prop (the pocket stays, the
-    // hold is taken), a use that also destroys a second prop inside the latch, and last the full inventory, which stays
+    // hold is taken), a use that also destroys a second prop inside the latch, and the full inventory, which stays
     // full for whatever would follow it.
     {"own spawn",       kCrowbar,  L"prop_crowbar_C",     Verb::Pocket, Ends::Inventory, nullptr, Target::Client, false, false, &MakeOwnCrowbar},
     {"native subclass", kShrimp,   L"prop_food_shrimp_C", Verb::Use,    Ends::NativeGone, &SetShrimpLastEat, Target::Host, false},
@@ -290,6 +319,11 @@ constexpr Row kRows[] = {
     {"kerfur hold",     nullptr,   L"prop_kerfurOmega_C", Verb::Hold,   Ends::Taken,     nullptr, Target::HostKerfur},
     {"second destroy",  kCrowbar,  L"prop_crowbar_C",     Verb::Pocket, Ends::Inventory, nullptr, Target::HostTwo},
     {"full",            kCrowbar,  L"prop_crowbar_C",     Verb::Pocket, Ends::Stays,     nullptr, Target::Host, true, false, nullptr, &FillStep},
+    // A first aid kit's `spawn` rolls the props of its `drop` list, and whether a kit spawned bare holds any is not measured
+    // (the host's grant line says it): the step ends INVALID when it rolled nothing, which stops the phase, so it is the
+    // last row and masks none. Otherwise it passes when each of the host's births has its mirror here. An unpack destroys
+    // the client's copy and takes no inventory slot, so the full inventory the row before it leaves does not touch it.
+    {"first aid kit", kKit,    L"prop_medkit_pack_C", Verb::Use,    Ends::Unpacked,  nullptr},
 };
 
 uint32_t Since(uint32_t now, uint32_t then) { return now - then; }
@@ -386,6 +420,15 @@ Judged JudgeTaken(const Row& row, coop::element::ElementId eid, const Baseline& 
             return Judged::Fail;
         }
     }
+    // An MRE's or a first aid kit's contents are rolled on the host's copy before its destroy, and no other take rolls
+    // anything.
+    const bool unpacks = std::wcscmp(row.leaf, L"prop_food_mre_C") == 0 || std::wcscmp(row.leaf, L"prop_medkit_pack_C") == 0;
+    const uint32_t wantOpens = unpacks ? 1 : 0;
+    const uint32_t opens = Since(PAH::UnpacksRolled(), base.unpacksRolled);
+    if (opens != wantOpens) {
+        *why = std::to_string(opens) + " unpacks on the host, " + std::to_string(wantOpens) + " expected";
+        return Judged::Fail;
+    }
     const uint32_t wantRaw = row.target == Target::HostTwo ? 1 : 0;
     const uint32_t raw = PRP::dev::WireDestroysNaming(eid);
     if (raw != 0) {
@@ -404,6 +447,10 @@ Judged JudgeTaken(const Row& row, coop::element::ElementId eid, const Baseline& 
             return Judged::Fail;
         }
     }
+    if (wantOpens) {
+        *why = "one destroy commit, the eid dead, the contents rolled on the host, no raw PropDestroy from the client";
+        return Judged::Pass;
+    }
     *why = wantRaw ? "one destroy commit, the eid dead, the second prop's destroy through the seam"
                    : row.target == Target::HostKerfur
                          ? "one destroy commit, the eid dead, the kerfur record released, no raw PropDestroy"
@@ -421,9 +468,22 @@ Judged Judge(const Row& row, coop::element::ElementId eid, const Baseline& base,
 
 }  // namespace
 
+// A food at ripeness 0 or below ragdolls its eater unless the eater is strong (prop_food.cpp, eat: `ripeness <= 0` and not
+// `isStrong` call ragdollMode), and a ragdolled puppet sinks, so the next step finds no floor to spawn on. The copy is
+// made fresh (the class default, 7200) as it is made a last use, and its ripeness is said, so a ragdoll after the eat
+// names its cause.
+constexpr float kFreshRipeness = 7200.f;
+
 const char* SetLastUse(void*, void* mirror) {
     static R::InstanceOffset sUses{L"uses"};
-    return WriteField<int32_t>(sUses, mirror, 1) ? nullptr : "the copy's uses could not be written";
+    if (!WriteField<int32_t>(sUses, mirror, 1)) return "the copy's uses could not be written";
+    ue_wrap::food::Condition c;
+    if (ue_wrap::food::Read(mirror, c)) {
+        UE_LOGI("%s c1 eaten food: ripeness %.0f before, made fresh (%.0f)", kTag, c.ripeness, kFreshRipeness);
+        c.ripeness = kFreshRipeness;
+        if (!ue_wrap::food::Write(mirror, c)) return "the copy's ripeness could not be written";
+    }
+    return nullptr;
 }
 
 bool HintWatchLive() {
@@ -456,6 +516,90 @@ void* FindKerfurProp(EL::ElementId kerfurId) {
         },
         &ctx);
     return ctx.found;
+}
+
+// ---- the unpack steps' host events (an MRE, a first aid kit) -------------------------------------------------------
+
+namespace {
+bool g_contentsSaid = false;
+}
+
+std::string ContentsHead(const Row& r) { return std::string(kTag) + " host " + r.name + " contents "; }
+
+void UnpackHostReady() {
+    g_contentsSaid = false;
+    coop::host_spawn_watcher::dev::ArmSpawnRecord(true);   // from before the client acts: a content's spawn may go out inside the roll
+}
+
+// HOST, each poll while it waits for the client on an unpack step. The host's own commit counter is the no-change point of
+// the open-off red: the commit has been processed (a destroy commit counted, the eid dead), so an unpack that did not
+// happen will not happen. The contents are the set of actors the unpack's roll made, fixed when its spawn returned:
+// prop_act_host brackets the call with host_spawn_watcher's birth capture (the Finish post-hook records every spawn
+// finished on the game thread inside it), so they are named exactly, never counted from a world scan or a queue. A food
+// row's contents are the foods of that set (the roll's other spawns, its pouring props, are no content); any other row's
+// are its prop births, of any class. Once every content has its eid and, a keyed food, its FoodState on the wire, the host
+// says how many there are, how many it poisoned and their eids (n=0 when the roll made none): a food's line follows its
+// FoodState on the Default lane (session_lanes.h LaneForKind, FIFO), so a client that reads it has taken them. A content
+// that never registers leaves the line unsaid, and the client's bound says INVALID.
+const char* UnpackHostWatch(const Row& row, EL::ElementId eid, const Baseline& base) {
+    if (Since(PAH::CommitsOf(kClientSlot, PAH::internal::CommitStep::Destroy), base.destroys) == 0 || EL::LivePropActor(eid))
+        return nullptr;
+    if (Since(PAH::UnpacksRolled(), base.unpacksRolled) == 0)
+        return "the host processed the commit with no unpack: 0 unpacks on the host, 1 expected";
+    if (g_contentsSaid) return nullptr;
+    size_t fresh = 0, poisoned = 0;
+    std::string eids;
+    bool ready = true;
+    for (const ue_wrap::CachedObjRef& born : coop::host_spawn_watcher::dev::CapturedBirths()) {
+        void* const actor = born.Get();
+        if (!actor) continue;
+        const bool food = ue_wrap::food::IsFood(actor);
+        if (row.foodContents ? !food : !ue_wrap::prop::IsDescendantOfProp(actor)) continue;
+        // A kerfur's prop has the KerfurConvert as its wire signal and no PropSpawn (prop_lifecycle.cpp, the conversion
+        // successor): it is no content a client should expect a mirror of.
+        if (coop::kerfur_entity::IsKerfurPropClass(R::ClassOf(actor))) continue;
+        ++fresh;
+        // The watcher's drain is what sends a birth's spawn (or the init seam did, inside the roll): a birth that has left
+        // its pending queue holding an eid and no send will never be sent (the drain skips a tracked birth, and the census
+        // expresses only a prop with no eid), so the verdict is known and said now.
+        const bool pending = coop::host_spawn_watcher::dev::StillPending(actor);
+        const EL::ElementId id = EL::Registry::Get().EidForActor(actor);
+        if (id == EL::kInvalidId) {
+            ready = false;   // a straggler with no eid yet may still be minted and sent by the periodic census
+            continue;
+        }
+        // The eid is minted before its PropSpawn goes out (the census walk mints with no send): the line waits for the send,
+        // which is what makes a client's missing mirror a loss and no wait, and a send the session refused is the host's own fail.
+        if (coop::host_spawn_watcher::dev::SpawnRefused(id)) {
+            static std::string text;
+            text = "the host's PropSpawn for content eid " + std::to_string(static_cast<unsigned>(id)) +
+                   " was refused by the session";
+            return text.c_str();
+        }
+        if (!coop::host_spawn_watcher::dev::SpawnSent(id)) {
+            if (!pending) {
+                static std::string unsent;
+                unsent = "content eid " + std::to_string(static_cast<unsigned>(id)) +
+                         " was never sent: it left the watcher's queue with no PropSpawn (tracked before its drain with no send of its own)";
+                return unsent.c_str();
+            }
+            ready = false;
+            continue;
+        }
+        eids += (eids.empty() ? "" : ",") + std::to_string(static_cast<unsigned>(id));
+        if (!food) continue;
+        // A content with no Key is counted by its eid and is never sent a FoodState (the lane sends keyed foods only).
+        const std::wstring key = ue_wrap::prop::GetInteractableKeyString(actor);
+        if (!key.empty() && key != L"None" && !coop::props::prop_food_sync::dev::StateSentFor(key)) ready = false;
+        ue_wrap::food::Poison poison;
+        if (ue_wrap::food::ReadPoison(actor, poison) && poison.delay > 0.f && poison.strength > 0.f) ++poisoned;
+    }
+    if (!ready) return nullptr;
+    g_contentsSaid = true;
+    coop::host_spawn_watcher::dev::ArmSpawnRecord(false);
+    UE_LOGI("%s host %s: contents counted, n=%zu eids %s", kTag, row.name, fresh, eids.empty() ? "none" : eids.c_str());
+    Say(ContentsHead(row) + "n=" + std::to_string(fresh) + " poisoned=" + std::to_string(poisoned) + " eids=" + eids);
+    return nullptr;
 }
 
 const Phase& Honest() {

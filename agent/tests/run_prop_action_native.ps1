@@ -8,13 +8,13 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$Suite,[string]$SourcePath){
   $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy')
-  if($Suite -eq 'actions'){$flags+=@('/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
+  if($Suite -eq 'actions'){$flags+=@('/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
   $flags+=@('/I','src/votv-coop/include')
   $define=switch($Suite){'actions'{'PROP_ACTION_SOURCE'}'hit'{'HIT_RESULT_SOURCE'}'wall'{'WALL_WRAPPER_SOURCE'}}
   $fixture=switch($Suite){'actions'{'prop_action_native'}'hit'{'hit_result_lifetime'}'wall'{'wall_damage_lifetime'}}
   if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define '+$define+' "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "agent/tests/${fixture}_test.cpp" /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/${fixture}_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Native action fixture compile failed: $Name"}
   return $exe
  }
@@ -23,7 +23,7 @@ try {
   & $exe
   if($LASTEXITCODE){throw "Native action regression failed: $suite"}
  }
- & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') agent/tests/prop_action_native_contract_test.py
+ & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') "$PSScriptRoot/prop_action_native_contract_test.py"
  if($LASTEXITCODE){throw 'Cooked native action contract failed'}
  if($FaultControls){
   $sources=@{actions=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/props/prop_action_sync.cpp'));

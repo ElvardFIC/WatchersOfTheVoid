@@ -55,7 +55,7 @@ int32_t MainPlayer_lookAtComponent();
 int32_t MainPlayer_lookAtBoundsReplace();
 int32_t MainPlayer_lookAtVerify();
 int32_t MainPlayer_lookAtState();
-// Radial-menu confirm fields (kerfur menu verb detection on the client InpActEvt_use seam).
+// Radial-menu confirm fields (the selected action, read by dev/kerfur_seat_probe).
 int32_t MainPlayer_releaseEToUse();  // the "release E to use" radial confirm flag
 int32_t MainPlayer_actionIndex();    // the highlighted radial-menu option index
 // Ragdoll and faint DISPLAY state. isRagdoll is the AnimBP gate that ragdollMode() flips, so
@@ -93,8 +93,6 @@ int32_t AnimBP_kerfur_customLookAt();
 // Sitting: the AnimBP plays kerfurOmegaV1_sitOnAtv while isOnAtv is true, which is the same
 // skeleton the player skins use, so a seated player or Omega must set it or they stand through
 // the chair. useLegIK must go off with it, or the foot trace plants standing legs over the pose.
-int32_t AnimBP_kerfur_isOnAtv();
 // The driver's sit arrow on the ATV. Negative if the class has no such property.
-int32_t Atv_sitarrow();
 
 }  // namespace ue_wrap::reflected_offset
