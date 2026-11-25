@@ -5,7 +5,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $checkout
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I src/votv-coop/include /I src/votv-coop/src/coop/interactables "/Fo$output/companion.obj" "/Fe$output/companion.exe" agent/tests/atv_companion_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I src/votv-coop/include /I src/votv-coop/src/coop/interactables "/Fo$output/companion.obj" "/Fe$output/companion.exe" "$PSScriptRoot/atv_companion_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Companion fixture compile failed'}
  & "$output/companion.exe"
  if($LASTEXITCODE){throw 'Companion regression failed'}

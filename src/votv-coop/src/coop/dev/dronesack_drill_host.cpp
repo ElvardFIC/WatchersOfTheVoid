@@ -1,7 +1,9 @@
 // coop/dev/dronesack_drill_host.cpp -- see coop/dev/dronesack_drill.h: the host's half. It puts the sack on the floor
 // in front of itself and waits for the client to bind its mirror of it. Arm 1 then drops a crate onto the sack and
 // for kWatchMs logs what destroyed the crate. Arm 2 spawns loose props round the sack, lets the client carry them
-// into it, calls the delivery drone and waits for its sale to clear the drone's container.
+// into it, and judges at once, when the props the client let go of have settled, whether each prop that left the floor
+// is a record in the drone container; it ends with that verdict. Arms 3 and 4 call the delivery drone and wait for its
+// sale to clear the drone's container.
 
 #include "coffee_drill_detail.h"     // co-located private header: SpawnProp (a prop_C named by a row)
 #include "dronesack_drill_detail.h"  // co-located private header (src tree, not include/)
@@ -12,6 +14,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/container_act_host.h"
+#include "coop/session/rig_verdict.h"
 
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/asset_load.h"
@@ -43,14 +46,14 @@ namespace R  = ue_wrap::reflection;
 
 constexpr uint64_t kPlaceEveryMs = 1000;   // a floor that was not found is looked for again this often
 const wchar_t* const kSackPath = L"/Game/objects/prop_dronesack.prop_dronesack_C";
-// Arm 2's loose props are what the coffee drill spawns for a cup: a prop_C whose `name` row is "cup".
-const wchar_t* const kPropClass = L"prop_C";
-const wchar_t* const kPropName = L"cup";
+// Arm 2's loose props are what the coffee drill spawns for a cup, a prop_C whose `name` row is "cup", or zip disks
+// (LooseClass, LooseName).
 
 enum class Ph : uint8_t {
     Wait, Place, SackEid, AwaitBound,
     CrateEid, Watch,                                  // arm 1
-    PlaceProps, PropEids, AwaitPuts, Settle, Call, Sale, Tail,   // arm 2 (Call, Sale and Tail are arm 3's too)
+    PlaceProps, PropEids, AwaitPuts, Settle,          // arm 2: it ends at Settle, with its verdict
+    Call, Sale, Tail,                                 // arms 3 and 4: the drone is called, sells, and the census is read again
     Fill,                                             // arm 3
     AwaitTake,                                        // arm 4
     Done
@@ -65,6 +68,8 @@ struct Host {
     ue_wrap::CachedObjRef sack, crate;
     std::vector<ue_wrap::CachedObjRef> props;
     std::vector<uint32_t>              propEids;
+    std::vector<uint32_t>              released;   // arm 2: the props the client named as let go
+    std::vector<int>                   restRun;    // ... and for each, the consecutive host samples it has been under kSettledCmS
     // arm 3: the items dropped one at a time, cups first and the crate last
     int                   item = 0, absorbed = 0, recordsBeforeItem = 0, crateRecords = -1;
     int32_t               crateIndex = -1;
@@ -77,6 +82,8 @@ Host g_h;
 
 void Abandon(const char* why) {
     UE_LOGW("[SACK-DRILL] ABANDONED on the host: %s", why);
+    if (Mode() == 2) coop::rig_verdict::Say("dronesack-arm2", coop::rig_verdict::Outcome::Invalid, "%s", why);
+    Say(kDoneLine);   // the other peer's Watch ends on it
     g_h.ph = Ph::Done;
 }
 
@@ -164,7 +171,7 @@ bool PlaceProps(void* me) {
         const float x = g_h.sackAt.X + std::cos(a) * kPropRingCm, y = g_h.sackAt.Y + std::sin(a) * kPropRingCm;
         float floorZ = 0.f;
         if (!DP::FloorAt(me, x, y, g_h.sackAt.Z + 100.f, kFloorDownCm, kMinColumnCm, &floorZ)) continue;
-        void* const p = CD::SpawnProp(kPropClass, {x, y, floorZ + kRiseCm}, kPropName);
+        void* const p = CD::SpawnProp(LooseClass(), {x, y, floorZ + kRiseCm}, LooseName());
         if (!p) continue;
         ue_wrap::CachedObjRef ref;
         ref.Set(p);
@@ -187,17 +194,58 @@ std::string OutsideList() {
     return out.empty() ? "none" : out;
 }
 
-void SaleDone() {
-    if (Mode() >= 3) {
-        UE_LOGI("[SACK-DRILL] host DONE arm %d items absorbed=%d of %d, drone container records at call=%d, now=%d",
-                Mode(), g_h.absorbed, kPropCount + 1, g_h.recordsAtCall, SackRecords(g_h.sack.Get()));
-        Say(kDoneLine);
-        g_h.ph = Ph::Done;
-        return;
+// Whether every prop the client named as let go has settled: gone from the host's floor (filed, or taken with its client
+// mirror), or at rest on it, which is under kSettledCmS on kRestSamples consecutive host samples (one slow reading is a
+// fall's start or a bounce's apex, not a landing). Each call is one sample.
+bool ReleasedSettled() {
+    bool all = true;
+    for (size_t i = 0; i < g_h.released.size(); ++i) {
+        void* const p = EL::LivePropActor(g_h.released[i]);
+        if (!p) { g_h.restRun[i] = kRestSamples; continue; }
+        const ue_wrap::prop::VelocityState v = ue_wrap::prop::GetPhysicsVelocity(p, /*linearOnly=*/true);
+        const float speed = std::sqrt(v.linearCmS.X * v.linearCmS.X + v.linearCmS.Y * v.linearCmS.Y +
+                                      v.linearCmS.Z * v.linearCmS.Z);
+        g_h.restRun[i] = v.ok && speed <= kSettledCmS ? g_h.restRun[i] + 1 : 0;
+        all = all && g_h.restRun[i] >= kRestSamples;
     }
-    UE_LOGI("[SACK-DRILL] host DONE arm 2 props in sack=%d of %zu, drone container records at call=%d, now=%d",
-            static_cast<int>(g_h.propEids.size()) - PropsOutside(), g_h.propEids.size(), g_h.recordsAtCall,
-            SackRecords(g_h.sack.Get()));
+    return all;
+}
+
+// Arm 2 ends here: the host's last line and the done line the client's Watch ends on.
+void Arm2Done() {
+    UE_LOGI("[SACK-DRILL] host DONE arm 2 props in sack=%d of %zu, drone container records now=%d",
+            static_cast<int>(g_h.propEids.size()) - PropsOutside(), g_h.propEids.size(), SackRecords(g_h.sack.Get()));
+    Say(kDoneLine);
+    g_h.ph = Ph::Done;
+}
+
+// Arm 2's verdict, the moment the named props have settled: every loose prop that left the floor is a record in the host's
+// drone container. A prop a client's own copy of the container filed is gone from the floor with no record here. Said in
+// the family's own line (arm 4's form) and as the rig's one contract line, which a run ends on. Fewer than
+// kMinPutsToJudge props gone cannot say PASS (a FAIL it can: a lost record is lost at any count).
+void Arm2Verdict() {
+    const int gone = static_cast<int>(g_h.propEids.size()) - PropsOutside();
+    const int filed = SackRecords(g_h.sack.Get()) - g_h.recordsAtDrop;
+    namespace RV = coop::rig_verdict;
+    if (gone == 0) {
+        UE_LOGW("[SACK-DRILL] host arm 2 INVALID: no prop reached the sack");
+        RV::Say("dronesack-arm2", RV::Outcome::Invalid, "no prop reached the sack");
+    } else if (filed != gone) {
+        UE_LOGW("[SACK-DRILL] host arm 2 FAIL: %d prop(s) left the floor, %d record(s) filed", gone, filed);
+        RV::Say("dronesack-arm2", RV::Outcome::Fail, "%d prop(s) left the floor, %d record(s) filed", gone, filed);
+    } else if (gone < kMinPutsToJudge) {
+        UE_LOGW("[SACK-DRILL] host arm 2 INVALID: too few puts to judge, %d prop(s) left the floor, %d record(s) filed", gone, filed);
+        RV::Say("dronesack-arm2", RV::Outcome::Invalid, "too few puts to judge: %d prop(s) left the floor, %d record(s) filed", gone, filed);
+    } else {
+        UE_LOGI("[SACK-DRILL] host arm 2 PASS: %d prop(s) left the floor, %d record(s) filed", gone, filed);
+        RV::Say("dronesack-arm2", RV::Outcome::Pass, "%d prop(s) left the floor, %d record(s) filed", gone, filed);
+    }
+}
+
+// Arms 3 and 4 end with the sale.
+void SaleDone() {
+    UE_LOGI("[SACK-DRILL] host DONE arm %d items absorbed=%d of %d, drone container records at call=%d, now=%d",
+            Mode(), g_h.absorbed, kPropCount + 1, g_h.recordsAtCall, SackRecords(g_h.sack.Get()));
     Say(kDoneLine);
     g_h.ph = Ph::Done;
 }
@@ -335,7 +383,7 @@ void Fill() {
         ue_wrap::FVector at = g_h.sackAt;
         at.Z += kCrateAboveCm;
         void* cls = crate ? R::FindClass(L"prop_container_C") : nullptr;
-        void* const p = crate ? (cls ? E::SpawnActor(cls, at) : nullptr) : CD::SpawnProp(kPropClass, at, kPropName);
+        void* const p = crate ? (cls ? E::SpawnActor(cls, at) : nullptr) : CD::SpawnProp(LooseClass(), at, LooseName());
         if (!p) { Abandon("an item did not spawn"); return; }
         g_h.cur.Set(p);
         g_h.recordsBeforeItem = SackRecords(g_h.sack.Get());
@@ -471,25 +519,44 @@ void HostTick(coop::net::Session* s) {
         for (const uint32_t e : eids) csv += (csv.empty() ? "" : ",") + std::to_string(e);
         g_h.recordsAtDrop = SackRecords(g_h.sack.Get());
         UE_LOGI("[SACK-DRILL] host READY %zu loose props (%ls '%ls') eids=%s; drone container records=%d", eids.size(),
-                kPropClass, kPropName, csv.c_str(), g_h.recordsAtDrop);
+                LooseClass(), LooseName(), csv.c_str(), g_h.recordsAtDrop);
         Say(std::string(kPropsPrefix) + csv);
         Go(Ph::AwaitPuts);
         return;
     }
-    case Ph::AwaitPuts:
+    case Ph::AwaitPuts: {
         PrintNew();
-        if (Heard(kPutsDoneLine)) { Go(Ph::Settle); return; }
+        std::string rest;
+        if (Rest(kPutsPrefix, &rest)) {   // the client's puts are done, and it names the props it let go of
+            g_h.released = ParseEids(rest);
+            g_h.restRun.assign(g_h.released.size(), 0);
+            UE_LOGI("[SACK-DRILL] host: the client let go of %zu prop(s): %s", g_h.released.size(), rest.c_str());
+            Go(Ph::Settle);
+            return;
+        }
         if (now - g_h.phaseMs > kClientBoundMs) Abandon("the client never finished its puts");
         return;
-    case Ph::Settle:
+    }
+    case Ph::Settle: {
         PrintNew();
-        if (PropsOutside() == 0 || now - g_h.phaseMs > kPutsSettleMs) {
+        // The verdict is decided the moment each prop the client let go of is filed, destroyed or at rest, with no wait on
+        // a clock. Arm 2 ends with it. kPutsSettleMs is the backstop for a prop that never comes to rest.
+        const bool settled = ReleasedSettled();
+        if (settled || now - g_h.phaseMs > kPutsSettleMs) {
             UE_LOGI("[SACK-DRILL] host puts: %d of %zu props are in the sack; still outside (eids): %s",
                     static_cast<int>(g_h.propEids.size()) - PropsOutside(), g_h.propEids.size(),
                     OutsideList().c_str());
-            Go(Ph::Call);
+            if (settled) {
+                Arm2Verdict();
+            } else {
+                coop::rig_verdict::Say("dronesack-arm2", coop::rig_verdict::Outcome::Invalid,
+                                       "a let-go prop neither filed nor at rest within %llu s: %s",
+                                       static_cast<unsigned long long>(kPutsSettleMs / 1000), OutsideList().c_str());
+            }
+            Arm2Done();
         }
         return;
+    }
     case Ph::Call:
         PrintNew();
         CallDrone();

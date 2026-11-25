@@ -398,7 +398,7 @@ void HostCopy() {
 }
 
 // The stand-in for "the host's copy ended": a forced remove() on an inactive copy would run setEvent(false) and
-// underflow the refcount (lib.cpp:3132-3142), so the drill destroys the inactive copy as the wrapper does for the
+// underflow the refcount (CXXHeaderDump/lib.cpp:3132-3142), so the drill destroys the inactive copy as the wrapper does for the
 // lane's own absent apply. It runs once a joiner's world is taken and not yet ready, so the blob holds a copy the
 // host no longer has and the seed at the joiner's world-ready says absent.
 void HostRejoin(coop::net::Session* s) {

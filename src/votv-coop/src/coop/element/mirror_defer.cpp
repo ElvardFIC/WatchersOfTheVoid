@@ -153,12 +153,6 @@ void OnMirrorSpawned(uint32_t eid, void* actor, HideCollision collision, bool ho
     g_hidden[eid] = HiddenRec{actor, idx, collision, std::move(comps), primitives, fallbackWhy, holdUntilQuiescence};
 }
 
-bool HideInfoOf(uint32_t eid, HideInfo& out) {
-    const auto it = g_hidden.find(eid);
-    if (it == g_hidden.end()) return false;
-    out = HideInfo{it->second.collision, it->second.primitives, it->second.fallbackWhy};
-    return true;
-}
 
 void RevealConfirmedAtLift() {
     UE_ASSERT_GAME_THREAD("mirror_defer::RevealConfirmedAtLift");
@@ -186,5 +180,7 @@ void RevealAllSurvivorsAtQuiescence() {
     UE_LOGI("mirror_defer: quiescence-reveal -- %d held/tail mirror(s) shown; deferred-hide window "
             "CLOSED (steady-state spawns now visible immediately)", n);
 }
+
+
 
 }  // namespace coop::mirror_defer

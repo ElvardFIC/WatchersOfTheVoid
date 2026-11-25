@@ -2,6 +2,7 @@
 // coop/dev/prop_act_drill.h; the core (prop_act_drill.cpp) routes the phase and runs the host half.
 
 #include "coop/dev/prop_act_drill.h"
+#include "prop_act_drill_client_steps.h"
 
 #include "coop/comms/chat_feed.h"
 #include "coop/dev/director/aimed_grab.h"
@@ -15,6 +16,8 @@
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
+#include "ue_wrap/actors/effects.h"
+#include "ue_wrap/actors/food.h"
 #include "ue_wrap/actors/inventory.h"
 #include "ue_wrap/actors/prop_use.h"
 #include "ue_wrap/actors/vitals.h"
@@ -31,6 +34,8 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace coop::dev::prop_act_drill {
 using namespace detail;
@@ -47,10 +52,11 @@ constexpr uint8_t kEatAction = 4;   // actionOptionIndex's eat, as the watch rea
 constexpr const char* kSecondTag = " eid2=";   // after the first eid in a pair's ready line
 constexpr int kFillMax = 400;            // CLIENT: own spawns pocketed before the inventory is called never full
 
+}  // namespace
+
 // ---- client (taker) ----------------------------------------------------------------------------------------------
 
-enum class CStep : uint8_t { Arm, AwaitReady, Resolve, Fill, Walk, AwaitGather, ClearHand, Grab, AwaitDriven,
-                             AwaitReply, Say, Done };
+std::string g_readyRest;                   // the text after the host's ready line's eid: a snack arm's uses and open
 CStep g_cstep = CStep::Arm;
 uint64_t g_cStepMs = 0, g_cNextMs = 0, g_nextSayMs = 0;
 size_t g_crow = 0;
@@ -69,6 +75,12 @@ bool g_handHeldBefore = false;
 ue_wrap::CachedObjRef g_handBefore;
 std::string g_sayLine;
 bool g_sayFailed = false;
+// An unpacked row: the prop mirrors this client held before the act. The contents are the host's births (an MRE's are its
+// prop_food_C ones), so they reach this client as mirrors of their eids; the step passes when the listed ones have arrived.
+std::unordered_set<EL::ElementId> g_mirrorsBefore;
+
+size_t g_freshContents = 0;   // the unpacked row's contents that arrived
+int g_poisonBefore = 0;       // foodPoison entries live before the poisoned content's bite
 
 void CEnter(CStep s) {
     g_cstep = s;
@@ -80,7 +92,17 @@ bool CExpired(uint64_t bound) { return NowMs() - g_cStepMs > bound; }
 // A failed step is logged now and said to the host at the next chat slot; the phase stops there.
 void ClientFail(const Row& row, const std::string& why) {
     UE_LOGW("%s c%d %s FAIL -- %s: %s", kTag, kClientSlot, PhaseName().c_str(), row.name, why.c_str());
+    RigSay(End::Fail, std::string(row.name) + ": " + why);
     g_sayLine = DoneHead(row) + "fail " + why.substr(0, 120);
+    g_sayFailed = true;
+    CEnter(CStep::Say);
+}
+
+// A bound ran out with no event to decide on: INVALID, said to the host as such, and the phase stops as it does on a FAIL.
+void ClientInvalid(const Row& row, const std::string& why) {
+    UE_LOGW("%s c%d %s INVALID -- %s: %s", kTag, kClientSlot, PhaseName().c_str(), row.name, why.c_str());
+    RigSay(End::Invalid, std::string(row.name) + ": " + why);
+    g_sayLine = DoneHead(row) + "invalid " + why.substr(0, 120);
     g_sayFailed = true;
     CEnter(CStep::Say);
 }
@@ -92,6 +114,8 @@ void ClientPass(const Row& row, const char* what) {
     CEnter(CStep::Say);
 }
 
+namespace {
+
 // The player's hand item name, as the game passes it to a use (holding_name).
 bool ReadHoldName(void* player, R::FName* out) {
     static R::InstanceOffset sOff{L"holding_name"};
@@ -100,6 +124,9 @@ bool ReadHoldName(void* player, R::FName* out) {
     std::memcpy(out, static_cast<const uint8_t*>(player) + o, sizeof(*out));
     return true;
 }
+
+float g_replayFood = 0.f;   // the eater's food the row wants at the replay: 100 for a full eater, else 0
+void FillBeforeReplay(void*) { ue_wrap::vitals::Write(ue_wrap::vitals::Field::Food, g_replayFood); }
 
 void ClientRead(const Row& row, void* player);
 
@@ -116,12 +143,18 @@ void ClientAct(const Row& row, void* player) {
             return;
         }
     }
-    if (row.verb == Verb::Use && !ue_wrap::vitals::Write(ue_wrap::vitals::Field::Food, 0.f)) {
+    // A snack arm with a full eater is fed to the top, so the game's addFood reports full and the use spends nothing.
+    const bool fullEater = row.snack && row.snack->full;
+    if (row.verb == Verb::Use && !ue_wrap::vitals::Write(ue_wrap::vitals::Field::Food, fullEater ? 100.f : 0.f)) {
         // An eat goes through mainPlayer's addFood, which eats nothing once the save slot's food is at 100 ("Im not
         // hungry"; at health 80 or less a food that heals is still eaten): the rows before have fed this player full.
         ClientFail(row, "the player's hunger could not be emptied before the eat");
         return;
     }
+    // The eater's food decays every tick, so a value written here is lower by the time the granted replay runs: the same
+    // value is written again right before the replay's verb, the moment the game's addFood reads it.
+    g_replayFood = fullEater ? 100.f : 0.f;
+    PAR::dev::SetBeforeVerb(row.verb == Verb::Use ? &FillBeforeReplay : nullptr);
     ClearHint();
     g_refusedBefore = PAR::dev::RefusedCount(coop::net::PropActReason::WrongFamily);
     E::MainPlayerGrabState handBefore{};
@@ -134,6 +167,10 @@ void ClientAct(const Row& row, void* player) {
             return;
         }
         PAR::dev::DestroyInsideNextReplay(g_mirror2.Get());
+    }
+    if (row.ends == Ends::Unpacked) {
+        g_mirrorsBefore.clear();
+        PropMirrorsNotIn({}, &g_mirrorsBefore);
     }
     if (const char* why = RunVerb(row, player, mirror)) {
         ClientFail(row, why);
@@ -149,12 +186,17 @@ void ClientAct(const Row& row, void* player) {
         ClientRead(row, player);
         return;
     }
+    // The use's own call has returned. A snack's use that ran unasked (the family routed native) is seen here, at the call:
+    // no request is open and the copy changed or ended, which is the event the red arm ends on.
     if (!g_mirror.Alive()) {
-        ClientFail(row, "the mirror was gone right after the call: the act was not cancelled at the call");
+        ClientFail(row, row.snack ? "the use ran unasked on this client's copy: it ended with no request sent"
+                                  : "the mirror was gone right after the call: the act was not cancelled at the call");
         return;
     }
     if (PAR::dev::PendingId() == 0) {
-        ClientFail(row, "the call opened no request");
+        ClientFail(row, row.snack ? "the use ran unasked on this client's copy: no request was sent and its state is " +
+                                        SnackCopyNow(g_mirror.Get())
+                                  : std::string("the call opened no request"));
         return;
     }
     UE_LOGI("%s c%d %s %s: the call was cancelled and asked (request %u)", kTag, kClientSlot, PhaseName().c_str(), row.name,
@@ -228,6 +270,10 @@ void ClientRead(const Row& row, void* player) {
         ClientPass(row, "the call ran natively, opened no request and ate the copy");
         return;
     }
+    if (row.ends == Ends::Applied || row.ends == Ends::Ended || row.ends == Ends::Respawn) {
+        CEnter(CStep::AwaitCopy);   // the host's record and birth reach this client after the call: waited for, bounded
+        return;
+    }
     if (row.ends == Ends::Stays) {
         ClientReadStays(row);
         return;
@@ -261,6 +307,16 @@ void ClientRead(const Row& row, void* player) {
             ClientFail(row, "the hand does not hold the item");
             return;
         }
+        if (row.snack) {
+            if (const char* why = SnackHeldVerdict(hand.holdingActor, g_readyRest)) {
+                ClientFail(row, why);
+                return;
+            }
+        }
+    }
+    if (row.ends == Ends::Unpacked) {
+        CEnter(CStep::AwaitContents);
+        return;
     }
     ClientPass(row, row.asks ? "asked, granted, replayed; the mirror is gone and the item is where the verb puts it"
                              : "ran natively with no request; the prop is gone and the item is where the verb puts it");
@@ -401,6 +457,11 @@ const char* RunVerb(const Row& row, void* player, void* mirror) {
 
 void ClientTick(coop::net::Session* s, const Phase& ph) {
     if (g_cstep == CStep::Done) return;
+    // The host ended the phase on its own verdict: nothing more is run here, and no bound of this client says a second one.
+    if (HostEnded()) {
+        g_cstep = CStep::Done;
+        return;
+    }
     void* const player = coop::players::Registry::Get().Local();
     if (!player) return;
     const uint64_t now = NowMs();
@@ -422,7 +483,7 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         g_cNextMs = now + kPollEveryMs;
         std::string rest;
         if (!HostSaid(ReadyHead(row), &rest)) {
-            if (CExpired(kReadyBoundMs)) ClientFail(row, "the host never said the step was ready");
+            if (CExpired(kReadyBoundMs)) ClientInvalid(row, "the host never said the step was ready");
             return;
         }
         g_ceid = g_ceid2 = EL::kInvalidId;
@@ -431,6 +492,7 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
             return;
         }
         g_ceid = static_cast<EL::ElementId>(std::strtoul(rest.c_str(), nullptr, 10));
+        g_readyRest = rest;
         if (row.target == Target::HostTwo) {
             const size_t at = rest.find(kSecondTag);
             if (at == std::string::npos) {
@@ -446,11 +508,11 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         void* const mirror = EL::LivePropActor(g_ceid);
         void* const second = g_ceid2 != EL::kInvalidId ? EL::LivePropActor(g_ceid2) : nullptr;
         if (!mirror || (g_ceid2 != EL::kInvalidId && !second)) {
-            if (CExpired(kMirrorBoundMs)) ClientFail(row, "the host's prop never reached this client");
+            if (CExpired(kMirrorBoundMs)) ClientInvalid(row, "the host's prop never reached this client");
             return;
         }
         if ((row.fillStep || row.ends == Ends::Stays) && !HintWatchLive()) {
-            if (CExpired(kMirrorBoundMs)) ClientFail(row, "the addHint watch never went live");
+            if (CExpired(kMirrorBoundMs)) ClientInvalid(row, "the addHint watch never went live");
             return;
         }
         g_invBefore = InventoryCount(row.leaf);
@@ -476,7 +538,7 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         if (st == 0) return;
         g_walk.reset();
         if (st == 2) {
-            ClientFail(row, "the walk to the mirror did not arrive");
+            ClientInvalid(row, "the walk to the mirror did not arrive");
             return;
         }
         CEnter(CStep::AwaitGather);
@@ -488,7 +550,13 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         g_cNextMs = now + kPollEveryMs;
         if (g_mirror.Get() && !MirrorGatherable(g_mirror.Get(), row.verb)) {
             if (CExpired(kGatherBoundMs))
-                ClientFail(row, "the mirror never became gatherable here (the host's drive did not end)");
+                ClientInvalid(row, "the mirror never became gatherable here (the host's drive did not end)");
+            return;
+        }
+        // A snack arm acts on a mirror that already holds the host's uses and open (its record is published after the
+        // host's write): the instrument waits for it, bounded, and the arm is INVALID when it never does.
+        if (row.snack && !SnackMirrorHoldsReady(g_mirror.Get(), g_readyRest)) {
+            if (CExpired(kCopyBoundMs)) ClientInvalid(row, "the mirror never held the host's uses and open from the ready line");
             return;
         }
         if (row.grab) {
@@ -510,7 +578,7 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
             return;
         }
         if (st == coop::director::ClearState::Working) {
-            if (CExpired(kHandClearBoundMs)) ClientFail(row, "the hand did not clear before the grab");
+            if (CExpired(kHandClearBoundMs)) ClientInvalid(row, "the hand did not clear before the grab");
             return;
         }
         g_clear.reset();
@@ -527,11 +595,15 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         if (!g_grabbed) {
             const coop::director::GrabState st = g_grab->Tick();
             if (st == coop::director::GrabState::Failed) {
-                ClientFail(row, std::string("the grab did not take: ") + g_grab->Why());
+                // A grab that found no aim never reached the pocket it was set up for: INVALID. The chain that ran and left
+                // the prop out of the hand is the grab failing, a FAIL.
+                const std::string why = std::string("the grab did not take: ") + g_grab->Why();
+                if (g_grab->NoAim()) ClientInvalid(row, why);
+                else ClientFail(row, why);
                 return;
             }
             if (st == coop::director::GrabState::Working) {
-                if (CExpired(kGrabBoundMs)) ClientFail(row, "the grab neither took nor failed in time");
+                if (CExpired(kGrabBoundMs)) ClientInvalid(row, "the grab neither took nor failed in time");
                 return;
             }
             g_grabbed = true;
@@ -548,21 +620,34 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
         if (now < g_cNextMs) return;
         g_cNextMs = now + kPollEveryMs;
         if (!HostSaid(DragHead(row, true) + "driven", nullptr)) {
-            if (CExpired(kDrivenBoundMs)) ClientFail(row, "the host never saw the drag");
+            if (CExpired(kDrivenBoundMs)) ClientInvalid(row, "the host never saw the drag");
             return;
         }
         ClientAct(row, player);
         return;
     case CStep::AwaitReply:
         if (PAR::dev::PendingId() != 0) {
-            if (CExpired(kReplyBoundMs)) ClientFail(row, "the request was still pending");
+            if (CExpired(kReplyBoundMs)) ClientInvalid(row, "the request was still pending");
             return;
         }
         ClientRead(row, player);
         return;
+    case CStep::AwaitContents:
+        StepAwaitContents(row, player, now);
+        return;
+    case CStep::AwaitPoison:
+        StepAwaitPoison(row, player, now);
+        return;
+    case CStep::AwaitCopy:
+        StepAwaitCopy(row, player, now);
+        return;
+    case CStep::AwaitUpright:
+        StepAwaitUpright(row, player, now);
+        return;
     case CStep::Say: {
         // A client's chat passes the host's rate limit only at the drills' spacing; a refused line is lost for good.
         if (now < g_nextSayMs) return;
+        // The verdict of the step goes out at once: a decided PASS is never delayed, or turned INVALID, by a ragdoll.
         Say(g_sayLine);
         g_nextSayMs = now + coop::dev::kTalkEveryMs;
         g_mirror.Reset();
@@ -574,8 +659,10 @@ void ClientTick(coop::net::Session* s, const Phase& ph) {
             g_cstep = CStep::Done;
             return;
         }
-        if (++g_crow < ph.count) {
-            CEnter(CStep::AwaitReady);
+        if (g_crow + 1 < ph.count) {
+            // Another row follows: the host places its target by this player's puppet, so it waits for the line that says
+            // the player stands (StepAwaitUpright). On the last row nothing waits.
+            CEnter(CStep::AwaitUpright);
             return;
         }
         UE_LOGI("%s c%d %s PASS -- all %u steps held on this client", kTag, kClientSlot, ph.name,
@@ -609,6 +696,10 @@ void ClientReset() {
     g_handBefore.Reset();
     g_sayLine.clear();
     g_sayFailed = false;
+    g_mirrorsBefore.clear();
+    g_freshContents = 0;
+    g_poisonBefore = 0;
+    g_readyRest.clear();
 }
 
 }  // namespace detail

@@ -179,8 +179,8 @@ void ConvergeAtReturn(void* oldActor, int32_t oldIdx, EL::ElementId oldEid, bool
     if (oldActor && R::IsLiveByIndex(oldActor, oldIdx)) {
         // The verb returned with its kerfur standing: the game refused (a sentient kerfur) or failed to
         // spawn. Nothing converted, and no peer converted either: a client never runs the verb. MTA
-        // answers a refused vehicle request (Server CGame.cpp:3042, VEHICLE_ATTEMPT_FAILED) because its
-        // client holds an entering state to reset (Client CPacketHandler.cpp:2135); a client here holds
+        // answers a refused vehicle request (Server reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3042, VEHICLE_ATTEMPT_FAILED) because its
+        // client holds an entering state to reset (Client reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2135); a client here holds
         // none once its gate refused, so a refusal sends nothing.
         UE_LOGI("kerfur_convert: %s eid=%u (%s) refused by the game -- nothing converted",
                 toProp ? "turn_off" : "turn-on", static_cast<unsigned>(oldEid), who);

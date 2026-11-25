@@ -20,7 +20,7 @@ try {
     }
     Run 'wrapper' (Join-Path $PSScriptRoot 'glowstick_grab_wrapper_test.cpp')
     Run 'admission' (Join-Path $PSScriptRoot 'remote_grab_prelude_test.cpp')
-    & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') agent/tests/glowstick_native_test.py
+    & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') "$PSScriptRoot/glowstick_native_test.py"
     if($LASTEXITCODE){throw 'Native glowstick contract failed'}
     if($FaultControls){
         try {

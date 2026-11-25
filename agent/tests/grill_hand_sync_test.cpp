@@ -1,8 +1,13 @@
 #include "support_2135.h"
+#include "ue_wrap/core/class_resolve.h"
 #ifndef GRILL_HAND_SOURCE
 #define GRILL_HAND_SOURCE "../../src/votv-coop/src/coop/interactables/grill_hand_sync.cpp"
 #endif
 #include GRILL_HAND_SOURCE
+namespace ue_wrap::class_resolve {
+const Family& AnyFamily(){static const Family family{L"test",nullptr,0,nullptr};return family;}
+Resolved ResolveClass(const wchar_t*,const Family&,Load){return {ClassState::Found,reinterpret_cast<void*>(1)};}
+}
 #include "coop/net/session_serial.h"
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <limits>

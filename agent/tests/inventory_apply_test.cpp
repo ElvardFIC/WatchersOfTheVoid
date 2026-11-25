@@ -7,6 +7,7 @@
 #endif
 #include INVENTORY_CONTAINER_SOURCE
 #include "../../src/votv-coop/src/ue_wrap/actors/save_record.cpp"
+#include "facts_test_support.h"
 #ifndef INVENTORY_OFFSET_SOURCE
 #define INVENTORY_OFFSET_SOURCE "instance_offset_production.inc"
 #endif

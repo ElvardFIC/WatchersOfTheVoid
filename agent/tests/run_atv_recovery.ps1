@@ -17,8 +17,8 @@ try {
     Extract 'src/votv-coop/src/coop/interactables/atv_sync.cpp' @('EnsureHonkWatch','Install') 'atv_install.inc'
     Extract 'src/votv-coop/src/ue_wrap/devices/atv.cpp' @('TeleportRig','SpawnMirror') 'atv_spawn.inc'
     foreach($name in @('atv_recovery','atv_spawn_preparation')){
-        & cl /nologo /std:c++20 /EHsc /utf-8 /Gy /I agent/tests/state_2145_stubs /I src/votv-coop/include "/I$output" `
-            "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /utf-8 /Gy /I "$PSScriptRoot/state_2145_stubs" /I src/votv-coop/include "/I$output" `
+            "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE){throw "ATV compile failed: $name"}
         if($name -eq 'atv_recovery'){
             foreach($mode in @('metadata','capacity','frame')){

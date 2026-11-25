@@ -38,11 +38,11 @@ struct Hold {
 
 // A reservation that ended by its deadline leaves a tombstone: the put it promised room for may still have been done on
 // the client, and its late commit is inserted, not lost. It lives one more deadline. No precedent in MTA, whose server
-// ignores a confirm that finds no reservation (CGame.cpp:3376); here the replay has already moved the item out of the
+// ignores a confirm that finds no reservation (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3376); here the replay has already moved the item out of the
 // client's inventory, so ignoring the late confirm would lose it.
 inline constexpr uint64_t kTombstoneMs = kHoldDeadlineMs;
 // The slowing of a sender that holds a container for long and walks away: its next put is answered Lapsed. MTA has no
-// deadline and so no penalty; the shape of a per-client budget the sender cannot erase is Source's (player.cpp:3391-3392, sv_maxusrcmdprocessticks).
+// deadline and so no penalty; the shape of a per-client budget the sender cannot erase is Source's (reference/source-sdk-2013/src/game/server/player.cpp:3391-3392, sv_maxusrcmdprocessticks).
 // A reservation held no longer than the client's own reply wait (10 s) is an honest round trip and is not slowed.
 inline constexpr uint64_t kSlowedMs = kHoldDeadlineMs;
 inline constexpr size_t kTombstonesPerSlot = 4;

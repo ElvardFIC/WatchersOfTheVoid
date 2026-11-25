@@ -189,18 +189,26 @@
 #include "coop/save/join_window_baseline.h"  // the connect edge's removes and position corrections
 #include "coop/interactables/grime_sync.h"
 #include "coop/interactables/interactable_sync.h"
+#include "coop/interactables/desk_short_sync.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/interactables/drone_sync.h"
 #include "coop/world/event_cue_sync.h"
+#include "coop/creatures/ambient_creature_sync.h"
+#include "coop/creatures/walker_lanes.h"
+#include "coop/world/ambient_fixture_sync.h"
 #include "coop/comms/chat_sync.h"
 #include "coop/interactables/upgrade_sync.h"
 #include "coop/interactables/turbine_sync.h"
+#include "coop/interactables/woodchipper_sync.h"
+#include "coop/interactables/atv_host_sync.h"
 #include "coop/interactables/keypad_sync.h"
 #include "coop/world/fuse_tower_rows.h"
 #include "coop/world/power_grid.h"
 #include "coop/world/power_panel.h"
 #include "coop/world/sky_sync.h"
 #include "coop/interactables/window_sync.h"
+#include "coop/props/prop_food_sync.h"  // every world food's condition again
+#include "coop/world/plant_sync.h"
 #include "coop/props/prop_drive_host.h"    // HOST: the props a hook drags, streamed while they move
 #include "coop/interactables/verb_lanes.h"  // the interactable lanes on a device's own verbs, at the script gate
 #include "coop/creatures/kerfus_lanes.h"  // the plain kerfur: its brain on the host, its state and drive, its verbs
@@ -213,13 +221,19 @@
 #include "coop/creatures/piramid_sync.h"  // piramid event choreography lane (mirror brain suppression + PyramidGather)
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_snapshot.h"
+#include "coop/props/prop_nametag.h"  // the tags put on this session, again
 #include "coop/world/alarm_sync.h"  // base radar alarm shared-world toggle
 #include "coop/interactables/serverbox_sync.h"  // host-authoritative signal-server sim state
 #include "coop/interactables/server_upgrade_sync.h"  // the servers' physical upgrades
 #include "coop/creatures/roach_sync.h"  // host-authoritative roach-infestation mirror
 #include "coop/items/hook_anchor.h"
+#include "coop/items/hook_retrieve.h"
 #include "coop/world/event_active_sync.h"  // the native activeEvents registry probe
 #include "coop/world/creature_event_relay.h"  // the host's creature events, carried to every client's count
+#include "coop/world/ufo_sync.h"  // the paths of the UFOs still flying, and the Midas run
+#include "coop/props/roomba_sync.h"  // every robot cleaner's switch
+#include "coop/world/spill_sync.h"
+#include "coop/world/vent_crawler_sync.h"
 #include "coop/world/weather_sync.h"
 #include "ue_wrap/core/log.h"
 
@@ -241,6 +255,7 @@ void ConnectReplayForSlot(int slot) {
     // bulk lane ahead of the snapshot, so the removes land before the adds. A no-op for a joiner
     // with no blob baseline, which the sweep still owns.
     coop::join_window_baseline::SendDivergenceDeletes(slot);
+    coop::hook_retrieve::SendJoinGone(slot);
     // Every dish code, sent here on the bracket's lane ahead of its Begin, so a set that goes whole lands
     // before its Complete and a joined client holds the host's codes, a midnight since the capture
     // included; a set not taken whole is retried from the lane's tick and can land after it.
@@ -269,12 +284,16 @@ void ConnectReplayForSlot(int slot) {
     coop::drone_sync::QueueConnectBroadcastForSlot(slot);  // delivery drone pose (adopt=1)
     coop::order_queue_sync::QueueConnectBroadcastForSlot(slot);  // the delivery order queue: a reset + every queued order
     coop::turbine_sync::QueueConnectBroadcastForSlot(slot);  // wind-turbine facing/spin snap
+    coop::woodchipper_sync::QueueConnectBroadcastForSlot(slot);  // every woodchipper again
+    coop::atv_host_sync::QueueConnectBroadcastForSlot(slot);  // every ATV's host state again
     coop::device_occupancy::QueueConnectBroadcastForSlot(slot);  // live device claims (busy table)
     coop::download_arm_sync::QueueConnectResetForSlot(slot);  // a reset since the capture, ahead of the desk's seed: the game's order is reset, catch, arm
     coop::console_state_sync::QueueConnectBroadcastForSlot(slot);  // sky-signal snapshot + desk adopt
     coop::desk_input_sync::SeedPingAttributionFromMachine();  // a SOLO host's ping edge is absorbed unwired (PollOnce gated on connected) -- re-derive from ground truth so a mid-ping joiner gets the FSM-hold
     coop::desk_snd_fx::QueueConnectBroadcastForSlot(slot);  // desk loop-sound ground truth (a mid-loop joiner gets the ON)
     coop::physmods_sync::QueueConnectBroadcastForSlot(slot);  // canonical module array (ground truth over save drift)
+    coop::props::prop_food_sync::SendAllToSlot(slot);  // every world food's condition again
+    coop::plant_sync::QueueConnectBroadcastForSlot(slot);  // every plant again
     coop::drive_sync::QueueConnectBroadcastForSlot(slot);  // slot lines
     coop::drive_payload_sync::QueueConnectBroadcastForSlot(slot);  // every drive row that differs from its class default
     coop::drive_rack_sync::QueueConnectBroadcastForSlot(slot);  // rack canonicals (AFTER the payloads -- the shipped seed order on the one pinned lane)
@@ -328,6 +347,10 @@ void ConnectReplayForSlot(int slot) {
     coop::event_active_sync::SendJoinSnapshotForSlot(slot);
     // Each creature's count, after its NPC spawn (the queue above, same lane): the joiner applies a count at the bind.
     coop::creature_event_relay::SendJoinSnapshotForSlot(slot);
+    // The rolled path of each ambient UFO still flying, after its world-actor spawn; the Midas run while it flies.
+    coop::ufo_sync::SendJoinSnapshotForSlot(slot);
+    // Every robot cleaner's switch; one that runs is followed through the drive stream.
+    coop::roomba_sync::SendJoinSnapshotForSlot(slot);
     // The alarm lane's late-join answer: the current alarm state, unconditionally, so a mid-alarm
     // joiner starts its klaxon on arrival.
     coop::alarm_sync::QueueConnectBroadcastForSlot(slot);
@@ -354,6 +377,9 @@ void ConnectReplayForSlot(int slot) {
     // line. It lands retained on the joiner: arriving in a lobby must not replay a conversation
     // you were not in across your screen; it is there when you open the chat.
     coop::chat_sync::QueueConnectBroadcastForSlot(slot);
+    coop::spill_sync::QueueConnectBroadcastForSlot(slot);  // every live spill again
+    coop::vent_crawler_sync::QueueConnectBroadcastForSlot(slot);  // the vent crawl's state, when one began in this world
+    coop::desk_short_sync::SendCurrentToSlot(slot);  // the base computer, when the host's is shorting at this ready edge
 }
 
 }  // namespace coop::subsystems

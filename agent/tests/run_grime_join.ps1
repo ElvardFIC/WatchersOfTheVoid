@@ -6,19 +6,19 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/grime_stubs /I agent/tests/placed_save_stubs /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" agent/tests/grime_join_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/grime_stubs" /I "$PSScriptRoot/placed_save_stubs" /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" "$PSScriptRoot/grime_join_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Grime join compile failed'}
     & "$output/controller.exe"
     if($LASTEXITCODE -ne 0){throw 'Grime join failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" agent/tests/grime_wrapper_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" "$PSScriptRoot/grime_wrapper_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Grime wrapper compile failed'}
     & "$output/wrapper.exe"
     if($LASTEXITCODE -ne 0){throw 'Grime wrapper failed'}
-    & cl /nologo /std:c++20 /EHa /Gy /utf-8 /I src/votv-coop/include "/Fo$output/invocation.obj" "/Fe$output/invocation.exe" agent/tests/gate_invocation_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHa /Gy /utf-8 /I src/votv-coop/include "/Fo$output/invocation.obj" "/Fe$output/invocation.exe" "$PSScriptRoot/gate_invocation_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Gate invocation compile failed'}
     & "$output/invocation.exe"
     if($LASTEXITCODE -ne 0){throw 'Gate invocation failed'}
-    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/grime_stubs /I agent/tests/placed_save_stubs /I src/votv-coop/include "/Fo$output/window.obj" "/Fe$output/window.exe" agent/tests/window_observation_test.cpp /link /OPT:REF
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/grime_stubs" /I "$PSScriptRoot/placed_save_stubs" /I src/votv-coop/include "/Fo$output/window.obj" "/Fe$output/window.exe" "$PSScriptRoot/window_observation_test.cpp" /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Window observation compile failed'}
     & "$output/window.exe"
     if($LASTEXITCODE -ne 0){throw 'Window observation failed'}

@@ -16,11 +16,14 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/props/container_act_request.h"
 #include "coop/props/prop_echo_suppress.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
+#include "coop/session/rig_verdict.h"
 
 #include "ue_wrap/actors/container_inventory.h"
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
@@ -56,6 +59,8 @@ namespace DC = coop::dev::drill_chat;
 namespace E  = ue_wrap::engine;
 namespace EL = coop::element;
 namespace R  = ue_wrap::reflection;
+namespace UP = ue_wrap::prop;
+namespace AR = coop::props::container_act_request;
 namespace SR = ue_wrap::save_record;
 namespace CI = ue_wrap::container_inventory;
 using namespace detail;
@@ -79,8 +84,8 @@ std::vector<Received>  g_recv;
 std::map<std::string, std::string> g_rests;
 std::set<std::string>              g_heard;
 
-const char* const kRestPrefixes[] = {kSackPrefix, kBoundPrefix, kCratePrefix, kPropsPrefix, kIndexPrefix, kTookPrefix};
-const char* const kHeardLines[] = {kDoneLine, kPutsDoneLine, kCallLine, kSoldLine};
+const char* const kRestPrefixes[] = {kSackPrefix, kBoundPrefix, kCratePrefix, kPropsPrefix, kIndexPrefix, kTookPrefix, kPutsPrefix};
+const char* const kHeardLines[] = {kDoneLine, kCallLine, kSoldLine};
 
 void PollChat() {
     if (!DC::PollDue()) return;
@@ -107,10 +112,21 @@ void CancelWalk() {
 
 void Abandon(const char* why) {
     UE_LOGW("[SACK-DRILL] ABANDONED on the client: %s", why);
+    if (Mode() == 2) coop::rig_verdict::Say("dronesack-arm2", coop::rig_verdict::Outcome::Invalid, "%s", why);
     CancelWalk();
     g_c.grab.reset();
     g_c.ph = ClientPh::Done;
 }
+
+}  // namespace
+
+namespace detail {
+
+Client g_c;
+
+uint64_t NowMs() { return ::GetTickCount64(); }
+
+void Say(const std::string& line) { DC::Say(line); }
 
 uint32_t ParseEid(const std::string& s) {
     return static_cast<uint32_t>(std::strtoul(s.c_str(), nullptr, 10));
@@ -125,16 +141,6 @@ std::vector<uint32_t> ParseEids(const std::string& csv) {
     return out;
 }
 
-}  // namespace
-
-namespace detail {
-
-Client g_c;
-
-uint64_t NowMs() { return ::GetTickCount64(); }
-
-void Say(const std::string& line) { DC::Say(line); }
-
 bool Rest(const std::string& prefix, std::string* rest) {
     const auto it = g_rests.find(prefix);
     if (it == g_rests.end()) return false;
@@ -144,6 +150,14 @@ bool Rest(const std::string& prefix, std::string* rest) {
 
 bool Heard(const std::string& line) { return g_heard.count(line) != 0; }
 
+// dronesack_prop=drive (both peers): arms 2 and 3 use zip disks (prop_drive_C) instead of cups.
+bool LooseIsDrive() {
+    static const bool d = coop::config::ResolveEnum(::coop::config_registry::rows::dronesack_prop) == "drive";
+    return d;
+}
+const wchar_t* LooseClass() { return LooseIsDrive() ? L"prop_drive_C" : L"prop_C"; }
+const wchar_t* LooseName() { return LooseIsDrive() ? L"drive" : L"cup"; }
+
 int Mode() {
     static const int m = static_cast<int>(coop::config::ResolveInt(::coop::config_registry::rows::dronesack_drill));
     return m;
@@ -152,8 +166,15 @@ int Mode() {
 bool Arm(bool isHost) {
     g_isHost = isHost;
     if (!g_containerCls) g_containerCls = R::FindClass(L"prop_container_C");
-    if (Mode() >= 2 && !g_propCls) g_propCls = R::FindClass(L"prop_C");
+    if (Mode() >= 2 && !g_propCls) g_propCls = R::FindClass(LooseClass());
     g_armed = g_containerCls != nullptr && (Mode() < 2 || g_propCls != nullptr);
+    // Arm 2's red (CLIENT, container_overlap_no_cancel): this client's cancel of an overlap put on the shared mirror is
+    // skipped, so the sack's call runs on the client and its destroy takes the host's copy with no record: the verdict FAILs.
+    static const bool noCancel = coop::config::ResolveFlag(::coop::config_registry::rows::container_overlap_no_cancel);
+    if (g_armed && !isHost && Mode() == 2 && noCancel) {
+        AR::dev::NoOverlapCancel(true);
+        UE_LOGW("[SACK-DRILL] client RED: the overlap put on the shared mirror is not cancelled (container_overlap_no_cancel)");
+    }
     return g_armed;
 }
 
@@ -215,6 +236,19 @@ float WrapDeg(float a) {
     return a;
 }
 
+// Walks the carrier, still holding the prop, to the planned stand: g_c.standCm from the sack's origin on the side it is on,
+// ending within `reachCm` of it or at `deadlineS`. False when the player's place does not read.
+bool StartStandWalk(void* player, const ue_wrap::FVector& at, float reachCm, int deadlineS) {
+    ue_wrap::FVector me{};
+    if (!E::TryGetActorLocation(player, me)) return false;
+    float ux = me.X - at.X, uy = me.Y - at.Y;
+    const float len = std::hypot(ux, uy);
+    if (len < 1.f) { ux = 1.f; uy = 0.f; } else { ux /= len; uy /= len; }
+    const ue_wrap::FVector stand{at.X + ux * g_c.standCm, at.Y + uy * g_c.standCm, me.Z};
+    g_c.walk = D::StartBackgroundWalk(stand, reachCm, deadlineS, true);
+    return true;
+}
+
 // The put's line, from what the hooks saw of the prop's mirror.
 void PutLine(uint32_t eid) {
     for (Destroyed& d : g_destroys) {
@@ -229,10 +263,23 @@ void PutLine(uint32_t eid) {
     UE_LOGI("[SACK-DRILL] client put eid=%u: absorbed locally=0 by '-', broadcast=0 (the mirror %s)", eid,
             EL::LivePropActor(eid) ? "still lives here" : "is gone with no destroy seen");
 }
+// The put props this client let go of are named in its puts line: the host waits on each of them, not on a clock.
+void NoteLetGo(uint32_t eid) {
+    for (const uint32_t e : g_c.released)
+        if (e == eid) return;
+    g_c.released.push_back(eid);
+}
+
 
 // A prop this client could not put: said, and the route goes on to the next.
 void Skip(const char* why) {
     UE_LOGI("[SACK-DRILL] client put eid=%u: not made: %s", g_c.eids[g_c.i], why);
+    // A prop still in the hand is let go where it is, as a player lets go before the next grab: a grab of the next prop
+    // over it changes the hold with no release, and the host's copy stays where the hand last held it.
+    if (void* const player = coop::players::Registry::Get().Local()) {
+        void* const p = g_c.prop.Get();
+        if (p && D::Grabbing(player) == p && D::CallOnPlayer(player, L"dropGrabObject")) NoteLetGo(g_c.eids[g_c.i]);
+    }
     CancelWalk();
     g_c.grab.reset();
     ++g_c.i;
@@ -251,8 +298,11 @@ void RouteTick(void* player) {
     switch (g_c.st) {
     case Put::Pick:
         if (g_c.i >= g_c.eids.size()) {
-            Say(kPutsDoneLine);
-            UE_LOGI("[SACK-DRILL] client puts done: %zu props tried", g_c.eids.size());
+            std::string csv;
+            for (const uint32_t e : g_c.released) csv += (csv.empty() ? "" : ",") + std::to_string(e);
+            Say(std::string(kPutsPrefix) + (csv.empty() ? "none" : csv));
+            UE_LOGI("[SACK-DRILL] client puts done: %zu props tried, let go of: %s", g_c.eids.size(), csv.empty() ? "none" : csv.c_str());
+            g_c.phaseMs = NowMs();   // the Watch leg's bound counts from here
             g_c.ph = ClientPh::Watch;
             return;
         }
@@ -302,8 +352,24 @@ void RouteTick(void* player) {
         ue_wrap::FVector at{};
         void* const sack = g_c.sack.Get();
         if (!sack || !E::TryGetActorLocation(sack, at)) return Skip("the sack mirror's place is unread");
-        UE_LOGI("[SACK-DRILL] client put eid=%u: grabbed; carrying it to the sack", eid);
-        g_c.walk = D::StartBackgroundWalk(at, kSackReachCm, kWalkDeadlineS, true);
+        // The hold point is the camera plus its forward times the hold length, so the camera's height over the window's
+        // middle (kOverAimCm above the sack's origin) and that length fix both the pitch and how far from the sack the
+        // carrier must stand: horizontal = sqrt(hold^2 - drop^2) (the sister hold loop's derivation,
+        // container_intent_drill_throw_into_hold.cpp HoldStandCm).
+        E::MainPlayerGrabState grip{};
+        if (!E::ReadMainPlayerGrabState(player, grip) || grip.grabLen <= 0.f) return Skip("the hold length is unread");
+        const float hold = grip.grabLen, drop = E::GetCameraLocation().Z - (at.Z + kOverAimCm);
+        if (std::fabs(drop) >= hold) {
+            char why[112];
+            std::snprintf(why, sizeof(why), "the hold of %.0f cm cannot reach the window from a camera %.0f cm above it", hold, drop);
+            return Skip(why);
+        }
+        g_c.standCm = std::sqrt(hold * hold - drop * drop);
+        g_c.planPitch = -std::asin(drop / hold) * (180.f / 3.14159265f);
+        UE_LOGI("[SACK-DRILL] client put eid=%u: grabbed; carrying it to %.0f cm from the sack (hold %.0f cm, camera %.0f cm "
+                "above the window's middle, planned pitch %.1f)", eid, g_c.standCm, hold, drop, g_c.planPitch);
+        g_c.restood = false;
+        if (!StartStandWalk(player, at, kStandReachCm, kWalkDeadlineS)) return Skip("the player's place is unread");
         GoPut(Put::Carry);
         return;
     }
@@ -313,9 +379,12 @@ void RouteTick(void* player) {
         const int w = WalkState();
         if (w == 0) return;
         g_c.walk.reset();
-        if (w == 2) return Skip("the carry to the sack failed or ran out its deadline");
+        if (w == 2 && !g_c.restood) return Skip("the carry to the sack failed or ran out its deadline");
+        if (w == 2) UE_LOGI("[SACK-DRILL] client put eid=%u: the second walk did not reach the stand; putting from where it stands", eid);
         g_c.aimTicks = 0;
+        g_c.aimed = false;
         g_c.bestMiss = 1e9f;
+        g_c.bestSpeed = 1e9f;
         GoPut(Put::Over);
         return;
     }
@@ -328,23 +397,56 @@ void RouteTick(void* player) {
         if (!ctrl || !sack || !E::TryGetActorLocation(sack, sa) || !E::TryGetActorLocation(p, pp) ||
             !E::TryGetActorLocation(player, me))
             return Skip("no controller, sack, prop or player place to aim with");
-        if (now - g_c.stMs > kDriveBoundMs) return Skip("the prop never came over the sack");
+        if (now - g_c.stMs > kDriveBoundMs) {
+            if (g_c.bestSpeed >= 1e8f) return Skip("the prop never came over the sack");
+            char why[112];
+            std::snprintf(why, sizeof(why), "the prop never came to rest over the sack (slowest %.1f cm/s)", g_c.bestSpeed);
+            return Skip(why);
+        }
         // The carry's reach is flat: the walker has arrived only when it stands at the sack's height too.
         if (std::fabs(me.Z - sa.Z) > kFeetCm) return;
+        // On arrival: the walk ends anywhere within kStandReachCm of the planned stand, and the planned pitch is for that
+        // stand. One that stopped further off than kStandTolCm is walked to again, tighter, once; if it is still off the put
+        // goes on from where it stands, and the line says where that is.
+        if (!g_c.aimed) {
+            const float stood = std::hypot(me.X - sa.X, me.Y - sa.Y);
+            g_c.aimed = true;
+            UE_LOGI("[SACK-DRILL] client put eid=%u: stands %.0f cm out (planned %.0f)%s", eid, stood, g_c.standCm,
+                    g_c.restood ? ", after walking to it again" : "");
+            if (std::fabs(stood - g_c.standCm) > kStandTolCm && !g_c.restood && StartStandWalk(player, sa, kStandTolCm, kRestandDeadlineS)) {
+                g_c.restood = true;
+                GoPut(Put::Carry);
+                return;
+            }
+        }
         // Where the held prop is, measured: the release waits for it to be over the sack, not for the aim.
         const float flat = std::hypot(pp.X - sa.X, pp.Y - sa.Y), above = pp.Z - sa.Z;
         const float miss = (std::max)(0.f, flat - kOverFlatCm) + (std::max)(0.f, (std::max)(kOverMinCm - above, above - kOverMaxCm));
         if (miss < g_c.bestMiss) { g_c.bestMiss = miss; g_c.bestFlat = flat; g_c.bestAbove = above; }
+        // A release only once the held prop is over the sack and at rest in the hand, as a player lets go: one let go
+        // while it swings throws it, and the throw is what the hold's speed measures. Nothing announces the settling,
+        // so its state is read here.
         if (miss == 0.f) {
+            const UP::VelocityState v = UP::GetPhysicsVelocity(p, /*linearOnly=*/true);
+            if (!v.ok) return Skip("the held prop's speed is unread");
+            const float speed = std::sqrt(v.linearCmS.X * v.linearCmS.X + v.linearCmS.Y * v.linearCmS.Y +
+                                          v.linearCmS.Z * v.linearCmS.Z);
+            if (speed < g_c.bestSpeed) g_c.bestSpeed = speed;
+            if (speed > kSettledCmS) return;   // over the sack, still swinging: wait for it to settle in the hand
             if (!D::CallOnPlayer(player, L"dropGrabObject")) return Skip("dropGrabObject did not run");
-            UE_LOGI("[SACK-DRILL] client put eid=%u: release at flat=%.0f above=%.0f", eid, flat, above);
+            UE_LOGI("[SACK-DRILL] client put eid=%u: release at flat=%.0f above=%.0f at rest (%.1f cm/s), pitch %.1f (planned %.1f), "
+                    "stood %.0f cm out (planned %.0f)", eid, flat, above, speed, E::GetControlRotation(ctrl).Pitch, g_c.planPitch,
+                    std::hypot(me.X - sa.X, me.Y - sa.Y), g_c.standCm);
             g_c.letGo = true;
+            NoteLetGo(eid);
             GoPut(Put::Settle);
             return;
         }
         if (++g_c.aimTicks > kAimTicks) {
-            char why[96];
-            std::snprintf(why, sizeof(why), "closest flat=%.0f above=%.0f", g_c.bestFlat, g_c.bestAbove);
+            char why[160];
+            std::snprintf(why, sizeof(why), "closest flat=%.0f above=%.0f, pitch %.1f (planned %.1f), stood %.0f cm out (planned %.0f)",
+                          g_c.bestFlat, g_c.bestAbove, E::GetControlRotation(ctrl).Pitch, g_c.planPitch,
+                          std::hypot(me.X - sa.X, me.Y - sa.Y), g_c.standCm);
             return Skip(why);
         }
         // A small step: the angle between where the held prop is and where it should be, as seen from the camera.
@@ -486,7 +588,8 @@ void ClientTickImpl() {
         if (void* const player = coop::players::Registry::Get().Local()) RouteTick(player);
         return;
     case ClientPh::Watch: {
-        if (Mode() >= 2) CensusStep(now);
+        if (Mode() >= 3) CensusStep(now);   // arms 3 and 4 read the container census round the sale; arm 2 ends at its verdict
+        if (!Heard(kDoneLine) && now - g_c.phaseMs > kWatchBoundMs) { Abandon("the host never said it is done"); return; }
         // The census after the sale is compared before the run ends; a host that ended with no sale has none to wait for.
         if (!Heard(kDoneLine) || g_c.census == 2) return;
         if (Mode() == 4 && g_c.soldSeenMs && g_c.took < 0) return;   // the take is made before the host can end

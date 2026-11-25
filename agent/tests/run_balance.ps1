@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $checkout
 try {
     . (Join-Path $checkout '../_toolchain/env.ps1')
-    & cl /nologo /std:c++20 /EHsc /utf-8 /I agent/tests/balance_stubs /I src/votv-coop/include "/Fo$output/balance.obj" "/Fe$output/balance.exe" agent/tests/balance_sync_test.cpp
+    & cl /nologo /std:c++20 /EHsc /utf-8 /I "$PSScriptRoot/balance_stubs" /I src/votv-coop/include "/Fo$output/balance.obj" "/Fe$output/balance.exe" "$PSScriptRoot/balance_sync_test.cpp"
     if($LASTEXITCODE -ne 0){throw 'Balance regression compile failed'}
     & "$output/balance.exe"
     if($LASTEXITCODE -ne 0){throw 'Balance regression failed'}

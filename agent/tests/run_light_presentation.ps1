@@ -8,13 +8,13 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
  function Compile-Presentation($exe,$header=''){
   $extra=@();if($header){$extra+="/FI$header"}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" agent/tests/light_presentation_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/light_presentation_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Light presentation fixture compile failed'}
  }
  $exe=Join-Path $output 'presentation.exe';Compile-Presentation $exe
  & $exe
  if($LASTEXITCODE){throw 'Light presentation regression failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/native_result.obj" "/Fe$output/native_result.exe" agent/tests/native_result_2126_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/native_result.obj" "/Fe$output/native_result.exe" "$PSScriptRoot/native_result_2126_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Native hook scope fixture compile failed'}
  & "$output/native_result.exe"
  if($LASTEXITCODE){throw 'Native hook scope regression failed'}

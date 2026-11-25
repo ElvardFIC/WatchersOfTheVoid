@@ -79,7 +79,6 @@ bool SetSizeBoxWidth(void* sizeBox, float width);
 
 // USizeBox::SetMaxDesiredWidth: the box is as wide as its content asks, up to this. For a panel
 // that should hug what it holds and still never grow past a bound.
-bool SetSizeBoxMaxWidth(void* sizeBox, float width);
 
 // UScaleBox::SetStretch and SetStretchDirection, through the UFunctions (EStretch: ScaleToFit 2;
 // EStretchDirection: DownOnly 1, in Slate_enums). ScaleToFit with DownOnly is the engine's own fit
@@ -183,5 +182,6 @@ bool WidgetDesiredSize(void* widget, FVector2D& out);
 // only repaints, and Slate culls a transformed child by its painted rect, so a roll moved this way
 // under a clipping parent still draws the part that scrolled into view.
 bool SetRenderTranslation(void* widget, const FVector2D& translation);
+
 
 }  // namespace ue_wrap::umg

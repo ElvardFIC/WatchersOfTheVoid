@@ -18,6 +18,7 @@
 #include <set>
 #include <string>
 #include <vector>
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 namespace test {
 using Record=ue_wrap::save_record::SaveRecord;
 const char* scenario="setup";

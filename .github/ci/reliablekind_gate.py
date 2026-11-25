@@ -27,7 +27,7 @@ WHAT IT HOLDS -- these FAIL the build:
      `return;` changed nothing the gate read. An exception is a claim about a BRANCH, so
      the check has to be about the branch.
 
-  3. A family dispatcher that is no longer CHAINED. The 170 case labels in the eight
+  3. A family dispatcher that is no longer CHAINED. The 170 case labels in the nine
      family files are reachable only because event_feed's `default:` calls each
      Handle*Event in turn; delete one call and ~25 kinds die while every case label is
      still present and the coverage arithmetic still adds up.
@@ -82,7 +82,7 @@ ROW_VALUES = ("Client", "Host")
 EDGE_SHAPE = re.compile(r"if\s*\(\s*cfg_\.role\s*==\s*Role::Host\s*\)\s*\{\s*const\s+ClientAuthorship\s+(\w+)\s*=\s*"
                         r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)\s*;\s*if\s*\(")
 
-# The eight family dispatchers. Each Handle*Event returns true iff msg.kind is in its
+# The nine family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
 # 2026-06-28) -- which is exactly why parsing these case labels is parsing the truth
 # and not a parallel list that can drift from it.
@@ -95,6 +95,10 @@ FAMILY_FILES = [
     "src/coop/dispatch/event_dispatch_state.cpp",
     "src/coop/dispatch/event_dispatch_world.cpp",
     "src/coop/dispatch/event_dispatch_container_act.cpp",
+    "src/coop/dispatch/event_dispatch_cremator.cpp",
+    "src/coop/dispatch/event_dispatch_cargo_lift.cpp",
+    "src/coop/dispatch/event_dispatch_requester_feedback.cpp",
+    "src/coop/dispatch/event_dispatch_kerfur_command.cpp",
 ]
 # event_feed's own top-level switch: the handful of specials that are disjoint from every
 # family (Join / Balance / Teleport / Wisp / Snapshot / the handshake kinds).
@@ -149,6 +153,7 @@ for _k in ("AuthHello", "AuthChallenge", "AuthProof"):
     }
 
 CASE = re.compile(r"case\s+(?:coop::)?(?:net::)?ReliableKind::(\w+)\s*:")
+SPACE = re.compile(r"inline constexpr size_t kReliableKindSpace\s*=\s*(\d+)\s*;")
 ENUM_BLOCK = re.compile(r"enum class ReliableKind\s*:\s*uint(?:8|16)_t\s*\{(.*?)\n\};", re.S)
 # Name required; value optional (an implicit-increment enumerator is still a KIND, and the
 # first version of this regex demanded `= <decimal>` at exactly four spaces -- so a row
@@ -291,22 +296,27 @@ def parse_authorship(text: str):
 
 
 def parse_enum(text):
-    """Return (name -> value-or-None, [unreadable rows]).
+    """Return (name -> value, [unreadable rows]).
 
     Every non-blank line of the enum body must be recognised. A row this parser cannot
     read is reported, because silently dropping one is indistinguishable from the kind
     not existing -- and a kind that does not exist is never asked for a receiver.
+    An enumerator written without `= n` takes the previous value plus one, as C++ does
+    (the first takes 0), so the value checks below see every row's real number.
     """
     m = ENUM_BLOCK.search(strip_comments(text or ""))
     if not m:
         return {}, []
     enums, bad = {}, []
+    nxt = 0
     for line in m.group(1).splitlines():
         if not line.strip():
             continue
         r = ENUM_ROW.match(line)
         if r:
-            enums[r.group(1)] = int(r.group(2), 0) if r.group(2) else None
+            value = int(r.group(2), 0) if r.group(2) else nxt
+            enums[r.group(1)] = value
+            nxt = value + 1
         else:
             bad.append(line.strip()[:80])
     return enums, bad
@@ -329,6 +339,28 @@ def check(tree: dict):
         fails.append(f"{PROTO}: cannot parse this ReliableKind row -- '{row}'. An enumerator "
                      f"this gate drops is never asked for a receiver, so an unreadable row is "
                      f"a hole in exactly the check it would have been subject to.")
+    # Two enumerators with one value: a rebase can merge two lanes' new kinds onto the same number with no conflict
+    # marker (measured 2026-11-06: PlantState 221 beside AmbientTreeState 221), and the wire then routes one as the other.
+    by_value = {}
+    for name, value in enums.items():
+        if value is not None:
+            by_value.setdefault(value, []).append(name)
+    for value, names in sorted(by_value.items()):
+        if len(names) > 1:
+            fails.append(f"{PROTO}: ReliableKind value {value} is claimed by {', '.join(names)} -- two kinds on one "
+                         f"number reach the same receiver; renumber one.")
+    # Every kind below the per-kind tables' space: a kind past it would be counted nowhere and, where a table is
+    # indexed unguarded, read past its end.
+    sp = SPACE.search(tree[PROTO])
+    if not sp:
+        fails.append(f"{PROTO}: no `inline constexpr size_t kReliableKindSpace = <n>;` -- the per-kind tables' bound "
+                     f"cannot be checked.")
+    else:
+        space = int(sp.group(1))
+        for name, value in sorted(enums.items()):
+            if value is not None and value >= space:
+                fails.append(f"{PROTO}: ReliableKind {name} = {value} is not below kReliableKindSpace ({space}); "
+                             f"raise the space or renumber the kind.")
     if len(enums) < 100:
         fails.append(f"{PROTO}: parsed {len(enums)} ReliableKind enumerators, expected >=100. "
                      f"The enum moved or its shape changed -- fix this parser before trusting "
@@ -595,6 +627,22 @@ def drill() -> int:
         "switch (msg.kind) {",
         "switch (msg.kind) {\n    case net::ReliableKind::DoorState: break;", 1)
     controls.append(("one kind claimed twice", t, "DoorState = 9 is claimed by"))
+
+    # 4b. two enumerators on one value.
+    t = dict(base)
+    t[PROTO] = t[PROTO].replace("    LightGroupState = 129,", "    LightGroupState = 9,", 1)
+    controls.append(("two kinds on one value", t, "ReliableKind value 9 is claimed by"))
+
+    # 4c. a kind at or past the per-kind tables' space.
+    t = dict(base)
+    t[PROTO] = t[PROTO].replace("    LightGroupState = 129,", "    LightGroupState = 1024,", 1)
+    controls.append(("a kind past the tables' space", t, "LightGroupState = 1024 is not below kReliableKindSpace"))
+
+    # 4d. an enumerator written without a value that lands past the space: it takes the previous value plus one.
+    t = dict(base)
+    t[PROTO] = t[PROTO].replace("    LightGroupState = 129,", "    LightGroupState = 1023,\n    ImplicitPastSpace,", 1)
+    controls.append(("an implicit kind past the tables' space", t,
+                     "ImplicitPastSpace = 1024 is not below kReliableKindSpace"))
 
     # 5. an enum row this parser cannot read must not pass silently.
     t = dict(base)

@@ -21,6 +21,7 @@
 #include "coop/comms/chat_sync.h"
 #include "coop/config/config.h"
 #include "coop/creatures/npc_sync.h"
+#include "coop/creatures/walker_target_rule.h"
 #include "coop/dev/dev_gate.h"
 #include "coop/dev/force_weather.h"
 #include "coop/dev/hotbar_icon_probe.h"
@@ -60,6 +61,7 @@
 #include "coop/props/container_birth.h"
 #include "coop/props/container_park.h"
 #include "coop/props/container_act_host.h"
+#include "coop/creatures/kerfur_command_wire.h"
 #include "coop/props/prop_act_host.h"
 #include "coop/props/prop_lifecycle.h"
 #include "coop/props/prop_snapshot.h"
@@ -79,6 +81,9 @@
 #include "coop/session/subsystems.h"
 #include "coop/session/teleport_client.h"
 #include "coop/world/explosion_recipe.h"
+#include "coop/props/food_tick_gate.h"
+#include "coop/world/plant_gate.h"
+#include "coop/interactables/woodchipper_gate.h"
 #include "coop/world/spawn_authority.h"
 #include "ui/server_browser.h"
 #include "coop/net/end_reason.h"  // the named reason a join that reached the world load ends on
@@ -250,12 +255,18 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And a container act: the codec and its hostile blobs, one record's hash, the record lookup, the holds, the host's
     // judge and the order it reads in, the commit's rows and the client's reply decision, each from a stated input.
     coop::props::container_act_host::RunSelftest();
+    // And a kerfur command's bytes: a forged blob reaches the host only from a hostile client, so each way a blob is
+    // refused (a stray flag, a stray byte, a record on the wrong command, one past the cap, a lying chunk header) and the
+    // disc record's bound are asserted here, line by line.
+    coop::kerfur_command_wire::RunSelftest();
     // And the deferred-destroy table's retire rule: a destroy naming an element leaves with a spawn of
     // that element only, a key-only destroy with a spawn of its key, a None or empty key with nothing.
     coop::element::quiescence_drain::RunDestroyDeferSelftest();
     // And a client's chat rate, Source's two tiers: the interval, a burst's debt, the slowed refill, tier 2's long run
     // and both floors, each row from a stated state -- arithmetic no honest run reaches.
     coop::chat_rate::RunChatRateSelftest();
+    // And the walker's target rule (keep, lose, acquire, fall back): no honest run reads the players with another one nearer.
+    coop::walker_target::RunSelftest();
     // And the commands' line splitter, target resolver, registry and dispatcher: a resolver that
     // picks the wrong player kicks the wrong player, and a wrong pick reads as working until then.
     coop::commands::RunSelftest();
@@ -338,6 +349,14 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // client's spawners tick from its world's first frame, and nothing orders that after the pawn
     // subsystems::Install waits for. Idempotent across Stop/Start.
     coop::spawn_authority::Install(&g_session);
+    // A joining client's world foods tick from its world's first frame as well: the tick rows are keyed here, by
+    // class and name, after the session spawn_authority reads. Idempotent across Stop/Start.
+    coop::food_tick_gate::Install();
+    // A client's plants are refused the same way, on the session spawn_authority holds: they tick from the world's first frame.
+    coop::plant_gate::Install();
+    // And a client's woodchippers: their tick and intake are refused from the world's first frame, and a player's pour
+    // and press at one is asked of the host (the session it sends on is this one).
+    coop::woodchipper_gate::Install(&g_session);
     // And the trash morph gate's three verbs: a joiner's pile loads with the save, and the watch is
     // by class and name, so no pile runs a morph unjudged. Idempotent across Stop/Start.
     coop::trash_morph_gate::Install(&g_session);
@@ -498,13 +517,13 @@ bool EndClientSession(const char* why) {
     // Stop on this (the timeline) thread, where the net-thread join belongs, then tear the coop state
     // down on the game thread and wait for it: the next start begins on nothing this session left, and
     // no destroy seam runs against a half-ended session. MTA has a synchronous CModManager::Unload (its
-    // connect/reconnect in CCommandFuncs.cpp, quit in CCore.cpp:1597, and CConnectManager.cpp:79 all use
+    // connect/reconnect in CCommandFuncs.cpp, quit in reference/mtasa-blue/Client/core/CCore.cpp:1597, and reference/mtasa-blue/Client/core/CConnectManager.cpp:79 all use
     // it); our divergence is that EVERY end waits here synchronously, where MTA's disconnect and kick
     // paths defer through RequestUnload. Stop releases its lifecycle mutex before this RunAndWait, so the
     // game thread never blocks on a timeline thread that is itself waiting on the game thread.
     g_session.Stop();
     // Process shutdown is the one exemption, and a divergence from MTA (whose quit runs Unload at
-    // CCore.cpp:1597 before TerminateProcess at :1602): our DoShutdown has already uninstalled the game-thread
+    // reference/mtasa-blue/Client/core/CCore.cpp:1597 before TerminateProcess at :1602): our DoShutdown has already uninstalled the game-thread
     // pump, so a RunAndWait would never drain -- stop only, no teardown, the process exiting regardless. Nor a
     // return or the browser, whose opening starts HTTP workers a teardown must not.
     if (coop::shutdown::IsShuttingDown()) return true;
@@ -531,7 +550,7 @@ bool EndClientSession(const char* why) {
     // a world that is not the menu -- the host's, which the join loaded -- is left through join_leave's travel; at
     // the menu the browser opens, now or once the menu stands. The browser is ours: MTA shows its menu only, while
     // a menu join here starts at the browser, so the player is put back where it began. Two owners travel where MTA
-    // has one funnel (TryStop, CModManager.cpp:237-289, reached by Unload's immediate stop, :119-126, and by
+    // has one funnel (TryStop, reference/mtasa-blue/Client/core/CModManager.cpp:237-289, reached by Unload's immediate stop, :119-126, and by
     // RequestUnload's deferred one through DoPulsePostFrame, :33-47 and :79-111): our menu is a level, so the end
     // is an asynchronous travel, which a flee makes from the session's tick on the game thread, and a timeline stop
     // site, with no tick to make it from, through join_leave's retried ask. A degraded world reader cannot tell a
@@ -576,7 +595,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // No start begins over an owed end: a session stopped without its game-thread teardown yet
             // -- a flee whose teardown is in flight on the game thread while this timeline thread
             // already sees the session stopped -- is finished here before any start below, as MTA's
-            // Start unloads a mod still loaded (CModManager.cpp:134-135). One atomic compare per idle
+            // Start unloads a mod still loaded (reference/mtasa-blue/Client/core/CModManager.cpp:134-135). One atomic compare per idle
             // pass; the RunAndWait runs only when an end is owed, and is a no-op by the count if the
             // flee's own teardown already ran.
             if (coop::net_pump::EndOwed(g_session)) {

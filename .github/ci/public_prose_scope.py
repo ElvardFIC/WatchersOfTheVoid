@@ -39,7 +39,7 @@ OTHER_HARD_CAP = 800
 # scripts. Extension-gated so a binary is never read as prose; vendored trees are skipped whole,
 # since a third-party file is not ours to rewrite.
 OTHER_EXT = (".py", ".ps1", ".yml", ".yaml", ".json", ".toml", ".rs", ".cs", ".txt", ".tsv",
-             ".rc", ".in", ".cmake", "CMakeLists.txt", ".gitignore", ".gitattributes")
+             ".rc", ".in", ".cmake", ".jsonl", "CMakeLists.txt", ".gitignore", ".gitattributes")
 OTHER_SKIP = ("src/votv-coop/third_party/", "reference/")
 # The files whose JOB is these markers: a gate that refuses a word must name it, and a drill
 # that proves the refusal must carry a fixture containing it. Counting those would push a sweep
@@ -49,7 +49,8 @@ OTHER_SKIP = ("src/votv-coop/third_party/", "reference/")
 # exempt for exactly the reason the entry point is, and nothing wider is.
 OTHER_MARKER_OWNERS = (".github/ci/public_prose_", ".github/ci/prose_drill_",
                        ".github/ci/public_leak_gate", ".github/ci/public_leak_ack",
-                       ".github/ci/commit_msg_check")
+                       ".github/ci/commit_msg_check", "package/cleanup-inventory.json",
+                       "package/cleanup-history/")
 # Third-party licence texts are reproduced as-is, and the baseline is generated from the counters,
 # so it names them by construction.
 OTHER_EXEMPT = ("LICENSE", "THIRD-PARTY", "public_prose_baseline.json")

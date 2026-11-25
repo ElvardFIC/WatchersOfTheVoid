@@ -28,8 +28,6 @@ void* FindLive(bool (*accept)(void* obj, const void* arg) = nullptr, const void*
 // the value left as it was.
 bool ReadActive(void* k, bool& on);
 bool WriteActive(void* k, bool on);
-bool ReadCharging(void* k, bool& on);
-bool WriteCharging(void* k, bool on);
 bool ReadEnergy(void* k, float& energy);
 bool WriteEnergy(void* k, float energy);
 
@@ -61,4 +59,7 @@ bool RunActionOptionIndexWhile(void* k, void* player, uint8_t action,
 // task and drives it to `at`, where its own arrival test turns it off again.
 bool RunPossess(void* k, const FVector& at);
 
+
+bool ReadCharging(void* k, bool& on);
+bool WriteCharging(void* k, bool on);
 }  // namespace ue_wrap::kerfus

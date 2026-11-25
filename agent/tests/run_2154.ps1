@@ -6,15 +6,15 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/console.obj" "/Fe$output/console.exe" agent/tests/console_2154_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/console.obj" "/Fe$output/console.exe" "$PSScriptRoot/console_2154_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Console test compile failed'}
  & "$output/console.exe"
  if($LASTEXITCODE -ne 0){throw 'Console test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/madness.obj" "/Fe$output/madness.exe" agent/tests/madness_2154_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/madness.obj" "/Fe$output/madness.exe" "$PSScriptRoot/madness_2154_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Madness test compile failed'}
  & "$output/madness.exe"
  if($LASTEXITCODE -ne 0){throw 'Madness test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/madness_wrapper.obj" "/Fe$output/madness_wrapper.exe" agent/tests/madness_wrapper_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/madness_wrapper.obj" "/Fe$output/madness_wrapper.exe" "$PSScriptRoot/madness_wrapper_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Madness presentation compile failed'}
  & "$output/madness_wrapper.exe"
  if($LASTEXITCODE -ne 0){throw 'Madness presentation failed'}

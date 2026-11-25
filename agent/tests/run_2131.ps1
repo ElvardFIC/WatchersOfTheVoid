@@ -17,9 +17,9 @@ try {
         } elseif ($rc -ne 0) { throw "Test failed: $name" }
     }
     foreach ($suite in @('player_state','player_fire')) {
-        Compile-AndRun $suite "agent/tests/${suite}_2131_test.cpp" $false
+        Compile-AndRun $suite "$PSScriptRoot/${suite}_2131_test.cpp" $false
     }
-    & $Python agent/tests/blueprint_2131_test.py
+    & $Python "$PSScriptRoot/blueprint_2131_test.py"
     if ($LASTEXITCODE -ne 0) { throw 'Native/integration evidence check failed' }
     $cases=@(
         @{Name='guard_off';Suite='player_state';File='coop/player/player_damage.cpp';Before='return Verdict::Cancel;';After='return Verdict::Run;'},

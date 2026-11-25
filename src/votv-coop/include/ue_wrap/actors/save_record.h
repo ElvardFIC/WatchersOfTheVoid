@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "ue_wrap/core/class_resolve.h"    // Load
 #include "ue_wrap/desk/signal_dynamic.h"  // Row -- the 0x70 signal sub-element (reused, not reinvented)
 
 #include <array>
@@ -25,6 +26,8 @@
 #include <vector>
 
 namespace ue_wrap::save_record {
+
+using ClassLoad = ue_wrap::class_resolve::Load;
 
 // How a class leaf name on a record resolves to a UClass as the record is written. A null resolver
 // means object_index::ClassByName. Unknown or not-yet-indexed classes cost one
@@ -96,6 +99,12 @@ bool TryReadArr(const void* base, int32_t off, Arr& out);
 // freshly-built array the engine will read then, on its next mutation, realloc wholesale.)
 void WriteArrHeader(void* base, int32_t off, void* data, int32_t num);
 
+// Replace the TArray<uint8> at base+off with `data[0..count)`, for an array of a LIVE object that is written again and again:
+// into the array's own buffer when its capacity (Max) holds `count`, only Num moving; else into a new engine buffer, the
+// replaced one released through the engine's allocator (EngineFree), which owns it. False, having written nothing, for a
+// negative or past-cap count, a null `data` with a count, or an EngineAlloc failure. Game thread.
+bool ReplaceByteArray(void* base, int32_t off, const uint8_t* data, int32_t count);
+
 // Allocate `count*elemSize` engine bytes, zeroed. Null (-> caller writes an empty array) on a
 // zero count or an EngineAlloc failure (GMalloc unresolved). Zeroing makes every unset FString/
 // FName/TArray field a valid empty (null,0,0) -- no garbage the engine could deref.
@@ -129,7 +138,6 @@ bool UpdateScalarGroups(void* record, const SaveRecord& expected, const SaveReco
 // the engine's later Array realloc / GC free of them is allocator-matched.
 // `resolve` governs how every class leaf (the record's own class and its `classes` group) resolves;
 // null = object_index::ClassByName (see ClassResolver).
-void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve = nullptr);
 // Encode into a zeroed, unpublished slot, reporting allocation, class,
 // name/string and signal construction failures. False may leave partial scratch
 // data: never publish that slot. Existing live writers keep their fallback policy.
@@ -226,4 +234,10 @@ bool ApplyRecordViaWhile(void* actor, void* loadFn, const SaveRecord& r,
 // Drop the cached class lookups (level change / disconnect).
 void ResetCodecCache();
 
+// Resolve every Blueprint class named by a record before publishing a container slice.
+// A Pending class keeps the slice parked until a later tick's bounded load budget.
+bool ClassesReady(const SaveRecord& record, ClassLoad load);
+
+
+void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve = nullptr);
 }  // namespace ue_wrap::save_record

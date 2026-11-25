@@ -7,7 +7,7 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($testName in @('sky_2164','sky_wrapper_2164')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/text_drone_stubs" /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $testName"}
   & "$output/$testName.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}

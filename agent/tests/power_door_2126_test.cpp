@@ -54,6 +54,16 @@ namespace coop::power_upgrade {
 void Install(net::Session*) {} void OnDisconnect() {}
 bool TakeSpend(uint8_t,int32_t) { return false; } void Refund(uint8_t,void*) {}
 }
+#ifndef POWER_INSTALL_REAL
+namespace coop::power_grid::install { bool PaidByHand(net::Session&,uint8_t,const net::PowerGridPayload&) { return false; } }
+#endif
+namespace coop::hand_item {
+void AnnounceHeldNow(net::Session&,void*,void*) {}
+bool IsLocalHandViewActor(void*) { return false; }
+void ApplyOwedNow(net::Session&,uint8_t) {}
+}
+namespace coop::hand_spend { bool Spend(uint8_t,const wchar_t*,uint32_t) { return false; } }
+namespace ue_wrap::generator { bool IsUpgrade(void*) { return false; } }
 namespace coop::power_puzzle {
 void Install(net::Session*) {} void Tick() {} void OnDisconnect() {} void FlushInputs() {}
 void Fill(void*,net::PowerGridPuzzle&) {}

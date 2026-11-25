@@ -1,7 +1,8 @@
 // coop/dispatch/event_feed.cpp -- the per-tick reliable-message drain: the per-slot Join edge, then the
 // ReliableKind dispatch switch. The kind-to-handler table lives here; the case bodies for the
-// eight families (entity, state, signal, intent, container-act, economy, prop-drive, world) live in
-// event_dispatch_<family>.cpp. Session, handshake, snapshot and dev-key cases stay inline.
+// eleven families (entity, state, signal, intent, container-act, requester-feedback, kerfur-command, economy,
+// prop-drive, world, cremator) live in event_dispatch_<family>.cpp. Session, handshake, snapshot and dev-key cases
+// stay inline.
 
 #include "coop/dispatch/event_feed.h"
 
@@ -304,7 +305,7 @@ void Update(net::Session& session, void* localPlayer) {
                 p.locX, p.locY, p.locZ,
                 p.rotPitch, p.rotYaw, p.rotRoll,
             };
-            ue_wrap::game_thread::Post([args] { ::coop::teleport_client::ApplyLocally(args); });
+            ue_wrap::game_thread::Post([args] { ::coop::teleport_client::ApplyHostOrder(args); });
             break;
         }
         case net::ReliableKind::JoinPhaseNote: {
@@ -488,9 +489,13 @@ void Update(net::Session& session, void* localPlayer) {
             // from every family.
             if (HandleEntityEvent(session, msg, localPlayer)) break;
             if (HandleStateEvent(session, msg, localPlayer)) break;
-            if (HandleSignalEvent(msg)) break;
+            if (HandleSignalEvent(session, msg)) break;
             if (HandleIntentEvent(session, msg)) break;
             if (HandleContainerActEvent(session, msg)) break;
+            if (HandleCrematorEvent(session, msg)) break;
+            if (HandleCargoLiftEvent(session, msg)) break;
+            if (HandleRequesterFeedbackEvent(session, msg)) break;
+            if (HandleKerfurCommandEvent(session, msg)) break;
             if (HandleEconomyEvent(session, msg, localPlayer)) break;
             if (HandlePropDriveEvent(session, msg)) break;
             if (HandleWorldEvent(session, msg)) break;

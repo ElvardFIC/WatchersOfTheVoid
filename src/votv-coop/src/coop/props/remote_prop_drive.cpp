@@ -21,6 +21,7 @@
 #include "coop/props/prop_drive_stream.h"  // IsParked: the host's channel owns a parked copy
 #include "coop/props/prop_park.h"  // Park / Unpark: a held prop, and a Character welded on it
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_hold_claim.h"  // AdmitRemoteHold: one hold per keyed prop
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "coop/props/prop_stick_sync.h"  // the stuck wall-attachable gates
 #include "coop/props/unresolved_pose_ledger.h"  // a pose-before-spawn race vs a sustained identity gap
@@ -73,6 +74,36 @@ bool IsActorDrivenByOtherThan(void* actor, int slot) {
     for (int s = 0; s < static_cast<int>(coop::players::kMaxPeers); ++s)
         if (s != slot && g_drives[s].actor == actor && g_holds[s].actorIdentity.Is(actor)) return true;
     return false;
+}
+
+int DrivingSlotOf(void* actor, int except) {
+    UE_ASSERT_GAME_THREAD("remote_prop::DrivingSlotOf");
+    if (!actor) return -1;
+    for (int s = 0; s < static_cast<int>(coop::players::kMaxPeers); ++s)
+        if (s != except && g_drives[s].actor == actor) return s;
+    return -1;
+}
+
+void RefuseHold(int slot, uint16_t holdGen) {
+    UE_ASSERT_GAME_THREAD("g_drives (remote_prop::RefuseHold)");
+    if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers) || holdGen == 0) return;
+    CloseHold(slot, holdGen);
+    HoldGate& h = g_holds[slot];
+    if (!h.haveDenied || GenAfter(holdGen, h.deniedGen)) {
+        h.deniedGen = holdGen;
+        h.haveDenied = true;
+    }
+    ActiveDrive& d = g_drives[slot];
+    if (!d.actor || h.driveGen != holdGen) return;
+    // Another drive keeps the copy parked; otherwise it goes back to physics, as at a stream's
+    // stop, which this peer's own grab needs too.
+    void* const live = d.LiveActor();
+    const bool otherDrive = live && IsActorDrivenByOtherThan(live, slot);
+    if (live && !otherDrive)
+        coop::prop_park::Unpark(live, d.mesh, !StickHoldsPhysicsOff(live) && !HostAuthorsTrashBody(live));
+    UE_LOGI("remote_prop: slot %d hold %u refused by the host -- its drive ends%s", slot,
+            static_cast<unsigned>(holdGen), otherDrive ? ", the kept hold's drive stays" : "");
+    ResetDriveState(d);
 }
 
 // True when some slot's drive targets `actor`; the spawn receiver skips the transform converge

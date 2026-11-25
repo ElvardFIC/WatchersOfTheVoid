@@ -167,6 +167,9 @@ struct TableView {
 // this world's, an entry stands under the key and its actor is live. Game thread.
 bool ReadTable(const std::wstring& key, TableView& out);
 
+// Every live entry of this world's index, by key. Nothing when the index is another world's. Game thread.
+void ForEachIndexed(void (*fn)(void* ctx, const std::wstring& key, void* actor), void* ctx);
+
 // DEV, for the ATV health drill's silent arm and the hostile drill's atv_ arms: while set, this CLIENT's syncer
 // stream sends no block (its body, its request and the host's stamps run on), so the host's silence rule is what
 // takes the ATV and the host's counters hold only what the drill sent. Cleared by the drill and by OnDisconnect.
@@ -181,6 +184,11 @@ bool OwnsTick(void* actor);
 // Does the lane hold `actor` as an ATV: a live entry of this world's index (any ATV_C, the witch car included). Game
 // thread.
 bool IsIndexed(void* actor);
+
+// The honk key went down (`down`) or up on the copy of the ATV under `key` that this machine's player sits in (atv_gate's
+// rows): the horn's level and latch that the syncer's next block carries as stateBits' kAtvHorn. Nothing for a copy this
+// machine's player does not sit in. Game thread.
+void NoteHorn(const std::wstring& key, bool down);
 
 // Is `actor` an indexed ATV whose tick ANOTHER copy owns? True only while the collision guard is active (an inactive
 // guard means the lane is not deciding, so every copy runs as it does without the mod), the ATV is indexed and this
@@ -204,5 +212,10 @@ std::vector<std::wstring> ReceivedSpawnKeys();
 // ApplyCorrection (which may still refuse them: corrector off, transform unreadable, teleport failed). The connect
 // snapshot is read per ATV instead: TableView::snapshotReached.
 uint32_t AppliedFromSyncer();
+
+// For the ATV health drill's `trap` arm, CLIENT, game thread; counts this session and starts over at a disconnect: the
+// blocks the host sent whose payload carries the trap bit (kAtvTrap), counted as received, before any developer red masks it.
+// The arm's event that the host's trap reached this peer, whatever the table then shows.
+uint32_t TrapStampsSeen();
 
 }  // namespace coop::atv_sync

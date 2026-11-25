@@ -20,6 +20,7 @@ struct Hit {
     bool blocked = false;
     void* actor = nullptr;
     void* component = nullptr;
+    void* physMaterial = nullptr;
     FVector point{};
     FVector normal{};
 };

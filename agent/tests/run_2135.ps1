@@ -7,12 +7,12 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  foreach($suite in @('notebook','drone_intent','drone_state','drone_wrapper')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$suite.obj" "/Fe$output/$suite.exe" "agent/tests/${suite}_2135_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$suite.obj" "/Fe$output/$suite.exe" "$PSScriptRoot/${suite}_2135_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $suite"}
   & "$output/$suite.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $suite"}
  }
- & $Python agent/tests/blueprint_text_drone_2135_test.py
+ & $Python "$PSScriptRoot/blueprint_text_drone_2135_test.py"
  if($LASTEXITCODE -ne 0){throw 'Native evidence failed'}
  if(-not $Quick) {
   $cases=@(
@@ -32,7 +32,7 @@ try {
    $harness=[IO.File]::ReadAllText((Join-Path $PSScriptRoot ($case.Suite+'_2135_test.cpp')))
    $harness=$harness.Replace('../../src/votv-coop/src/'+$case.File,($mutant -replace '\\','/'))
    $copy=Join-Path $output ($case.Name+'_test.cpp');[IO.File]::WriteAllText($copy,$harness)
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
    if($LASTEXITCODE -ne 0){throw "Mutant compile failed: $($case.Name)"}
    & "$output/$($case.Name).exe"
    if($LASTEXITCODE -ne 1){throw "Expected assertion exit 1: $($case.Name), got $LASTEXITCODE"}

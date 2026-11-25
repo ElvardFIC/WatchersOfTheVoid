@@ -4,6 +4,7 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/material_saved_state.cpp"
 #include "../../src/votv-coop/src/ue_wrap/devices/grill_saved_state.cpp"
 #include "../../src/votv-coop/src/coop/world/material_save_sync.cpp"
+#include "facts_test_support.h"
 #include <cstdlib>
 #include <cstdio>
 #include <functional>

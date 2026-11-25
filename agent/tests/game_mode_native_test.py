@@ -1,10 +1,10 @@
 from pathlib import Path
 import sys
 
-research=Path(__file__).resolve().parents[3]/'_research'
-sys.path.insert(0,str(research))
+evidence_root=Path(__file__).resolve().parents[3]/'_research'
+sys.path.insert(0,str(evidence_root))
 from kismet_dis import Package,Dis,find_script
-assets=research/'current-assets'
+assets=evidence_root/'current-assets'
 def rows(asset,function):
     p=Package(str(assets/('VotV__Content__'+asset+'.uasset')))
     e=next(e for e in p.exports if e['name']==function and p.class_of_export(e)=='Function')
@@ -18,7 +18,7 @@ prefix=rows('umg__interfaces__ui_saveSlots','getSavePrefix')
 for value in ('s_','i_','a_','b_','l_'):assert repr(value) in prefix
 create=rows('umg__interfaces__ui_saveSlots','ExecuteUbergraph_ui_saveSlots')
 assert 'Inst(tempSave)->Inst(mainMap) =' in create
-maps=(research/'current-pak-files.txt').read_text(encoding='utf-8-sig')
+maps=(evidence_root/'current-pak-files.txt').read_text(encoding='utf-8-sig')
 assert '/maps/tutorial3.umap' in maps
 processor=rows('objects__propProcessor','ExecuteUbergraph_propProcessor')
 assert 'GetDirectoryContentsWithFileInfo' in processor

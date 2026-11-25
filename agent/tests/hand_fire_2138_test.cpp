@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/coop/player/hand_item.cpp"
+#include "../../src/votv-coop/src/coop/player/hand_item_applied.cpp"
 #include "../../src/votv-coop/src/coop/player/hand_history.cpp"
 #include "../../src/votv-coop/src/coop/player/hand_fire_sync.cpp"
 #include <cstdio>
@@ -40,6 +41,9 @@ namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::game_thread {bool IsDefinitelyOffGameThread(){return false;}}
 namespace ue_wrap::hot_path {uintptr_t CallerRva(const void*){return 0;}unsigned long CurrentThreadId(){return 0;}}
 namespace ue_wrap::script_gate {bool WatchName(const wchar_t*,int,PreFn,PostFn){return true;}void ResolvePendingNames(){}bool NameWatchLive(const wchar_t*,int){return test::hooks;}}
+namespace coop::config_registry::detail {struct RegistryDef {static FlagRow Flag(){return {nullptr,RegistryCtorKey{}};}};}
+namespace coop::config_registry::rows {const FlagRow hand_announce_off=detail::RegistryDef::Flag();}
+namespace coop::config {bool ResolveFlag(const config_registry::FlagRow&){return false;}}
 namespace ue_wrap::prop {bool IsDescendantOfProp(void*){return true;}bool IsClassDescendantOfProp(void*){return test::propClass;}}
 namespace ue_wrap::inventory {std::wstring ReadHeldItemName(){return L"box";}}
 namespace ue_wrap::puppet {void* GetSkeletalMeshComponent(void*){return nullptr;}}
@@ -53,8 +57,8 @@ bool TryGetActorRotation(void*,FRotator& r){r={};return true;}
 bool TryGetActorLocation(void*,FVector& p){p={};return true;}
 bool ReadMainPlayerGrabState(void*,MainPlayerGrabState& s){s.holdingActor=test::held;return true;}
 bool DestroyActor(void* p){++test::destroys;static_cast<test::Obj*>(p)->live=false;auto c=std::move(test::destroyCallback);test::destroyCallback={};if(c)c();return true;}
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){auto& o=test::objs[3];++o.serial;o.live=true;return &o;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){auto c=std::move(test::spawnCallback);test::spawnCallback={};if(c)c();return true;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&,uint8_t,const FVector*){auto& o=test::objs[3];++o.serial;o.live=true;return &o;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){auto c=std::move(test::spawnCallback);test::spawnCallback={};if(c)c();return true;}
 bool SetActorSimulatePhysics(void*,bool){return true;}
 bool SetActorEnableCollision(void*,bool){return true;}
 bool SetActorLocation(void*,const FVector&){return true;}

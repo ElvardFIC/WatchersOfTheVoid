@@ -1,6 +1,6 @@
 # Agent context
 
-Owner instruction, 1 November: work on **0.9.2164**. The last
+Owner instruction, 15 November: prepare **0.9.2165**. The last
 qualified package is **0.9.2163 / b2217** (offline), with 124 passing current
 groups and a verified manager archive. Do not increment
 the public version for each continuation. Keep internal build/protocol identity
@@ -21,7 +21,8 @@ and Release/ABI inspection at development protocol 2220. Exact source/build
 evidence and the separate failing prose gate are in TESTLOG. UI01-UI09 changes
 follow that build; their current verification and open implementation are recorded
 separately in TESTLOG and WORK. The earlier DLL does not qualify those changes.
-The retained 2163 archive and release.json still identify b2217.
+The retained 2163 archive identifies b2217. `release.json` now names the 2165
+candidate (b2223); its Release DLL and package archive do not exist yet.
 The earlier 4 November b2219 verification passed 134 groups and Release inspection;
 its historical source stamp and gameplay limits are recorded in TESTLOG.md.
 

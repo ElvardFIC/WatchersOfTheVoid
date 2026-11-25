@@ -1,18 +1,8 @@
-// ue_wrap/actors/inventory.h -- read/write the player-scoped inventory off the live UsaveSlot_C.
-//
-// Engine-wrapper layer: it owns the saveSlot reflection and the Fstruct_save /
-// Fstruct_equipment struct walk. The field offsets and the TArray element strides are named
-// constants in the .cpp, which is also where the stride's one trap is explained -- the stride
-// is the 16-ALIGNED struct size, not the dump's raw `Size:` line. No network logic here:
-// coop/inventory_wire serializes the POD below, and the host persistence and transport live
-// in coop/player_inventory_sync.
-//
-// An inventory item is DATA, not an actor -- an Fstruct_save record (class, transform, key,
-// typed key/value groups) -- so reading one means walking the nested TArrays. The value-group
-// arrays are TArray<Fstruct_mX> where each Fstruct_mX wraps a single TArray<X>, giving a
-// vector of vectors, except `signals`, which is a TArray<Fstruct_signalDataDynamic> directly.
-// FNames and UClasses are read as STRINGS: as pointers they do not carry across peers, so the
-// apply re-interns them.
+// ue_wrap/actors/inventory.h -- reads and writes the player save-slot inventory.
+// It owns the Fstruct_save and Fstruct_equipment walks; offsets and aligned array
+// strides are kept in the implementation. coop/inventory_wire handles POD
+// serialization, while coop/player_inventory_sync owns transport and persistence.
+// Inventory records are data, with nested value arrays and portable names.
 
 #pragma once
 
@@ -97,27 +87,22 @@ bool ReadLivePersonalStore(LivePersonalStore& out);
 // field reads. Game thread.
 int32_t LivePersonalStoreCount();
 
-// The WRITE side, the apply on join: overwrite the player's GObjStack slot, equipment and hold
-// on `saveSlot` with `inv`, as engine-OWNED TArrays built through reflection::EngineAlloc (FNames
-// interned, FStrings engine-minted, UClasses FindClass'd). The caller writes the REGISTERED save
-// object BEFORE the native loadObjects() materializes it, which is the state a single-player load
-// starts from: the gamemode's BeginPlay calls propInventory.recalculateNames() on every world
-// start, rebuilding the container's name array from the slot's records, and volume and mass
-// follow from the names through the game's own updateVolumesAndMass. equipment and hold are
-// fixed-shape slot arrays the game never grows, so they keep the save object's slot count.
-//
-// The PREVIOUS buffers are orphaned on purpose, a bounded few kilobytes once per join: freeing
-// the old nested sub-arrays and FString buffers recursively is far more crash-prone than leaking
-// them, and the engine never double-frees a buffer it has lost. Ours are GMalloc-owned, so a
-// later engine realloc or free is allocator-matched. False, having written nothing, if
-// `saveSlot` is null/dead, allocation/encoding fails, there is no player slot or
-// the target/world/save binding/array headers change during staging. Nested apply
-// supersedes older work. All three arrays publish together after staging succeeds.
-// Unpublished partial nested buffers follow the same pin policy. Game thread.
+// Apply the join snapshot to the registered save object before native loadObjects materializes it.
+// The GObjStack, equipment and hold arrays are staged as engine-owned buffers and published
+// together; equipment and hold retain the save object's fixed slot counts. Names and classes are
+// resolved while encoding. Prior nested buffers are left pinned because recursive release is less
+// safe than the bounded per-join leak. False without publication if the target, world, binding,
+// array headers, allocation or encoding fail during staging. A newer apply supersedes older work.
+// Game thread.
 bool ApplyToSaveObject(void* saveSlot, const PlayerInventory& inv);
 // Same transaction, also refusing publication after a caller's join/session
 // request is superseded during native encoding. The callback is synchronous.
 bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std::function<bool()>& current);
+
+// For the equipment drill's red (equip_blank_zeroed), called by its caller after the apply: every empty equipment and
+// hold slot of `saveSlot` rewritten as a blank C++ record, the zeroed transform the game never sees as free. False,
+// having written nothing, when `saveSlot` is dead or GMalloc is unresolved. Game thread.
+bool ZeroEmptyEquipment(void* saveSlot);
 
 // Writes the live save slot's first hold slot, the hand, for a dev drill that takes an item into the
 // hand: the item's name (list_props' row), and in its record the class the player's updateHold
@@ -125,9 +110,9 @@ bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std
 // the hand). False when the save slot or its hold slot cannot be reached, or `classLeaf` names no
 // loaded class, full encoding fails, or the hand/save changes during staging.
 // The previous complete slot survives refusal. Game thread.
-bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf);
+bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf, const float* fuel = nullptr);
 bool WriteHeldItemWhile(const std::wstring& name, const wchar_t* classLeaf,
-                        const std::function<bool()>& current);
+                        const std::function<bool()>& current, const float* fuel = nullptr);
 
 // The item name in the live save slot's first hold slot, the hand: the name the player's updateHold
 // keys the game's item tables by (list_props, list_weapons). Empty when the hand holds nothing or the

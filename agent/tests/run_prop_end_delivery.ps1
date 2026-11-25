@@ -6,14 +6,14 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- $includes=@('/I','agent/tests/prop_syncer_host_stubs','/I','agent/tests/prop_publisher_stubs','/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
+ $includes=@('/I',(Join-Path $PSScriptRoot 'prop_syncer_host_stubs'),'/I',(Join-Path $PSScriptRoot 'prop_publisher_stubs'),'/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c /I src/votv-coop/include "/Fo$output/registry.obj" src/votv-coop/src/coop/config/config_registry.cpp
  if($LASTEXITCODE){throw 'End delivery registry compile failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c @includes "/Fo$output/shared.obj" agent/tests/prop_end_delivery_link_test.cpp
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c @includes "/Fo$output/shared.obj" "$PSScriptRoot/prop_end_delivery_link_test.cpp"
  if($LASTEXITCODE){throw 'End delivery shared-state compile failed'}
  function Compile([string]$name,[string]$header=''){
   $forced=@();if($header){$forced=@("/FI$header")}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/prop_end_delivery_test.cpp "$output/registry.obj" "$output/shared.obj" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/prop_end_delivery_test.cpp" "$output/registry.obj" "$output/shared.obj" /link /OPT:REF
   if($LASTEXITCODE){throw "End delivery fixture compile failed: $name"}
  }
  Compile 'test'

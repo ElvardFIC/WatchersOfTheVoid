@@ -7,16 +7,16 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/lift_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/lift_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   $rc=$LASTEXITCODE
   if($negative){if($rc -ne 1){throw "Negative assertion expected1, got $rc for $name"};Write-Host "PASS negative control: $name"}
   elseif($rc -ne 0){throw "Test failed: $name"}
  }
- Compile-AndRun 'controller' 'agent/tests/cargo_lift_2136_test.cpp' $false
- Compile-AndRun 'wrapper' 'agent/tests/cargo_lift_wrapper_2136_test.cpp' $false
- & $Python agent/tests/blueprint_lift_2136_test.py
+ Compile-AndRun 'controller' (Join-Path $PSScriptRoot 'cargo_lift_2136_test.cpp') $false
+ Compile-AndRun 'wrapper' (Join-Path $PSScriptRoot 'cargo_lift_wrapper_2136_test.cpp') $false
+ & $Python "$PSScriptRoot/blueprint_lift_2136_test.py"
  if($LASTEXITCODE -ne 0){throw 'Native evidence/integration failed'}
  $cases=@(
  @{Name='host_gate';Suite='cargo_lift';File='coop/world/cargo_lift_sync.cpp';Before='s->role()==net::Role::Client&&!net_pump::IsInAnnouncedWorld(a)';After='!net_pump::IsInAnnouncedWorld(a)'},

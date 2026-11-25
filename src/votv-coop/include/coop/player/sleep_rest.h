@@ -8,7 +8,7 @@
 // CustomTimeDilation: the player's body (sleep, health, irradiation) and each effect actor of the
 // gamemode's list (the vaccine's drain, the sleepy effect). Food, whose native fall divides the delta by
 // the GLOBAL dilation, is restored by (1 - 1/F) of each fall; coffee, which drains in the gamemode's
-// tick, loses (F - 1) times each fall more. The rest ends when the sleeping flag falls, with the
+// tick, loses (F - 1) times each fall more. The rest ends when the game's `wakeup` has run (a second POST watch), with the
 // session, or when the gamemode or the body changes. Timer-driven owners (the ariral pillow's rolls, the
 // nightmare) are scaled by no dilation at 1 and are not touched here. A connected host uses the same
 // personal rest while another participant is awake/joining/dreaming. Only unanimous rest permits
@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Divergence from MTA, which syncs one game speed to every client (CMapManager.cpp:463): only the host
+// Divergence from MTA, which syncs one game speed to every client (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:463): only the host
 // runs the game's native x20. An awake client at x20 is unplayable, and this rest restores the client's
 // needs without speeding its game.
 
@@ -24,12 +24,20 @@ namespace coop::net { class Session; }
 
 namespace coop::sleep_rest {
 
+// The world factor the game's own sleep sets (SetGlobalTimeDilation(20)), which a rest here gives the body and the
+// effects instead of the world. Also the ratio between a sleep's world time and its real time.
+inline constexpr float kNativeSleepDilation = 20.0f;
+
 // Cache the session. Called from the subsystems Install fanout.
 void Install(coop::net::Session* session);
 
-// Per pump tick: on a connected client, register the sleep watch until it is live; while a rest runs,
+// Per pump tick: on a connected client, register the sleep and wakeup watches until they are live; while a rest runs,
 // hold the factor on the effects and settle food and coffee. Cheap when idle: no engine read at all.
 void Tick();
+
+// A client's rest is in progress: begun in the frame of the game's own `sleep` call (the gate's watch announces it) and
+// over when the game's `wakeup` has run, which the wakeup watch announces. No engine read. Game thread.
+bool Resting();
 
 // The session ended: a rest in progress is handed back at factor 1.
 void OnDisconnect();

@@ -6,7 +6,7 @@
 // the punch above 25, blood, the faint, death. Source runs the NPC on the server and sends the client the result
 // (reference/source-sdk-2013/src/game/server/hl2/npc_BaseZombie.cpp:1267, the claw's hit applied where the NPC
 // runs); MTA keeps a player's health on its own client (reference/mtasa-blue/Client/mods/deathmatch/logic/
-// CNetAPI.cpp:1189). This takes Source's delivery and MTA's ownership: the hit is judged where the creature runs
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CNetAPI.cpp:1189). This takes Source's delivery and MTA's ownership: the hit is judged where the creature runs
 // and applied where the victim lives.
 // This module has no notion of a creature: a sender is any seam that judges a hit. Game thread, but where a function
 // says otherwise.
@@ -35,7 +35,7 @@ void Install(coop::net::Session* session);
 // backlog). Game thread.
 bool Deliver(uint8_t slot, const coop::net::PlayerHitPayload& payload);
 
-// Client: the wire. Checks the format only, as the host is the author: the verb 0 or 1, the bone under 6, a finite
+// Client: the wire. Checks the format only, as the host is the author: the verb 0 or 1, the bone under 6, a known cue, a finite
 // non-negative damage, every vector component finite and within 1e7. A payload that passes is applied on the game
 // thread, if it names this machine's player. Any thread.
 void OnReceived(const uint8_t* data, size_t len);
@@ -50,6 +50,9 @@ bool InApply();
 
 // [dev], for the drill alone: the hits applied to this machine's own player.
 uint32_t AppliedCount();
+
+// [dev], for the walker drill alone: the applied hits that carried the walker's cue (kPlayerHitCueWalker).
+uint32_t AppliedWalkerCount();
 
 // [dev], for the drill alone: the calls of Deliver that sent nothing, for any reason (each reason said once,
 // counted each time).

@@ -77,7 +77,17 @@ class and name on change, and every peer keeps a display-only mirror, physics an
 attached to the puppet's weapon component at the native hold transform
 (`coop/player/hand_item`). The flashlight rides the item-activation kind: the receiver toggles
 the puppet's own light and plays a positional click (`coop/player/item_activate`,
-`coop/player/flashlight_click_sound`). A carried trash clump is driven to the puppet's hand on
+`coop/player/flashlight_click_sound`). The cone starts inside the head, so a body casting shadows from it cuts its own silhouette out of the beam,
+which flickers as the body animates. The game leaves a real player's two body meshes
+(`CharacterMesh0`, `mesh_playerVisible`) casting no shadow; a puppet kept the class's casting default
+and drew that silhouette on every other peer's screen, so its spawn switches both off
+(`ue_wrap/actors/puppet_spawn`) `[V]` (`harness/autotest/autotest_beam_look.cpp`: the flags of both
+bodies logged side by side, and the host's captures of a client's beam on the floor, the silhouette
+there before and gone after). An empty battery switches the light off in the game's `ReceiveTick` with no
+function call to observe, so each tick the sender compares the game's flashlight bool with what it last
+sent, and the other peer's puppet goes dark too `[V]` (`harness/autotest/autotest_flash_battery.cpp`,
+each peer's battery drained in turn).
+A carried trash clump is driven to the puppet's hand on
 the host each tick (`coop/player/puppet_carry_drive`); a held physics prop is on the props lane.
 
 ### Name, colour and nameplate
@@ -167,7 +177,20 @@ this machine, so a false death of the copy reaches the same travel: that one is 
 the revive can do, and this machine's player is not revived for it; only the black screen the
 copy's chain put up is cleared.
 
-A refused run-ending is answered with a revive in its place: the position at the base gate,
+The pause menu's own quit needs no event running: its Main Menu and Exit buttons ask the game
+whether an event runs and do nothing when one does, and Save is greyed out. In single player an
+event ends in minutes. In a session the Main Menu button is how a player leaves, and a client's
+count holds the host world's events (a creature's, a story event's) beside its own, so a client
+could not leave until all of them ended. A video camera recording counts as an event too, and a
+dropped camera keeps recording ([ui.md](ui.md), the camera's hint). In a running session the
+question those two buttons ask is answered "no event" at the script-body gate, so they act; Save,
+the blur and the pause keep the game's answer, and solo nothing changes
+(`coop/player/leave_in_event`). `[V]` for a client's Main Menu press during a recording (a
+two-peer run: the press reached the travel and the session ended). The rig drill presses it during
+an event the drill starts itself (`pause_quit_drill` with `pause_quit_event`, `rig: VERDICT
+pause-quit`; its red `leave_in_event_red` switches the answer off and must FAIL) `[?]` until run.
+
+A refused run-ending is answered with a revive in its place: a floor point beside the base's bed (the base gate when no bed or NavMesh point is found, which is open sky `[?]`),
 health, the dead flag, the ragdoll, the pause an ending set, and the screen artifacts the travel
 used to dispose of -- the damage quadrants, the red overlay and the blood-loss effect
 (`coop/player/death_revive`). A host that dies is revived the same way, so a host death does not
@@ -185,8 +208,87 @@ the game's own factor, with food and coffee settled to the rate they would have 
 in a bed or fainted, dreaming in a nightmare) with the bed's class name goes from a client to the
 host, which relays it to every other client; the host's own sleeping flag goes to the clients, which show
 one chat line naming the host when it rises. A joiner is sent the host's flag and every peer's
-state that is not awake, and a leaver is told to every client as awake. A client holds its
-nightmare chance at zero, so a nightmare is a roll of the host's machine alone. `[?]`
+state that is not awake, and a leaver is told to every client as awake.
+
+A nightmare is one player's. The game rolls once per sleep, 500 s of world time after the sleeper
+falls asleep, and the host's sleep runs the world at 20, so a host rolls 25 real seconds into a
+rest. A client's rest keeps its world at 1, so the same wait would end after 500 real seconds. The
+timing is the one piece the mod owns: it rolls once, 25 real seconds (500 over the same factor 20)
+into a rest the client's sleep watch announces, and the rest ends on the game's own wake, which a
+second watch announces. The chance is the game's: the bed's own, 0.15 with no bed, none when the
+save turns nightmares off. The game's own roll stays held at zero on a client, so it never rolls a
+second time 500 real seconds into a long rest. A win
+runs the game's own wake and dream, on that player's machine alone: only that player is woken and
+teleported into the dream, and every other player sleeps on. A dream is spawned far outside the
+map, so on every other machine the dreamer's copy is hidden while its rest state says it dreams:
+the hide is taken from the sleep lane's announcement of a state change and from the puppet's
+spawn, so a copy born after the dream began is hidden at once (`coop/player/nightmare_roll`). The
+dream's own spawns are a mannequin (`dream_mann`) and boulders (`dream_boulders`), neither a prop
+nor a lane actor, so no lane carries them to another peer: they stay on the dreamer's machine
+(read from the dream scripts, `[?]`). Any running event ends a dream, the game's own rule, and a
+client counts the host world's events too. `[?]` until the nightmare drill (`nightmare_drill`,
+one run, two reds) has run on the rig.
+
+### Another map: the backrooms
+
+A player's tick traces from last frame's camera to this one, and a hit on static geometry -- a clip
+through a wall or the floor -- saves the game and travels to the backrooms (`sl_backroomsObsolete`),
+or by a roll to one of two secret maps (`untitled_untitled`, `untitled_219`). The game sends no
+player who is sitting, ragdolled, noclipping, asleep or dreaming. A session holds one world, and that travel
+took the player out of it, or every player with the host. In a session the travel is refused and the
+map is loaded into the running world instead, far below it, on the clipping player's machine alone
+(`coop/player/level_visit`, `ue_wrap/world/level_instance`): the player goes in, everyone else
+stays in the world, and every other machine hides the player's copy by its pose: each pose a peer
+sends carries its position, so a pose below the visit floor (`level_visit::kVisitFloorZ`) is a
+player in a visited map, read on every pose, and the copy is shown again by the first pose back
+above it. A trip is this machine's own player's alone: a peer's copy cannot author one (the
+game's clip tick trips only for the player the local view follows, and a copy's actor tick is
+off), but the visited map's placed player can, so a clip check or a loadLevel from any other
+player is refused, as is a second loadLevel while a visit is under way.
+
+A player who joins while another is in one of the maps needs no snapshot of it: the first pose
+the joiner applies for that player is below the floor, so its copy is hidden from that pose, and a
+copy born or respawned below, or a lost pose, is corrected by the next one. MTA keeps a player's
+interior and dimension as a reliable state with a join snapshot; here the map is a place in the
+same world, so the position the pose already carries is the state `[?]`. What the host's save
+capture holds while the host itself is in a map (its player below the world, its game instance
+flags changed for the visit) is not measured `[?]`.
+
+None of the three maps has a way out. Each ends the game itself: the backrooms after ten minutes,
+the secret maps on their own timers and triggers (`untitled_219` after ten minutes as well and at
+once if it finds a spectator, `untitled_untitled` after forty minutes and at once if it finds a
+grappling hook). That end is refused and answered as a death: the player is revived in the world as
+after any death, carrying what it carried, and what it holds from down there with it. A real death
+inside ends the visit the same way, and the item that death drops in the map is put back in the
+player's hand once it is revived. At the end the map is unloaded and what its script changed for
+the whole game is put back: the save slot's name, the game mode, the event it raised, the reverb.
+
+A map loaded into the running world brings what a world of its own has, and the visit answers each
+of it. The map's placed player takes the machine's controller as its level begins play: the
+controller goes back to the visitor, and the placed player and the black screen it puts up are
+removed. The world's sky reaches that far down without bound: its height fog covered the map in its
+colour, and its sun, sky light and post process lit a maze the game leaves dark but for the
+lantern. All of it is hidden on the visitor's machine while it is there. The visitor's own clip check sees the view jump into the map and back
+out: the game's check (`mainGamemode_C::canBackrooms`, which the player's tick asks before every
+clip) is answered no for the visit and five seconds after it, and a trip asked while seated or
+driving is refused, as the game's own check refuses it. What a map's script
+spawns lands in the world's own level, far below it: it stays out of the prop lanes and is removed
+with the map. `untitled_untitled`'s hook check counts a hook in the map only, not the world's own.
+Its ATV and `untitled_219`'s day-night cycle, copies of the world's own, are removed or held.
+
+The host can close the backrooms for everyone: "Allow the backrooms" (`world.backrooms`, on by
+default) in F1's `Administration > Server settings`, or `/set world.backrooms 0`. Off, every peer
+answers the game's own clip check no for its own player, so no clip is taken and no trip is
+sent (the game rewrites `backroomsEnabled` itself, so the mod answers the check, which is the one
+place that reads it, and writes nothing into the game's state); a clip already past the check
+when the host closes is refused at its loadLevel; a player already in one stays until the visit ends. Turned back on, the game's own logic answers the check again.
+
+`[?]` on the rig, pending this change's own run folder: each map visited by a client and by the
+host, the game's own clip on both roles, each end (the map's end, its quit, a real death) and the
+backrooms' real ten-minute end; the visitor's controller held its player and its view was in the
+map and then back with it, the other player saw the copy hidden by its pose and shown again, and
+the visitor came back with its hand item every time. The drill is `level_visit_drill`
+(`client`, `host`, `close`, `join`).
 
 ### Inventory
 
@@ -197,10 +299,19 @@ substitution, not an addition: a joiner's world is built from a capture of the h
 object, and that object is where the game keeps what a player carries (`GObjStack[0]`), wears
 and holds, so whatever is not replaced there is the host's. A first join gets the three
 starter items as copies under fresh keys, because the game's key index holds one object per
-key and a copy under its source's key aliases the original the moment either is dropped. The
+key and a copy under its source's key aliases the original the moment either is dropped. What a player wears is a fixed row of slots the hand-back
+fills to the save object's count, and the game equips only into a slot that is byte-for-byte its own empty one (a
+default record, with an identity transform), so every blank the hand-back writes is that empty, read from the save
+object's own `equipment_def` and `hold_def` (the defaults the game's reset copies back), never typed: a blank written with a
+zeroed transform was never free, and a joiner could wear only as many new items as slots it had emptied itself. A
+profile that stored such blanks is healed at its next join (`ue_wrap/actors/inventory`). `[?]` on the rig
+(`coop/dev/equip_drill`): measured on the first version of the fix, which typed the identity transform, every empty slot
+of a fresh joiner and of a returning one took an item, as the host's do, and without the empty blank none of the client's
+five did; the version that reads the game's own blank is not yet re-proved. The
 same profile carries the player's vitals (health, food, sleep, the flashlight charge, the food
 tolerances and the buffs), which the game keeps in place on that same save object, and where
-the player stood: a first join starts from the game's own defaults at the start point, a
+the player stood: a first join starts from the game's own defaults at the start point (the KPP gate in a fresh game, day 0 to 2; beside the
+base's bed from day 3), a
 returning player gets their numbers back and appears at the last spot they were standing on
 (on the ground, not ragdolled, not seated: a position read while driving the ATV is not a place
 a body can be put back), and one who left dead starts a fresh life. The vitals and the position ride a change of the items at once and otherwise go every
@@ -242,7 +353,7 @@ The kicked or banned player lands at the menu with a modal saying which, under a
 connections one address may open in a window (four per thirty seconds by default, a host
 setting), the shape of MTA's join-flood protection (`coop/net/connect_history`).
 
-The host's moderation is a set of commands -- `/kick`, `/ban`, `/banid`, `/unban`, `/tphere` --
+The host's moderation is a set of commands -- `/kick`, `/ban`, `/banid`, `/unban`, `/tphere`, `/cremate` --
 which the player list and the Administration panel now run for the host. A friend can be given
 `/kick`, `/ban`, `/banid` or `/unban` by a line in the server's permission files
 (`Mods\Multivoid\multivoid_servers\<server>\permissions\users\<their player id>.json`, LuckPerms' format, e.g.
@@ -251,6 +362,28 @@ list or the Administration panel); `/tphere` stays the host's until a command ca
 teleport. The host can deny itself a command the same way, in a file named by its own id (hover
 your own row in the player list). A player whose permission file sets `multivoid.kick.exempt` (or
 `.ban.exempt`) cannot be kicked or banned by a friend, only by the host.
+
+`/cremate <who>` sends a player to the crematorium; the player list and the Administration panel
+have it as **Send to the crematorium**. The host opens the nearest cremator's door and orders the
+player to its firebox, the way `/tphere` moves a player. The cremator's burn volume taking the player
+in is the landing: the host then shuts the door and pulls the lever, unless the machine is already
+running. From there the game's own cremator does the rest, on the player's own screen, and the host
+reads the death from the player's health in the pose stream. A death counts as a cremation only when
+the player's pose showed it burning first; it tells whoever ran the command "<name> was cremated.",
+then ends the player's session with the code MV-H35, "You were sent to the crematorium." and the
+name of whoever sent them, and writes that kick to the moderation action log. **`/cremate` ends in a
+kick, and `multivoid.kick.exempt` is not consulted**: the command's own node protects, a player
+holding `multivoid.cremate.exempt` cannot be sent by a friend. Nothing is locked: no movement lock and
+no position lock, since the closed door and the game's burn replace them; the waits are bounded by
+counts of the player's own poses, not by a clock. The other outcomes are one line each and no kick:
+the player survived (the run ended while the player lived and had stopped burning, or kept burning
+past the bound), left, died before landing, died in the cremator but not by its fire, did not land
+(the order did not apply, or the burn volume never took them in; the door is left open and the order
+is never repeated), the cremator would not start, or the cremator is gone. The command needs the node
+`multivoid.cremate` for anyone but the host. It refuses the host, the caller itself, a player who is
+still joining or not alive, one already on the way, a cremator another player is in, and a cremator
+whose burn volume cannot be watched yet. Other admins holding `multivoid.cremate.notify` are told
+what was done and how it ended.
 
 The same files can be edited in game with `/mv`, in LuckPerms' `/lp` shape: `/mv user <who> permission set
 <node> [true|false]`, `/mv user <who> parent add <group>`, `/mv group <name> permission set ...`, `/mv creategroup
@@ -264,7 +397,8 @@ permission file.
 
 The host's server settings -- today the voice range, `voice.distance_cm`, in centimetres, and
 "Allow other builds", `net.allow_other_builds`, which admits players on another Multivoid build
-([join.md](join.md)) -- change with
+([join.md](join.md)), and "Allow the backrooms", `world.backrooms` (see "Another map: the
+backrooms" above) -- change with
 `/set <setting> <value>` and go back to their default with `/reset <setting>`; every peer follows
 at once. When a server setting such as the voice range changes, every player's chat says so. F1's
 `Administration > Server settings` draws each of them and runs those same lines. A
@@ -282,7 +416,7 @@ host. A setting that holds a password is never set or shown by command.
 | damage from contact | the victim's machine | other bodies' impact entries are cancelled |
 | damage from enemies | the host detects, the victim applies | a reliable relay to the hit peer |
 | death and revive | that peer | the native chain; the run-ending travel refused by its author |
-| sleep | each peer sleeps natively; each peer reports its rest state, the host relays it and its own sleeping flag | |
+| sleep | each peer sleeps natively; each peer reports its rest state, the host relays it and its own sleeping flag; a client's nightmare roll is the mod's, at the host's pace | |
 | inventory | that peer; the host stores it | never on the wire as gameplay |
 | roster, kick, ban | the host | rows asserted as state; a ban by id and address at the identity proof |
 
@@ -314,8 +448,9 @@ dead peer through the ragdoll bit of its next pose.
 
 | Limit | Evidence |
 |---|---|
+| A remote player casts no shadow from any light, as a real player's own body casts none on its own screen: the game turns that off for a player, and a puppet follows it so its flashlight is not shadowed by its own body | `[V]` `ue_wrap/actors/puppet_spawn` sets `SetCastShadow(false)` on both body meshes; `harness/autotest/autotest_beam_look.cpp` |
 | No chat line announces a death | `[V]` `coop/comms/chat_sync` carries no such kind |
-| After a revive the player can drift horizontally from the base gate, metres over seconds; the cause is unmeasured | `[V]` `harness/autotest/death_state_probe.cpp` reads the position back |
+| After a revive the player can drift horizontally from where it woke, metres over seconds; the cause is unmeasured | `[V]` `harness/autotest/death_state_probe.cpp` reads the position back |
 | Damage a puppet takes on another machine is dropped by design; only the victim's own contacts count | `[V]` `coop/player/player_damage` |
 | A third-party bundle pak cannot be discovered: bundle membership is a fixed table | `[V]` `coop/player/skin_registry` |
 | A ban is by player id and, on a direct link, by address: a banned player with a new identity key who comes from a new address or through a relay is a new player, and an address ban refuses whoever shares that address | `[V]` `coop/moderation/ban_list` |
@@ -334,7 +469,9 @@ dead peer through the ragdoll bit of its next pose.
 | skins | `coop/player/client_model`, `coop/player/skin_registry`, `coop/player/skin_effects`, `coop/player/local_body`, `coop/player/skin_preview`, `ui/skins_panel`, `assets/paks/` |
 | held and toggled items | `coop/player/hand_item`, `coop/player/item_activate`, `coop/player/flashlight_click_sound` |
 | damage and death | `coop/player/player_damage`, `coop/player/death_revive`, `coop/player/run_end_travel`, `coop/player/ragdoll_gate` |
-| sleep | `coop/player/sleep_sync`, `coop/player/sleep_rest` |
+| leaving during an event | `coop/player/leave_in_event` |
+| sleep | `coop/player/sleep_sync`, `coop/player/sleep_rest`, `coop/player/nightmare_roll`, `harness/autotest/autotest_nightmare.cpp` (the drill) |
+| another map (the backrooms) | `coop/player/level_visit`, `ue_wrap/world/level_instance`, `harness/autotest/autotest_level_visit.cpp` (the drill) |
 | inventory | `coop/items/player_inventory_sync` |
 | moderation | `coop/moderation/moderation`, `coop/moderation/ban_list`, `coop/moderation/seen_players` |
 | tests | `harness/autotest/autotest_death.cpp` (the drill) + `death_state_probe.cpp` (the reads it and `autotest_runend.cpp` share), `autotest_damage.cpp`, `autotest_playerdmg.cpp`, `autotest_ragdoll.cpp`, `autotest_puppetframe.cpp` |

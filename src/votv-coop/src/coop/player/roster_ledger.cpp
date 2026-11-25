@@ -205,8 +205,8 @@ void SetGuid(int slot, std::string guid) {
     g_rows[slot].guid = std::move(guid);
 }
 
-// Host-local, as MTA keeps a player's version server-side (CGame.cpp:1927, CLuaPlayerDefs.cpp:47). Set once at the
-// Join; unlike MTA's re-sweep of connected players (CGame.cpp:4858-4871), switching the rule off leaves them in.
+// Host-local, as MTA keeps a player's version server-side (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1927, reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaPlayerDefs.cpp:47). Set once at the
+// Join; unlike MTA's re-sweep of connected players (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:4858-4871), switching the rule off leaves them in.
 void SetOtherBuild(int slot) {
     UE_ASSERT_GAME_THREAD("g_rows (roster_ledger::SetOtherBuild)");
     if (!ValidSlot(slot) || !g_rows[slot].occupied()) return;

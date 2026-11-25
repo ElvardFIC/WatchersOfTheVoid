@@ -15,6 +15,8 @@
 
 #include "coop/world/event_active_sync.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
@@ -36,6 +38,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -73,6 +76,7 @@ std::chrono::steady_clock::time_point g_joinRetry{};
 uint64_t g_joinEpoch = 0;
 uint32_t g_joinWorld = 0, g_joinSerial = 0;
 bool g_sendingJoin = false;
+std::map<std::string, uint32_t> g_snapshotsByRow;
 
 long long NowMs() {
     using namespace std::chrono;
@@ -112,6 +116,7 @@ const ClassRow kClassRowMap[] = {
     { "boarInvasion_C", "boarwar" },
     { "dreamer_dreambase_C", "dreambase" },
     { "arirShip_C", "arirShip" },
+    { "noiser_C", "alienSounds" },                       // each of the three noisers registers; the join edge sends the row once
 };
 
 const char* RowForClass(const std::string& className) {
@@ -134,6 +139,12 @@ const char* LaneFor(const std::string& className) {
     for (const auto& e : kLaneOwnedClasses)
         if (className == e.className) return e.lane;
     return nullptr;
+}
+
+// The drill's red arm: the join edge sends no alien-sounds replay.
+bool AlienJoinOff() {
+    static const bool off = coop::config::ResolveFlag(coop::config_registry::rows::alien_join_off);
+    return off;
 }
 
 // Does the registry name `actor` an Npc element: a creature, whose count rides coop/world/creature_event_relay?
@@ -287,6 +298,7 @@ void SendJoinSnapshotForSlot(int slot) {
         if (obj && R::IsLive(obj)) { ue_wrap::CachedObjRef ref; ref.Set(obj); members.push_back(ref); }
     }
     std::vector<void*> sent;
+    std::vector<const char*> rowsSent;
     bool complete = true;
     for (const auto& member : members) {
         if (!current()) return;
@@ -306,6 +318,14 @@ void SendJoinSnapshotForSlot(int slot) {
             continue;
         }
         const char* row = RowForClass(className);
+        // Several registrants of one event (the alien sounds' three noisers) are one replay, and the row keys it.
+        if (row) {
+            bool again = false;
+            for (const char* r : rowsSent) again |= (std::strcmp(r, row) == 0);
+            if (again) continue;
+            if (AlienJoinOff() && std::strcmp(row, "alienSounds") == 0) continue;
+            rowsSent.push_back(row);
+        }
         // A creature with no row has no replay to ship: its count rides CreatureEventActive, or stays each
         // viewer's own (coop/world/creature_event_relay). The WARN below stays for classes nothing covers.
         if (!row && IsCreature(obj)) {
@@ -323,6 +343,7 @@ void SendJoinSnapshotForSlot(int slot) {
         if (!current()) return;
         if (member.Get() != obj) continue;
         if (s->SendReliableToSlot(slot, coop::net::ReliableKind::EventSnapshot, &p, sizeof(p))) {
+            ++g_snapshotsByRow[row ? row : ""];
             UE_LOGI("event_active: join-edge slot=%d SNAPSHOT class=%s row=%s elapsed=%s", slot,
                     className.c_str(), row ? row : "<unmapped>",
                     known ? (std::to_string(elapsed) + "s").c_str() : "unknown (began before this host watched)");
@@ -360,10 +381,16 @@ void OnReliable(const coop::net::EventSnapshotPayload& payload) {
     coop::event_fire_sync::ReplayInFlightRow(row);
 }
 
+uint32_t JoinSnapshotsSent(const char* row) {
+    const auto it = g_snapshotsByRow.find(row ? row : "");
+    return it == g_snapshotsByRow.end() ? 0 : it->second;
+}
+
 void OnDisconnect() {
     ++g_joinEpoch; g_joinDebt = {}; g_joinRetry = {};
     g_began.clear();
     g_beganGen = 0;
+    g_snapshotsByRow.clear();
     g_session.store(nullptr, std::memory_order_release);
 }
 

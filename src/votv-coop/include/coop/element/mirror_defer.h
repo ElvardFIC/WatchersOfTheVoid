@@ -48,7 +48,6 @@ struct HideInfo {
     const char* fallbackWhy;
 };
 // True with `out` when `eid` is hidden now.
-bool HideInfoOf(uint32_t eid, HideInfo& out);
 
 // A fresh host-mirror actor was just spawned AND registered into its MirrorManager. Hide it
 // (SetActorHiddenInGame) and treat its collision as `collision` says. `holdUntilQuiescence` = the
@@ -65,5 +64,6 @@ void RevealConfirmedAtLift();
 // still-hidden survivor + disarm. The catch-all -- every hidden mirror was tracked here, so
 // nothing can stay stuck hidden (a swept ghost is dead -> liveness-gated, skipped).
 void RevealAllSurvivorsAtQuiescence();
+
 
 }  // namespace coop::mirror_defer

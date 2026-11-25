@@ -1,0 +1,80 @@
+// harness/autotest/disc_drills.h -- what the drills wait on before they act.
+// Private to the drills that include it (grep `disc_drills.h` under harness/autotest/ for the list).
+
+#pragma once
+
+#include "harness/autotest/peer_signal.h"
+#include "harness/session_runtime.h"
+
+#include "coop/net/session.h"
+#include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
+#include "coop/session/host_world_settle.h"
+#include "coop/session/join_progress.h"
+#include "coop/session/net_pump.h"
+#include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
+
+#include <atomic>
+
+namespace harness::autotest::disc_drill {
+
+template <class Fn>
+void OnGameThread(Fn&& fn) {
+    // A body that faulted or threw is absorbed by the pump and leaves its outputs unread: said, never silent.
+    if (ue_wrap::game_thread::RunAndWait([&fn](std::atomic<int>& d) { fn(); d.store(1); }) != 1)
+        UE_LOGE("drill: a game-thread task faulted -- what it was to read stays unread");
+}
+
+// HOST: its player stands and its world has settled: the load's own removals are over and the object index holds every
+// birth announced, so what the drill spawns or writes is not taken back.
+inline bool HostWorldUp() {
+    if (!peer_signal::WaitFor("the host's player", 240, [] {
+            void* pawn = nullptr;
+            OnGameThread([&] { pawn = coop::players::Registry::Get().Local(); });
+            return pawn != nullptr;
+        }))
+        return false;
+    return peer_signal::WaitFor("the host's world settled and the object index caught up", 120, [] {
+        bool settled = false;
+        OnGameThread([&] {
+            settled = coop::host_world_settle::Settled() && ue_wrap::object_index::IsSeeded() &&
+                      ue_wrap::object_index::Backlog() == 0;
+        });
+        return settled;
+    });
+}
+
+// CLIENT: its world is announced and the host's puppet stands here.
+inline bool HostPuppetUp() {
+    if (!peer_signal::WaitFor("the announced world", 480, [] {
+            bool ready = false;
+            OnGameThread([&] { ready = coop::net_pump::HasAnnouncedWorldReady(); });
+            return ready;
+        }))
+        return false;
+    return peer_signal::WaitFor("the host's puppet", 60, [] {
+        bool have = false;
+        OnGameThread([&] {
+            coop::RemotePlayer* p = coop::players::Registry::Get().Puppet(0);
+            have = p && p->valid();
+        });
+        return have;
+    });
+}
+
+// CLIENT: its join is over (connected, the world announced and the join's progress idle, the predicate `rig: READY joined`
+// stands on), the moment a peer may act or leave without cutting the join off.
+inline bool ClientJoined() {
+    return peer_signal::WaitFor("this client's join complete", 240, [] {
+        bool done = false;
+        OnGameThread([&] {
+            done = harness::session_runtime::Session().connected() && coop::net_pump::HasAnnouncedWorldReady() &&
+                   coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle;
+        });
+        return done;
+    });
+}
+
+}  // namespace harness::autotest::disc_drill

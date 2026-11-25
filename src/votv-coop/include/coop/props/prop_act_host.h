@@ -31,10 +31,10 @@ void NoteShortPayload(uint8_t senderSlot);        // the dispatcher saw a short 
 void RunSelftest();                               // the pure decisions, once per start; NOT the game thread
 
 // The host's dev counters (TallyOf). The Fit* tallies name the term of an act's conditions that refused it; the reply
-// to the sender stays WrongFamily. MTA sends a reason byte per cause (CGame.cpp:3359) because its client rolls back a
+// to the sender stays WrongFamily. MTA sends a reason byte per cause (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3359) because its client rolls back a
 // predicted entry; ours cancels at PRE and shows one line, so every refusal of the act is one reply reason.
 enum class Tally : uint8_t { TargetGone, BadCommit, HeldAtDisconnect, DestroyFailed, QueueFullUnready, BadSender,
-                             GrantUnsent, FitUnread, FitBadFamily, FitTrash, FitNotProp, FitDenied, FitNoUseRow,
+                             GrantUnsent, UnpackRollFailed, FitUnread, FitBadFamily, FitTrash, FitNotProp, FitDenied, FitNoUseRow,
                              FitCollectRefused, FitPickupRefused, FitIgnoreSave, FitChild, FitPhysics, FitCanCollect,
                              FitCanHold, FitHeavy, FitMeshRoot, FitVolume, FitSaveClass, FitEquipRow, FitNotEdible,
                              kCount };
@@ -57,7 +57,7 @@ struct ActTraits {
          heavy, meshRoot, volumeFits, saveClass, equipRow, offered, foodBody, notEdible;
 };
 // The requester's own state (room, hunger) is no term of a fit: MTA's pickup reads the requester's health and armor on
-// the server (CPickup.cpp:384-396), but a peer's inventory is not replicated here, so its replay refuses and aborts.
+// the server (reference/mtasa-blue/Server/mods/deathmatch/logic/CPickup.cpp:384-396), but a peer's inventory is not replicated here, so its replay refuses and aborts.
 bool PocketFits(const ActTraits& t);   // putObjectInventory2 and addObject
 bool HoldFits(const ActTraits& t);     // Hold Object and updateHold
 bool UseFits(const ActTraits& t);      // the use verbs the lane carries
@@ -65,12 +65,16 @@ bool KnownFamily(uint8_t family);      // 1..3
 // The first term of the verb's fit that is false, in the order the fit reads them; none when the act fits.
 std::optional<Tally> FirstRefusal(uint8_t family, const ActTraits& t);
 std::optional<coop::net::PropActReplyPayload> ReplyFor(ActVerdict v, uint16_t id);
-enum class CommitStep : uint8_t { BadCommit, Abort, TargetGone, Destroy };
-CommitStep DecideCommit(bool matched, uint8_t committed, bool liveAndSame);
+// A snack's commit never destroys by the lane: SnackEnded is its copy gone on the client (committed 1), SnackApplied the
+// eater run with the copy alive there (committed 2); the host applies the reported delta to its own copy either way
+// (coop/props/snack_act). `snack` is whether the grant was a USE of an actor that walks to prop_snack_C (a pocket or a
+// hold of a snack is no snack commit); `flags` the commit's second byte.
+enum class CommitStep : uint8_t { BadCommit, Abort, TargetGone, Destroy, SnackEnded, SnackApplied };
+CommitStep DecideCommit(bool matched, uint8_t committed, bool liveAndSame, bool snack, uint8_t flags);
 enum class AfterStep : uint8_t { DestroyFailed, FanOut };
 AfterStep AfterDestroy(bool destroyed);
 const char* VerdictName(ActVerdict v);   // "wait" "gone" "wrong-family" "held" "reach" "grant"
-const char* CommitName(CommitStep s);    // "bad" "abort" "target-gone" "destroy"
+const char* CommitName(CommitStep s);    // "bad" "abort" "target-gone" "destroy" "snack-ended" "snack-applied"
 }  // namespace internal
 
 enum class WaitCause : uint8_t { NotReady, Reservation, NoBody, kCount };
@@ -82,11 +86,15 @@ uint32_t WaitsOf(int slot, WaitCause c);                          // served Wait
 uint32_t MaxDepthOf(int slot);                                    // the deepest the slot's queue has been this session
 uint32_t AnsweredTotal(int slot);                                 // the sum of AnsweredFor over every reason
 uint32_t CommitsOf(int slot, internal::CommitStep s);             // commits taken per step
+uint32_t UnpacksRolled();                                   // unpacks (an MRE's, a kit's) rolled on the host for a client
 
 namespace dev {   // called only from src/coop/dev/ (the act drills); compiled always, inert unless called
 // Would the judge accept `family` on `actor`? FamilyFits' path with no tally bumped. `*first` is the term that
 // refuses, Tally::kCount when the act fits. Game thread.
 bool CensusFits(void* actor, uint8_t family, Tally* first);
+// Called from OnPeerGone with the leaver's slot and the eid it held, after its reservation is released; null by default. The
+// departure's own event: the session-wide tally the same tick's DisconnectAll clears is not a place to read it from.
+void SetOnHeldAtDeparture(void (*fn)(uint8_t slot, uint32_t eid));
 }  // namespace dev
 
 }  // namespace coop::prop_act_host

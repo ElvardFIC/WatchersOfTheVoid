@@ -15,19 +15,19 @@
 namespace coop::net {
 
 // MTA relays a player's sync to the others at a zone's interval and skips what falls inside it, the next update
-// carrying the state then current (CPlayer.cpp:981-1030; the intervals, CBandwidthSettings.h:98, set per preset).
+// carrying the state then current (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayer.cpp:981-1030; the intervals, reference/mtasa-blue/Server/mods/deathmatch/logic/CBandwidthSettings.h:98, set per preset).
 // Ours diverges in four ways, each for the cost it bounds. The states are sent once per change, not as a stream, so
 // the newest skipped value is kept and paid when the budget allows. The host's own copy is paced, not only the relay:
 // the host's application is itself the cost (a mirror spawned, a model loaded, a feed line), so the host's view of
 // the state lags the newest by at most a refill. A burst comes before the pace, so an honest quick run of changes
 // lands at once. The pace is per sender, not per viewer: what is bounded is what one client makes every peer do.
 // Source keeps a player's changed settings pending while its rules refuse them and applies them on a later think
-// (player.cpp:3467-3473,3536,4641-4645); its flag holds no value, reading the engine's current settings when it
+// (reference/source-sdk-2013/src/game/server/player.cpp:3467-3473,3536,4641-4645); its flag holds no value, reading the engine's current settings when it
 // applies, and waits on a rule, where ours holds the value the wire carried once and waits on a rate.
-// MTA's nearest analog for a client changing a shared state is element data (CGame.cpp:2715-2796): applied at once,
+// MTA's nearest analog for a client changing a shared state is element data (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2715-2796): applied at once,
 // relayed to all but the source, the server's value sent back to the source when a handler cancels it. Paced here for
 // the host's own cost; compared by the receiver, where MTA's sending client compares (its client-side
-// CStaticFunctionDefinitions.cpp:1032) and its server applies every arrival; an owed sender is not re-told, so a
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1032) and its server applies every arrival; an owed sender is not re-told, so a
 // crossing leaves apart only the one past its budget.
 
 class LatestWins {
@@ -42,6 +42,15 @@ public:
     // The payment, asked each tick: true when a value is owed and a token pays for it now (apply the pending value).
     bool Due(const IntentBudget& budget, uint64_t nowMs) {
         if (!owed_ || !bucket_.Take(budget, nowMs)) return false;
+        owed_ = false;
+        return true;
+    }
+
+    // The owed value paid now, ahead of its token, for a request that rests on it: the token goes into debt of at most a
+    // burst, which the refills pay before a later value is applied, so the lane's average rate is still its budget.
+    // False, the value still owed, when nothing is owed or the debt is at its limit.
+    bool DueIntoDebt(const IntentBudget& budget, uint64_t nowMs) {
+        if (!owed_ || !bucket_.Charge(budget, nowMs, budget.burst)) return false;
         owed_ = false;
         return true;
     }

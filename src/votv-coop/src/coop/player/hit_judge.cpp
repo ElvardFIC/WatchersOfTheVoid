@@ -108,8 +108,8 @@ bool JudgeHit(int slot, const FVector& eye, const FVector& aim, const FVector& h
     // A ceiling, not a recomputation: the host does not read the struck material (that needs a trace against the
     // creature's mesh, and the host's row holds the multipliers), so it bounds the claim by the item's most (damage
     // times its largest multiplier). Both precedents compute the damage on the authority: Source from the server's
-    // weapon data (weapon_hl2mpbasebasebludgeon.cpp:149-165), MTA's bulletsync damage being only a backup
-    // (CClientPlayer.cpp:260 fBackupDamage).
+    // weapon data (reference/source-sdk-2013/src/game/shared/hl2mp/weapon_hl2mpbasebasebludgeon.cpp:149-165), MTA's bulletsync damage being only a backup
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPlayer.cpp:260 fBackupDamage).
     outDamage = claimedDamage < swing.maxDamage ? claimedDamage : swing.maxDamage;
     outReason = nullptr;
     return true;

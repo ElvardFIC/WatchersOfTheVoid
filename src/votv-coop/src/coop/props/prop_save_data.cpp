@@ -4,6 +4,7 @@
 #include "coop/props/prop_record_gates.h"
 #include "coop/props/remote_prop.h"
 #include "coop/props/prop_hold.h"
+#include "coop/props/disc_record_ceiling.h"
 #include "coop/props/prop_drive_host.h"
 #include "ue_wrap/actors/safe.h"
 #include "coop/props/prop_food_sync.h"
@@ -98,6 +99,12 @@ uint64_t g_worldEpoch = 0;
 // the C++ call stack, not the world: OnDisconnect must not clear them while a call is active.
 std::set<std::wstring> g_applying;
 std::set<std::wstring> g_publishing;
+constexpr size_t kMaxOversizeLogged = 256;
+std::set<std::wstring> g_oversizeLogged;
+std::wstring HeadKey(const std::vector<uint8_t>& body) {
+    if (body.size() < 2 || body[1] == 0 || body.size() < static_cast<size_t>(2 + body[1])) return L"<malformed>";
+    return std::wstring(body.begin() + 2, body.begin() + 2 + body[1]);
+}
 #include "prop_save_order.inc"
 struct KeyScope {
     KeyScope(std::set<std::wstring>& active, const std::wstring& key)
@@ -351,7 +358,7 @@ bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
         UE_LOGW("prop_save_data: record for key '%ls' is %zu B, over the %zu cap -- REFUSED, not "
                 "truncated; that prop's state stays where it is. If this fires on a legitimate "
                 "prop the cap is wrong, not the prop.",
-                key.c_str(), body.size(), MaxRecordBytes());
+                key.c_str(), body.size(), coop::disc_record::MaxBodyBytes());
         return false;
     }
     const bool host = PT::SessionIsHost();
@@ -548,13 +555,15 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     if (intent && !host) return;
     std::vector<uint8_t> body;
     if (!(intent ? g_asmIntent : g_asmCanonical).OnChunk(p, senderSlot, body)) return;
-    // The same ceiling the sender enforces, applied on receive: a body between it and the
-    // transport's own limit would be applied here and then REFUSED on the re-publish, leaving this
-    // peer holding state no other peer can be given.
-    if (body.size() > MaxRecordBytes()) {
-        UE_LOGW("prop_save_data: %s body from slot %u is %zu B, over the %zu ceiling -- dropped",
-                intent ? "intent" : "record", static_cast<unsigned>(senderSlot), body.size(),
-                MaxRecordBytes());
+    // The sender's own ceiling, applied on receive: a body above it would be applied here and then REFUSED on
+    // the re-publish, leaving this peer holding state no other peer can be given. One line per key.
+    if (body.size() > coop::disc_record::MaxBodyBytes()) {
+        if (g_oversizeLogged.size() >= kMaxOversizeLogged) g_oversizeLogged.clear();   // turns over, never quiet
+        const std::wstring named = HeadKey(body);
+        if (g_oversizeLogged.insert(named).second)
+            UE_LOGW("prop_save_data: %s body for key '%ls' from slot %u is %zu B, over the %zu ceiling -- "
+                    "refused (said once per key)", intent ? "intent" : "record", named.c_str(),
+                    static_cast<unsigned>(senderSlot), body.size(), coop::disc_record::MaxBodyBytes());
         return;
     }
     if (intent && !AllowIntent(senderSlot)) return;
@@ -803,9 +812,7 @@ void OnPeerGone(uint8_t senderSlot) {
         if (it->second.senderSlot == senderSlot) { const auto dead = it++; Unpark(dead); }
         else ++it;
     }
-    // The occupancy goes with the rows. Leaving it behind wedges the NEXT occupant of this slot to
-    // a single parked record, evicting its own on every arrival, and turns each Park into two full
-    // scans of the park -- slots are recycled lowest-free, so the next joiner inherits it.
+    // The occupancy goes with the rows: left behind, a recycled slot's next occupant is wedged to one parked record.
     g_parkUse.erase(senderSlot);
     g_intentRate.erase(senderSlot);   // and a fresh occupant starts with a fresh rate window
     for (auto it = g_awaiting.begin(); it != g_awaiting.end();) {
@@ -814,4 +821,10 @@ void OnPeerGone(uint8_t senderSlot) {
     }
 }
 
+namespace dev {
+bool Unsettled(const std::wstring& key) {
+    if (g_parked.count(key)) return true;
+    return std::any_of(g_retry.begin(), g_retry.end(), [&](const auto& row) { return row.first.first == key; });
+}
+}
 }  // namespace coop::prop_save_data

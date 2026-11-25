@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$BuildDirectory='build/votv-coop-2154',
     [string]$EvidenceDirectory='build/todo-audit',
     [string]$AssetDirectory='../_research/current-assets',
@@ -7,6 +7,8 @@
 )
 $ErrorActionPreference='Stop'
 $checkout=Split-Path -Parent $PSScriptRoot
+$testRoot=Join-Path (Join-Path $checkout 'agent') 'tests'
+if(-not (Test-Path -LiteralPath $testRoot -PathType Container)){throw 'Could not locate the regression runner directory'}
 $evidence=if([IO.Path]::IsPathRooted($EvidenceDirectory)){$EvidenceDirectory}else{Join-Path $checkout $EvidenceDirectory}
 $logs=Join-Path $evidence 'logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
@@ -16,7 +18,9 @@ function Get-SourceStamp {
     $production=Join-Path $checkout 'src/votv-coop'
     $files=@(Get-ChildItem -LiteralPath (Join-Path $production 'include'),(Join-Path $production 'src') -Recurse -File |
         Where-Object { $_.Extension -in @('.h','.hpp','.cpp','.inc','.rc') })
-    $files+=Get-Item -LiteralPath (Join-Path $production 'CMakeLists.txt'),(Join-Path $production 'sources.cmake'),(Join-Path $production 'sources_ue_wrap.cmake'),(Join-Path $production 'sources_dev.cmake')
+    $files+=@('CMakeLists.txt','sources.cmake','sources_ue_wrap.cmake','sources_autotest.cmake','sources_dev.cmake' |
+        ForEach-Object { Join-Path $production $_ } | Where-Object { Test-Path -LiteralPath $_ } |
+        ForEach-Object { Get-Item -LiteralPath $_ })
     $rows=foreach($file in ($files | Sort-Object FullName)) {
         $file.FullName.Substring($production.Length)+':'+(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     }
@@ -61,13 +65,13 @@ try {
         'run_scorch','run_sponge_effects','run_window_stroke','run_toy_music','run_wall_creative','run_water_pour','run_prop_drive_lifetime','run_glowstick_grab','run_2124','run_2126',
         'run_watoy','run_windows','run_2166','run_wall_delivery','run_2176','run_2157','run_2145','run_2147'
     )) {
-        Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")
+        Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $testRoot "$name.ps1"))
     }
     foreach($entry in @(@('coin_collect','-CollectOnly'),@('inventory_capture','-InventoryOnly'))) {
-        Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1',$entry[1])
+        Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $testRoot 'run_2151.ps1'),$entry[1])
     }
     foreach($name in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test','sat_console_native_contract_test')) {
-        $arguments=@("agent/tests/$name.py")
+        $arguments=@((Join-Path $testRoot "$name.py"))
         $runner=$name
         if($name -in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
             $arguments+=$AssetDirectory
@@ -81,9 +85,9 @@ try {
     Invoke-Check 'public_prose_include' $python @('.github/ci/public_prose_include_test.py')
     # Disk regression compiles the production conversion code with MSVC.
     . (Join-Path $checkout '../_toolchain/env.ps1')
-    Invoke-Check 'disk_utf8' $python @('agent/tests/disk_utf8_test.py')
+    Invoke-Check 'disk_utf8' $python @((Join-Path $testRoot 'disk_utf8_test.py'))
     Invoke-Check 'reliablekind_gate' $python @('.github/ci/reliablekind_gate.py','--drill')
-    Invoke-Check 'build_order' 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/build_order_test.ps1')
+    Invoke-Check 'build_order' 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $testRoot 'build_order_test.ps1'))
     foreach($requested in $CheckGroups){if($requested -notin $results.Runner){throw "Unknown check group: $requested"}}
     if((Get-SourceStamp) -ne $sourceAtStart){throw 'Production sources changed during the regression run; rerun against a stable source tree'}
     if(@($results | Where-Object ExitCode -ne 0).Count){throw 'Current checks failed; Release build not started; see results.json and runner logs'}
@@ -129,3 +133,4 @@ try {
     $identity | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'verification.json') -Encoding UTF8
     Write-Output "PASS $($results.Count) current validation groups; gameplay remains unverified"
 } finally {Pop-Location}
+

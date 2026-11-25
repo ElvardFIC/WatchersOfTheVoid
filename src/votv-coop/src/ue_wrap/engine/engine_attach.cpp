@@ -142,9 +142,6 @@ bool SetActorRootCollisionEnabled(void* actor, uint8_t collisionType) {
     return SetComponentCollisionEnabled(PrimitiveRootOf(actor), collisionType);
 }
 
-int GetActorRootCollisionEnabled(void* actor) {
-    return GetComponentCollisionEnabled(PrimitiveRootOf(actor));
-}
 
 bool SetComponentCollisionEnabled(void* component, uint8_t collisionType) {
     if (!IsPrimitiveComponent(component)) return false;
@@ -270,6 +267,23 @@ bool AttachActorToComponentSocket(void* actor, void* component, const wchar_t* s
     return Call(actor, f);
 }
 
+bool AttachActorToComponentKeepWorld(void* actor, void* component) {
+    if (!actor || !R::IsLive(actor) || !component || !R::IsLive(component)) return false;
+    void* fn = ActorFn(&g_attachCompFn, L"K2_AttachToComponent");
+    if (!fn) { UE_LOGW("engine: K2_AttachToComponent unresolved -- cannot attach KeepWorld"); return false; }
+    R::FName socket{};
+    ParamFrame f(fn);
+    f.Set<void*>(L"Parent", component);
+    f.SetRaw(L"SocketName", &socket, sizeof(socket));
+    f.Set<uint8_t>(L"LocationRule", uint8_t{1});  // EAttachmentRule::KeepWorld
+    f.Set<uint8_t>(L"RotationRule", uint8_t{1});  // KeepWorld
+    f.Set<uint8_t>(L"ScaleRule", uint8_t{1});     // KeepWorld
+    f.Set<bool>(L"bWeldSimulatedBodies", false);
+    if (!Call(actor, f)) return false;
+    void* attachedTo = nullptr;
+    return GetAttachParentComponent(actor, attachedTo) && attachedTo == component;
+}
+
 bool DetachActorFromParent(void* actor) {
     // Generic detach (K2_DetachFromActor, KeepWorld) -- leaves `actor` where the attach
     // left it so a subsequent pose-drive / ragdoll takes over cleanly. Game thread.
@@ -292,6 +306,22 @@ bool GetAttachParentActor(void* actor, void*& parent) {
     if (!Call(actor, f)) return false;
     void* p = f.Get<void*>(L"ReturnValue");
     parent = (p && R::IsLive(p)) ? p : nullptr;
+    return true;
+}
+
+bool GetAttachParentComponent(void* actor, void*& parent) {
+    parent = nullptr;
+    void* root = RootComponentOf(actor);
+    if (!root) return false;
+    const int32_t offset = R::FindPropertyOffset(R::ClassOf(root), L"AttachParent");
+    if (offset < 0) {
+        UE_LOGW("engine: USceneComponent::AttachParent unresolved");
+        return false;
+    }
+    void* component = ReadPtrAt(root, static_cast<size_t>(offset));
+    if (!component) return true;
+    if (!R::IsLive(component)) return false;
+    parent = component;
     return true;
 }
 
@@ -407,5 +437,7 @@ bool TryGetRootLocationRaw(void* actor, FVector& loc) {
     FRotator rot{};
     return TryGetRootPoseRaw(actor, loc, rot);
 }
+
+
 
 }  // namespace ue_wrap::engine

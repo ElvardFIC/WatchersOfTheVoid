@@ -6,7 +6,8 @@
 // client's hook once it has bitten, and the hooks the world itself holds -- the save's anchored
 // ones the load path re-ties and the level-placed variant that ties itself at begin-play, which no
 // table of the lane names and the shared scan pass finds. All four sets are read here every pass.
-// Game thread, host only.
+// The same sets answer FindHookByKey on either role: a pickup names its hook by save key (coop/items/hook_retrieve).
+// Game thread; the claims host only.
 
 #include "hook_sync_detail.h"
 #include "coop/items/hook_retrieve.h"
@@ -23,6 +24,7 @@
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/world_identity.h"  // Generation: the scan's stamp
+#include "ue_wrap/world/keyed_objects.h"
 
 #include <cstdint>
 #include <functional>
@@ -182,6 +184,39 @@ void ResetPropClaims() {
     g_world.clear();
     g_worldScratch.clear();
     g_worldGen = 0;
+}
+
+void* FindHookByKey(const std::wstring& key) {
+    if (key.empty() || key == L"None") return nullptr;
+    auto keyed = [&key](void* h) { return h && PR::GetActorSaveKeyString(h) == key; };
+    for (const Adopted& a : AdoptedHooks())
+        if (void* h = a.ref.Get(); keyed(h)) return h;
+    for (const auto& kv : Mirrors())
+        if (kv.second.anchored)
+            if (void* h = kv.second.ref.Get(); keyed(h)) return h;
+    if (g_worldGen == ue_wrap::world_identity::Generation())
+        for (const WorldHook& w : g_world)
+            if (R::IsLiveByIndex(w.actor, w.idx) && keyed(w.actor)) return w.actor;
+    // A hook a save loaded is in the game's own key map from the load, before the scan's first pass has seen it.
+    if (ue_wrap::keyed_objects::Available()) {
+        void* h = ue_wrap::keyed_objects::Resolve(key.c_str());
+        if (h && R::IsLive(h) && H::IsHookFamily(h)) return h;
+    }
+    return nullptr;
+}
+
+void CollectAnchoredKeys(std::vector<std::wstring>& out) {
+    auto add = [&out](void* h) {
+        if (!h) return;
+        std::wstring k = PR::GetActorSaveKeyString(h);
+        if (!k.empty() && k != L"None") out.push_back(std::move(k));
+    };
+    for (const Adopted& a : AdoptedHooks()) add(a.ref.Get());
+    for (const auto& kv : Mirrors())
+        if (kv.second.anchored) add(kv.second.ref.Get());
+    if (g_worldGen == ue_wrap::world_identity::Generation())
+        for (const WorldHook& w : g_world)
+            if (R::IsLiveByIndex(w.actor, w.idx)) add(w.actor);
 }
 
 void RegisterWorldHooksScan() {

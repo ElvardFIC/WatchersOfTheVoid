@@ -51,7 +51,8 @@ inline constexpr const char* kSectionOrder[] = {
     "player",  // durable identity: player_guid, player_skin, nameplate, nick_color
     "ui",      // fonts, scale, panels
     "voice",   // devices, gates, volumes
-    "dev",     // dev/test flags -- deliberately last, out of casual sight
+    "world",   // the session's world, the host's to set: the backrooms
+    "dev",    // dev/test flags -- deliberately last, out of casual sight
 };
 inline constexpr size_t kSectionCount = sizeof(kSectionOrder) / sizeof(kSectionOrder[0]);
 
@@ -126,7 +127,7 @@ const char* const* CredentialKeys(size_t& count);
 // A row's scope, whether its readers follow a set, and whether it names an address, declared with
 // the row by CFG_ROWFLAGS in the row list: kRowServer = it belongs to the server being hosted;
 // kRowReplicated = its session value is sent to every client (Source's FCVAR_REPLICATED,
-// iconvar.h:55-62); replicated implies server.
+// reference/source-sdk-2013/src/public/tier1/iconvar.h:55-62); replicated implies server.
 // A replicated row is never a credential, and its key and its default fit the wire (static_asserts
 // in config_registry.cpp); a value longer than kServerSettingTextMax is refused by SetValue at run
 // time. kRowLive = every reader of the row follows a set (subscribed, or re-resolving at each use):

@@ -8,9 +8,9 @@ try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
     foreach($test in @('drink_spill','drink_pour','drink_spill_wrapper','hand_generation')){
         $includes=@('/I','src/votv-coop/include')
-        if($test -in @('drink_spill','drink_pour')){$includes=@('/I','agent/tests/grime_stubs','/I','agent/tests/placed_save_stubs')+$includes}
-        if($test -eq 'hand_generation'){$includes=@('/I','agent/tests/hand_stubs','/I','agent/tests/stubs')+$includes}
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/$test.obj" "/Fe$output/$test.exe" "agent/tests/${test}_test.cpp" /link /OPT:REF
+        if($test -in @('drink_spill','drink_pour')){$includes=@('/I',(Join-Path $PSScriptRoot 'grime_stubs'),'/I',(Join-Path $PSScriptRoot 'placed_save_stubs'))+$includes}
+        if($test -eq 'hand_generation'){$includes=@('/I',(Join-Path $PSScriptRoot 'hand_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))+$includes}
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$PSScriptRoot/${test}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE -ne 0){throw "Drink-spill compile failed: $test"}
         & "$output/$test.exe"
         if($LASTEXITCODE -ne 0){throw "Drink-spill test failed: $test"}

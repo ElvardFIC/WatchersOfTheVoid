@@ -92,7 +92,6 @@ bool GrabSocketWorldLocation(void* wisp, ue_wrap::FVector& out);
 // `wispActor` (the local killerwisp mirror, or the real wisp on the host). Idempotent enough
 // for one call per grab; the caller latches. False if the wisp mesh or the player members are
 // unresolvable (logged; the flat death still runs). Game thread.
-bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer);
 // Guarded forms stop between native callbacks when the caller's grab/release
 // lease has retired; a newer capture must not inherit old flag writes.
 bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::function<bool()>& current);
@@ -102,7 +101,6 @@ bool ApplyGrabToLocalPlayerWhile(void* wispActor, void* localPlayer, const std::
 // death fires (the native release detaches first, then ragdolls) and on session teardown, so a
 // mid-grab disconnect does not strand the player without movement. A safe no-op if never
 // grabbed. Game thread.
-bool ReleaseGrabOnLocalPlayer(void* localPlayer);
 bool ReleaseGrabOnLocalPlayerWhile(void* localPlayer, const std::function<bool()>& current);
 
 // Dispatch the wisp's own releasePlayer verb, its canonical grab cancel: detaches the grabbed
@@ -138,4 +136,7 @@ bool PlayFatalityMontage(void* wisp);
 // Separate from killerwisp_C; called for a grounded, parked plain-wisp mirror. Game thread.
 bool DriveWispLanding(void* wispActor);
 
+
+bool ApplyGrabToLocalPlayer(void* wispActor, void* localPlayer);
+bool ReleaseGrabOnLocalPlayer(void* localPlayer);
 }  // namespace ue_wrap::wisp

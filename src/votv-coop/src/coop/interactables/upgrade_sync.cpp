@@ -2,12 +2,15 @@
 
 #include "coop/interactables/upgrade_sync.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/interactables/device_occupancy.h"
 #include "coop/net/intent_bucket.h"
 #include "coop/net/intent_queue.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/roster_ledger.h"  // PerSlotState
+#include "coop/world/balance_sync.h"
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -32,6 +35,7 @@ namespace UP = ue_wrap::upgrades;
 // nothing else in the game carries either name, so a name watch is exact. Watching the BUTTON and
 // not the purchase is deliberate: the handler's whole body is the jump into the ubergraph, so a
 // cancel here takes the debit, the level write, the sound and the repaint together.
+// The fact-rows gate reads only literals, so these two carry the text of UP::kBuyButtonFn and UP::kSellButtonFn.
 UE_FACT_FN(kRowBuy, "upgrade_sync", nullptr,
            L"BndEvt__button_upgDownloadSpd_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature",
            AnyClass);
@@ -96,11 +100,20 @@ void Publish(coop::net::Session& s, const char* why) {
             static_cast<unsigned long long>(g_broadcast));
 }
 
+// A refused module press is answered with the host's truth: its balance and its levels, to the sender alone. The client's
+// own body is already cancelled, so nothing on it moved; the reply is what keeps its copy equal to the host's whatever
+// the cause of the refusal. Both sends are the lanes' own (balance_sync, SendCurrentToSlot below).
+void AnswerRefusal(uint8_t slot) {
+    coop::balance_sync::SendCurrentToSlot(slot);
+    SendCurrentToSlot(slot);
+}
+
 void Execute(coop::net::Session& s, const coop::net::UpgradeIntentPayload& p, uint8_t slot) {
     const int index = static_cast<int>(p.panelIndex);
     const bool buying = p.dir == 0;
+    const bool moduleRow = p.dir == coop::net::upgrade_intent::kModuleBuy || p.dir == coop::net::upgrade_intent::kModuleSell;
 
-    if (!UP::IsLevelRow(index)) {
+    if (!moduleRow && !UP::IsLevelRow(index)) {
         ++g_denied;
         UE_LOGW("upgrade_sync: DENY slot=%u -- index %d is not a level row",
                 static_cast<unsigned>(slot), index);
@@ -113,6 +126,27 @@ void Execute(coop::net::Session& s, const coop::net::UpgradeIntentPayload& p, ui
         ++g_denied;
         UE_LOGW("upgrade_sync: DENY slot=%u -- the laptop is held by slot %u",
                 static_cast<unsigned>(slot), static_cast<unsigned>(holder));
+        if (moduleRow) AnswerRefusal(slot);
+        return;
+    }
+
+    // A module row has no arithmetic of the lane's: the host's own row runs its own button, as a press at its panel does.
+    // The balance and the levels then cross by their own routes.
+    //
+    // Shape of MTA's vehicle enter request (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3079,
+    // VEHICLE_REQUEST_IN): the client only asks, the server runs the request against its own state, and the mirror of
+    // the result is the confirmation. MTA answers a refusal too (VEHICLE_ATTEMPT_FAILED, :3098), and so does this:
+    // AnswerRefusal.
+    if (moduleRow) {
+        if (!UP::PressModuleRow(index, p.dir == coop::net::upgrade_intent::kModuleSell)) {
+            ++g_denied;
+            UE_LOGW("upgrade_sync: DENY slot=%u -- no module row %d on the host's panel", static_cast<unsigned>(slot), index);
+            AnswerRefusal(slot);
+            return;
+        }
+        UE_LOGI("upgrade_sync: HOST pressed module row %d for slot %u (%s)", index, static_cast<unsigned>(slot),
+                p.dir == coop::net::upgrade_intent::kModuleSell ? "sell" : "buy");
+        Publish(s, "a module row");
         return;
     }
 
@@ -206,11 +240,14 @@ void Execute(coop::net::Session& s, const coop::net::UpgradeIntentPayload& p, ui
 
 // The row's `index` and whether it is a MODULE row, both read off the pressed widget.
 //
-// The index alone does not identify a row: the panel really does carry two widgets numbered 27 --
-// the ping-strength level and the 400-credit RC module -- and the module rows are what the level
-// table has no entry for. Without the flag, a press on the module was cancelled as a level buy and
-// re-sent as index 27, so the presser lost the module it paid for and the group bought a
-// ping-strength level for a tenth of the price. `module` is the widget's own discriminator.
+// The index alone does not identify a row: the panel really does carry two widgets numbered 27 -- the level table's
+// triangle-probability row (upg_triangleProb_) and the 400-credit RC module, whose body writes that same store at
+// its own price. Sent as a level buy, a press on the module would be judged by the level's arithmetic. `module` is
+// the widget's own discriminator, and it picks the intent's direction (upgrade_intent::kModuleBuy and kModuleSell).
+// Ten indices have no store: 12-19, 22 and 23 return a temporary of the body's own in both of uicomp_upgradeSlot's
+// level switches (its getLevel and setLevel), so a press on one of them charges its price and holds no level. Nine of
+// them have a row on the laptop: no widget carries 12.
+// Which indices are module rows is the widget's flag and not the switch's; the switch is only what each one writes.
 bool RowOf(void* widget, int* outIndex, bool* outModule) {
     static void*   sCls = nullptr;
     static int32_t sIdxOff = -1;
@@ -230,6 +267,13 @@ bool RowOf(void* widget, int* outIndex, bool* outModule) {
     return true;
 }
 
+// The dev red arm of the module-row drill: a module row's press runs on this machine alone, as it did before it was an
+// intent, so the host never takes it and its next balance puts the charge back.
+bool ModuleIntentOff() {
+    static const bool off = coop::config::ResolveFlag(coop::config_registry::rows::module_intent_off);
+    return off;
+}
+
 sg::Verdict OnButton(const sg::Call& call, uint8_t dir) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) return sg::Verdict::Run;
@@ -238,15 +282,13 @@ sg::Verdict OnButton(const sg::Call& call, uint8_t dir) {
     int index = -1;
     bool isModule = false;
     if (!RowOf(call.object, &index, &isModule)) return sg::Verdict::Run;
-    // A module row buys a one-shot unlock in a store this lane does not carry. Cancelling it would
-    // take the client's own unlock away and give it nothing, so it keeps running locally, exactly
-    // as it did before this lane existed. The flag is tested BEFORE the index, because an index is
-    // not unique across the two kinds of row.
-    if (isModule || !UP::IsLevelRow(index)) return sg::Verdict::Run;
+    // The flag is tested BEFORE the index, because an index is not unique across the two kinds of row.
+    if (!isModule && !UP::IsLevelRow(index)) return sg::Verdict::Run;
+    if (isModule && ModuleIntentOff()) return sg::Verdict::Run;
 
     coop::net::UpgradeIntentPayload p{};
     p.panelIndex = static_cast<uint8_t>(index);
-    p.dir = dir;
+    p.dir = isModule ? (dir == 0 ? coop::net::upgrade_intent::kModuleBuy : coop::net::upgrade_intent::kModuleSell) : dir;
     s->SendReliable(coop::net::ReliableKind::UpgradeIntent, &p, sizeof(p));
     ++g_sent;
     UE_LOGI("upgrade_sync: CLIENT asked to %s index=%d -- own body cancelled (#%llu)",

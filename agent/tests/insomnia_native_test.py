@@ -3,13 +3,13 @@ from pathlib import Path
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = checkout.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = checkout.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
 def graph(asset, function):
-    path = research / 'assets' / ('VotV__Content__' + asset + '.uasset')
+    path = evidence_root / 'assets' / ('VotV__Content__' + asset + '.uasset')
     if not path.is_file():
         raise SystemExit('UNAVAILABLE: extracted Insomniac, ticker and mainGamemode assets required')
     pkg = Package(str(path))

@@ -4,7 +4,7 @@
 // meets a bound derived here and nowhere else. Clients only: the host may cheat and the relay holds. A velocity
 // that is not finite is refused; a finite one is clamped in magnitude, direction kept, and counted by its caller.
 // A drive row whose step disagrees with its velocity is displayed and counted against its syncer's trust, and the
-// right is revoked after a run of them; MTA bounds nothing on a syncer's packet (CUnoccupiedVehicleSync.cpp:263-340).
+// right is revoked after a run of them; MTA bounds nothing on a syncer's packet (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:263-340).
 // Every ceiling carries a 20 percent margin. Measured values come from loopback runs and runs with a fixed 50 ms lag.
 // The sources, in the pawn's Blueprint (mainPlayer_C) as the 0.9.0n pak reflects it:
 //  - Launch: traceThrow's camera-forward speed 1000 / (max(mass, 10) / 15), 1500 cm/s for the lightest mass,
@@ -126,7 +126,7 @@ inline Clamp ClampRowVelocity(float vel[3]) {
 // `arrivalDeltaMs` the host's between their arrivals. The sender's dt may not exceed the host's by more than
 // kJitterMs, so a forged long dt buys no long step, nor a forged short one a free pass. Bounding a claimed dt by the
 // receiver's own arrival delta is Source's shape (a client may not replay more time than the server's budget,
-// Source's player.cpp:3392-3412), not MTA's, whose time context is an invalidation epoch (CElement.cpp:1281-1305).
+// Source's reference/source-sdk-2013/src/game/server/player.cpp:3392-3412), not MTA's, whose time context is an invalidation epoch (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1281-1305).
 // The row's velocity is clamped before this runs, so it is not tested here. false counts against the syncer's trust;
 // it never refuses the display.
 inline bool RowStepAgrees(float stepCm, int64_t dtRowMs, int64_t arrivalDeltaMs) {

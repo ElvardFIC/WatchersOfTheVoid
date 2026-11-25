@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <cstdio>
 #include <atomic>
+#include "ue_wrap/core/cached_obj_ref.h"
 struct FVector { float X=0,Y=0,Z=0; };
 struct FRotator { float Pitch=0,Yaw=0,Roll=0; };
 namespace ue_wrap { using ::FVector; using ::FRotator; }
@@ -52,8 +53,14 @@ struct Session {Role mode=Role::Host;bool linked=true;bool running(){return true
 namespace coop::sleep_sync {bool unanimous=false;bool AllPlayersResting(){return unanimous;}}
 namespace rest {
 int gm=0,body=0;
-struct Ref{void* value;void* Raw(){return value;}bool Alive(){return true;}};
-Ref g_gm{&gm},g_body{&body};
+struct Watch {bool settled=false;};
+Watch g_sleepWatch{},g_wakeWatch{};
+uint64_t g_nextWatchMs=0;
+ue_wrap::CachedObjRef g_gm,g_body,g_dilated[16];
+int g_dilatedCount=0;
+bool g_saidDilatedFull=false,g_haveFood=false,g_haveCoffee=false;
+float g_foodBase=0,g_coffeeBase=0;
+void SettleWatch(Watch&){}
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_resting=false,g_saidFactor=false;
 float sleeping=1,dilation=20,custom=1;
@@ -64,10 +71,12 @@ namespace SLP {bool EnsureResolved(){return true;}float GetGlobalTimeDilation(){
 namespace FX {void ForEachWorldEffect(void(*)(void*,void*),void*){}}
 void DilateEffect(void*,void*){}void SettleNeeds(){}void EnsureWatch(){}
 void* CurrentBody(){return &body;}
-void BeginRest(){g_resting=true;custom=20;}
+void BeginRest(){g_gm.Set(&gm);g_body.Set(&body);g_resting=true;custom=20;}
 void EndRest(const char*){g_resting=false;custom=1;}
 }
 namespace ue_wrap::world_singleton {void* Gamemode(){return &rest::gm;}}
+namespace ue_wrap::reflection {bool IsLiveByIndex(void* p,int){return p!=nullptr;}int SlotSerial(int){return 1;}int AllocateSlotSerial(int){return 1;}int InternalIndexOf(void* p){return p?1:-1;}}
+namespace ue_wrap::world_identity {void* CurrentWorld(){return &rest::gm;}void* WorldOf(void*){return &rest::gm;}}
 namespace rest {
 #include "sleep_rest_controller.inc"
 }

@@ -1,5 +1,6 @@
 // coop/config/config_registry_rows_dev_atv.inc -- the [dev] rows of the ATV lane: its rig probe, the corrector's
-// control arm, the spawn drill and its park, the health drill and its red arm, the eject drill and its red arm.
+// control arm, the spawn drill and its park, the health drill and its red arm, the eject drill and its red arm, the gate
+// probe and its drill.
 // Included by config_registry_rows_dev.inc after the fire rows, before the PI and NB rows, which stay the last ones,
 // so each row keeps its place in every expansion of the list. The entry forms are config_registry_rows.inc's.
 // The drill's arms: sit, grab, occupied, synced, silent, gate, owner, trap; the red arm's values: back, occupied,
@@ -70,3 +71,18 @@ CFG_ENUM(atv_eject_drill, "atv_eject_drill", "dev", "off", "off|host|client",
 CFG_FLAG(atv_eject_red, "atv_eject_red", "dev", false, "VOTVCOOP_ATV_EJECT_RED",
     "Developer red arm: never set. The receiving copy inverts its wheel presence rule (the host's own presence is "
     "skipped, a client syncer's is consumed), so both arms of the ATV eject drill must fail.")
+CFG_ENUM(atv_gate_drill, "atv_gate_drill", "dev", "off",
+    "off|green|atv_gate_off|atv_ack_off|atv_judge_off|atv_dup_module|atv_refund_off|atv_publish_off|atv_joiner_rows_off|"
+    "atv_bits_off|atv_gate_hold_off|atv_park_off",
+    "VOTVCOOP_ATV_GATE_DRILL",
+    "Drill (BOTH peers, plus a third client as observer): the client, the host and the observer do each act a player does "
+    "at an ATV -- a refuel, a repair, a module fitted and taken off, the seat, lights, brake, turbo and horn, a drive -- and "
+    "every step is decided by an event of the ATV host path, never a clock (coop/interactables/atv_drill_events). The client "
+    "leaves and rejoins for the joiner and park steps. Ends on rig: VERDICT atv PASS|FAIL|INVALID said by the host, each "
+    "step on an `atv-drill: step <n> PASS|FAIL|INVALID` line. green is the whole run; each other value is a red, read only "
+    "by the module whose mechanism it disables, and must FAIL at its step: atv_gate_off (the client's rows ask nothing), "
+    "atv_ack_off (the host takes a block's vitals unacked), atv_judge_off (every request judged ok), atv_dup_module (a "
+    "duplicate fit allowed), atv_refund_off (a refused fit not refunded), atv_publish_off (the host's own acts not "
+    "published), atv_joiner_rows_off (a state for an unadopted ATV dropped), atv_bits_off (a block's control bits "
+    "ignored, horn included), atv_gate_hold_off (a state applies while the "
+    "open-request gate is shut), atv_park_off (a request is judged before its sender's world is ready). MUTATES the ATV.")

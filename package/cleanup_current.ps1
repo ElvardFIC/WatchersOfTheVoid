@@ -5,22 +5,44 @@ $ErrorActionPreference = 'Stop'
 $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 $workspace = [IO.Path]::GetFullPath((Join-Path $checkout '..')).TrimEnd('\')
 $metadata = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Raw | ConvertFrom-Json
-$archiveName = '{0}-{1}-{2}.zip' -f $metadata.namespace, $metadata.name, $metadata.version_number
-$archive = Join-Path $checkout "dist/$archiveName"
+$inventoryPath = Join-Path $PSScriptRoot 'cleanup-inventory.json'
+$cleanupInventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
+$qualified = $cleanupInventory.latestRun
+if (-not $qualified -or -not $qualified.archive -or -not $qualified.archiveSHA256) {
+    throw 'Cleanup inventory does not identify a retained qualified archive'
+}
+$archive = Join-Path $workspace $qualified.archive
 $dll = Join-Path $checkout $metadata.dll
 $dependencies = Join-Path $checkout 'build/votv-coop/vcpkg_installed'
+$testRoot = Get-ChildItem -LiteralPath $checkout -Directory | ForEach-Object { Join-Path $_.FullName 'tests' } | Where-Object { Test-Path (Join-Path $_ 'run_2165.ps1') } | Select-Object -First 1
+if (-not $testRoot) { throw 'Could not locate the regression runner directory' }
+function Get-HashOutsideWhatIf([string]$Path) {
+    $whatIf = $global:WhatIfPreference
+    try {
+        $global:WhatIfPreference = $false
+        return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    } finally { $global:WhatIfPreference = $whatIf }
+}
+function Get-ProviderPathOutsideWhatIf([string]$Path) {
+    $whatIf = $global:WhatIfPreference
+    try {
+        $global:WhatIfPreference = $false
+        return (Resolve-Path -LiteralPath $Path).ProviderPath
+    } finally { $global:WhatIfPreference = $whatIf }
+}
 foreach ($required in @($archive, $dll, $dependencies)) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Required retained path missing: $required" }
 }
-$archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-$dllHash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+$archiveHash = Get-HashOutsideWhatIf $archive
+if ($archiveHash -ne $qualified.archiveSHA256) { throw 'Retained qualified archive hash differs from cleanup inventory' }
+$dllHash = Get-HashOutsideWhatIf $dll
 
 $targets = [Collections.Generic.List[string]]::new()
 foreach ($relative in @(
     'build/votv-coop-2152', 'build/votv-coop-2153',
     'build/package-current/stage',
     'build/package-current/rejected-dll-only.zip', 'garden_sync_test.obj',
-    'agent/tests/__pycache__', 'build/requested-events-native/__pycache__',
+    (Join-Path $testRoot '__pycache__'), 'build/requested-events-native/__pycache__',
     'build/votv-coop-2154/generated/l10n_packs.rc.tmp'
 )) { $targets.Add((Join-Path $checkout $relative)) }
 $targets.Add((Join-Path $workspace '_research/__pycache__'))
@@ -70,7 +92,7 @@ $existing = @($existing | Where-Object {
 })
 # Validate the complete selection before performing any deletion.
 foreach ($target in $existing) {
-    $resolved = (Resolve-Path -LiteralPath $target).ProviderPath
+    $resolved = Get-ProviderPathOutsideWhatIf $target
     if (-not $resolved.StartsWith($workspace + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Cleanup target outside workspace: $resolved"
     }
@@ -102,24 +124,45 @@ foreach ($target in $existing) {
         Remove-Item -LiteralPath $target -Recurse -Force
     }
 }
-if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $archiveHash -or
-    (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash -ne $dllHash) { throw 'Retained archive/DLL changed during cleanup' }
+if ((Get-HashOutsideWhatIf $archive) -ne $archiveHash -or
+    (Get-HashOutsideWhatIf $dll) -ne $dllHash) { throw 'Retained archive/DLL changed during cleanup' }
 if (-not $WhatIfPreference -and $existing.Count) {
-    $inventoryPath = Join-Path $PSScriptRoot 'cleanup-inventory.json'
     $report = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
     if ($report.latestRun) {
         $previous = @(@($report.previousRuns) | Where-Object { $null -ne $_ })
         $report | Add-Member -Force -NotePropertyName previousRuns -NotePropertyValue @($previous + $report.latestRun)
     }
+    $targetRows = @($inventory.ToArray())
+    $historyDirectory = Join-Path $PSScriptRoot 'cleanup-history'
+    New-Item -ItemType Directory -Force -Path $historyDirectory | Out-Null
+    $runId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
+    $targetManifest = [Collections.Generic.List[object]]::new()
+    for ($start = 0; $start -lt $targetRows.Count; $start += 700) {
+        $part = [int]($start / 700) + 1
+        $count = [math]::Min(700, $targetRows.Count - $start)
+        $path = Join-Path $historyDirectory ("$runId-$part.jsonl")
+        $jsonLines = for ($offset = $start; $offset -lt $start + $count; $offset++) {
+            ConvertTo-Json -InputObject $targetRows[$offset] -Compress -Depth 4
+        }
+        [IO.File]::WriteAllLines($path, [string[]]$jsonLines, [Text.UTF8Encoding]::new($false))
+        $targetManifest.Add([pscustomobject]@{
+            path = "cleanup-history/$runId-$part.jsonl"
+            records = $count
+        })
+    }
     $report | Add-Member -Force -NotePropertyName latestRun -NotePropertyValue ([pscustomobject]@{
         dateUtc = [DateTime]::UtcNow.ToString('o')
-        retainedPackage = $metadata.version_number
+        retainedPackage = $qualified.retainedPackage
+        workingReleaseVersion = $metadata.version_number
         archive = $archive.Substring($workspace.Length + 1).Replace('\', '/')
         archiveSHA256 = $archiveHash
-        dllSHA256 = $dllHash
+        workingDll = $metadata.dll
+        workingDllSHA256 = $dllHash
+        retainedDllSHA256 = $qualified.dllSHA256
         files = $files
         bytes = $bytes
-        targets = @($inventory.ToArray())
+        targetCount = $targetRows.Count
+        targetsManifest = @($targetManifest.ToArray())
     })
     $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $inventoryPath -Encoding UTF8
 }

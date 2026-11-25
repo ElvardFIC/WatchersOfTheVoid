@@ -7,15 +7,15 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/hand_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/hand_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   $rc=$LASTEXITCODE
   if($negative){if($rc -ne 1){throw "Expected assertion failure for $name, got $rc"};Write-Host "PASS negative control: $name"}
   elseif($rc -ne 0){throw "Test failed: $name"}
  }
- Compile-AndRun 'hand' 'agent/tests/hand_fire_2138_test.cpp' $false
- & $Python agent/tests/blueprint_hand_fire_2138_test.py
+ Compile-AndRun 'hand' (Join-Path $PSScriptRoot 'hand_fire_2138_test.cpp') $false
+ & $Python "$PSScriptRoot/blueprint_hand_fire_2138_test.py"
  if($LASTEXITCODE -ne 0){throw 'Native evidence failed'}
  $cases=@(
  @{Name='generation';File='hand_fire_sync.cpp';Before='hand_item::MirrorGeneration(slot) != p.generation';After='false'},

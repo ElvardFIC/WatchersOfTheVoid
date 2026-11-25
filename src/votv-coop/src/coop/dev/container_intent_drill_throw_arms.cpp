@@ -104,9 +104,9 @@ bool     g_jDone = false;
 
 // ---- throwplace: the client ----------------------------------------------------------------------------------------------
 
-// The first part lets go of the grab with dropGrabObject alone: no traceThrow, no throwShit (mainPlayer.cpp:11150). The second
+// The first part lets go of the grab with dropGrabObject alone: no traceThrow, no throwShit (CXXHeaderDump/mainPlayer.cpp:11150). The second
 // enters the placement mode as the game's own place does, simulateDrop(dontWakeup=false, place=true, dontCollect=true)
-// (mainPlayer.cpp:1458, :9942), and drops with the custom event precisionPlacemet_drop (:9972, reached from :1617).
+// (CXXHeaderDump/mainPlayer.cpp:1458, :9942), and drops with the custom event precisionPlacemet_drop (:9972, reached from :1617).
 PlaceState PlaceTick(void* player, int n, char* why, size_t whyLen) {
     if (n == 1) {
         if (!DR::CallOnPlayer(player, L"dropGrabObject")) {
@@ -189,7 +189,7 @@ void PlaceHostPass() {
 // ---- throwtouch: the host ------------------------------------------------------------------------------------------------
 
 // The host's pawn takes the flying prop with the game's own pickup of a named actor, `Hold Object` with `manual` set
-// (mainPlayer.cpp:16196; ue_wrap::engine::CallMainPlayerHoldObject): no aim, not a teleport, not a dev write. The pickup
+// (CXXHeaderDump/mainPlayer.cpp:16196; ue_wrap::engine::CallMainPlayerHoldObject): no aim, not a teleport, not a dev write. The pickup
 // equips the drive and the world prop leaves, so the thrower's row ends with the prop (Died) and its copy goes with the
 // host's destroy. A physics grab of the flying prop needs an aim at a moving target and is not measured here.
 HostJudge TouchHostTick(uint32_t eid, char* why, size_t whyLen) {

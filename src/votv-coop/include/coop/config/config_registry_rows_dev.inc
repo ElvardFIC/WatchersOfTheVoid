@@ -35,6 +35,10 @@ CFG_INT(desk_diag_ms, "desk_diag_ms", "dev", 1000, 100, 60000, nullptr,
     "Interval in milliseconds for the desk_diag log.")
 CFG_INT(vitals_keepalive_sec, "vitals_keepalive_sec", "dev", 0, 0, 86400, nullptr,
     "Reset player vitals every N seconds (0 = off; long unattended test runs).")
+CFG_FLAG(fill_needs, "fill_needs", "dev", false, "VOTVCOOP_FILL_NEEDS",
+    "Test helper (BOTH peers; the vitals keepalive's food and sleep switch): once its world is up each peer writes its "
+    "own food and sleep to 100, and again every 20 s, so a long drill's player does not faint at 0. Local, nothing "
+    "crosses the wire. Leave off for a drill about food, sleep or fainting.")
 // The drills of a session's join, rejoin and leave: their own file, one concept, included as
 // _dev_port.inc and _dev_boundary.inc are.
 #include "coop/config/config_registry_rows_dev_join.inc"
@@ -197,22 +201,8 @@ CFG_ENUM(remover_drill, "remover_drill", "dev", "off", "off|granted|withheld", "
     "sight one after another, then a creature the remover cannot remove -- the props must go on both peers and the "
     "creature stay. withheld: one prop, which the host's permissions refuse to this client and which must stay on "
     "both peers. The client ends with a chat line the host judges at.")
-CFG_ENUM(chat_drill, "chat_drill", "dev", "off", "off|history|seed|i18n|span", "VOTVCOOP_CHAT_DRILL",
-    "Developer: chat checks judged in memory -- history (the host), seed (the second joiner), i18n "
-    "(every peer), span (every peer: a mid-line nick's span through the feed); each prints "
-    "[CHAT-DRILL] PASS, FAIL or ABORT.")
-CFG_ENUM(l10n_drill, "l10n_drill", "dev", "off", "off|translated|english|atlas", "VOTVCOOP_L10N_DRILL",
-    "Developer: the interface-language drill on each peer -- opens two F1 panes, waits for the join line, "
-    "then expects them translated or English; atlas floods the chat with ideographs under the Chinese pack "
-    "and measures the font atlas; prints [L10N-DRILL] DONE or FAIL.")
-CFG_FLAG(chat_span_prefix, "chat_span_prefix", "dev", false, "VOTVCOOP_CHAT_SPAN_PREFIX",
-    "Developer: keep a peer action's nick as a prefix wherever its sentence put it (the chat drill's span red).")
-CFG_FLAG(chat_drill_bad_nick, "chat_drill_bad_nick", "dev", false, "VOTVCOOP_CHAT_DRILL_BAD_NICK",
-    "Developer: the chat drill announces a wrong nickname (the i18n red).")
-CFG_FLAG(chat_no_retain, "chat_no_retain", "dev", false, "VOTVCOOP_CHAT_NO_RETAIN",
-    "Developer: never keep a chat line in history (the chat drill's history red).")
-CFG_FLAG(chat_seed_suppress, "chat_seed_suppress", "dev", false, "VOTVCOOP_CHAT_SEED_SUPPRESS",
-    "Developer: send a joiner no chat history (the seed red).")
+// The chat and interface-language drills and the chat drill's red arms: their own file, one concept, included as _dev_join.inc is.
+#include "coop/config/config_registry_rows_dev_chat.inc"
 CFG_FLAG(wire_census, "wire_census", "dev", false, "VOTVCOOP_WIRE_CENSUS",
     "Developer: log the wire census every second (the wirewindow probe).")
 CFG_FLAG(ban_drill, "ban_drill", "dev", false, "VOTVCOOP_BAN_DRILL",
@@ -240,8 +230,8 @@ CFG_ENUM(settings_drill, "settings_drill", "dev", "off", "off|nameplate|nickcolo
     "servercmdspellred: as servercmd, its respell step a real change (6001), so the client announces it "
     "where servercmd forbids it. "
     "red: the nameplate step with its set skipped, so the probe's FAIL line prints.")
-CFG_ENUM(mannequin_drill, "mannequin_drill", "dev", "off", "off|spawn|red", "VOTVCOOP_MANNEQUIN_DRILL",
-    "Drill (BOTH peers), the walking mannequin's baseline. spawn: once the client's join is over the host spawns one native walker (it opens doors, is saved with the world and returns angry after a load; it crosses to a client as a prop mirror with a brain of its own) and both peers log what they see of it once a second, the host for 20 samples. red: the same without the spawn call, so the sampler must report that no walker appeared: the drill's control.")
+CFG_ENUM(mannequin_drill, "mannequin_drill", "dev", "off", "off|spawn|red|walker|no_row|no_brain_gate|no_drive_claim|no_gaze_route|no_level|no_loss|no_delivery|no_join_state", "VOTVCOOP_MANNEQUIN_DRILL",
+    "Drill (BOTH peers), the walking mannequin. spawn: once the client's join is over the host spawns one native walker (it opens doors, is saved with the world and returns angry after a load) and both peers log what they see of it once a second, the host for 20 samples. red: the same without the spawn call, so the sampler must report that no walker appeared: the drill's control. walker: the two-peer drill on the host's two walkers, ended by `rig: VERDICT mannequin` on the host: the client's spawner is refused (step 1), its copy follows the host's walker by the drive stream (2), there is no step 3 (a walker's keep of its target cannot be observed in a run), the hunted client's gaze stops the walker and its look away lets it go (4), the walker's hit lands on the client (6), the client leaves and the walker loses it (5), and the client that comes back is sent the walker's state (7), and in that rejoined life the host runs the mannequin spawner's own tick down its statue route (the day number and the roll written, then restored) and the client must lose the swapped stand and gain the broken prop and the walker (8). Run it with the rig's --observer (a second client that keeps the session alive, so the first client's leave is not the last one and the host runs that slot's own leave, step 5), --rejoin, --rejoin-marker 'mannequin-drill: REJOIN MARKER' and --rejoin-env VOTVCOOP_MANNEQUIN_DRILL_REJOIN=1 (the second life reads the state row). The reds are the walker drill with one mechanism off, set on BOTH peers: no_row (the client's spawner row, step 1 must FAIL), no_brain_gate (the copy thinks, step 2 must FAIL), no_drive_claim (the host's walker is not claimed into the drive stream, step 2 must FAIL), no_gaze_route (the host does not answer the walker's gaze reads with its target's, step 4 must FAIL), no_level (the client sends no unseen word, step 4 must FAIL), no_delivery (the walker's hit on a client is sent nowhere, step 6 must FAIL), no_loss (a leaving player's walkers are not told, step 5 must FAIL), no_join_state (a joiner is sent no walker state, step 7 must FAIL).")
 CFG_FLAG(floppy_selftest, "floppy_selftest", "dev", false, "VOTVCOOP_FLOPPY_SELFTEST",
     "Autonomous selftest: the disc-into-server media transfer -- a client insert the host tries to "
     "eject, the mirror of that, and a client insert the same client ejects. It MUTATES the world "
@@ -357,7 +347,8 @@ CFG_ENUM(sleep_drill, "sleep_drill", "dev", "off", "off|host_asleep|client_rest|
     "([SLEEP-DRILL] <arm> <role> PASS|FAIL), and a phase that does not come is a FAIL after a bound.")
 CFG_ENUM(badsun_drill, "badsun_drill", "dev", "off", "off|clock|midnight|spawn|cheat|join|end|absent_stale", "VOTVCOOP_BADSUN_DRILL",
     "Drill (BOTH peers), the Bad Sun: does a peer's own loaded copy go "
-    "active by its own clock. clock, join and end need the save that holds one saved Bad Sun; the others a fresh host world. clock: the host parks the clock at 05:00 at hosting and sets 06:30 once a "
+    "active by its own clock. clock, join and end need the save that holds one saved Bad Sun, the slot s_rig_badsun "
+    "(VOTVCOOP_RIG_SLOT=s_rig_badsun: the everyday rig slot had it removed by tools/rig_strip_class.py); the others a fresh host world. clock: the host parks the clock at 05:00 at hosting and sets 06:30 once a "
     "client's join is over; each peer reads its count of live copies (it must be 1), its copy's widget "
     "and its place in the active events' senders, and its own clock every second, from before 07:00; "
     "the copy must stay inactive until the clock reads 07:00 and be active by both tests within 15 s "
@@ -421,34 +412,27 @@ CFG_FLAG(recycled_slot_drill, "recycled_slot_drill", "dev", false, "VOTVCOOP_REC
     "engine recycled on the pawn's root component -- a queued birth naming the slot's old class, and a "
     "stale listing -- then dispatch the actor location read on the component, whose read faults inside "
     "the engine. One verdict line per half, then DONE.")
-CFG_FLAG(kerfur_menu_drill, "kerfur_menu_drill", "dev", false, "VOTVCOOP_KERFUR_MENU_DRILL",
-    "Drill (HOST): once a client's join is over, spawn a kerfur, turn it off "
-    "by its verb, then turn the prop back on through the menu event a press dispatches, where the "
-    "verb runs nested inside a watched body. Prints the kerfur form assembler's order counters.")
-CFG_FLAG(kerfur_convert_drill, "kerfur_convert_drill", "dev", false, "VOTVCOOP_KERFUR_CONVERT_DRILL",
-    "Drill (BOTH peers): the host keeps every kerfur carrying a disc and spawns one more; the client "
-    "turns one off by its verb and back on by the prop's turn-on action while a disc of its own lies 2 m "
-    "away, then says whether both conversions applied, each form stood when its own call returned, the "
-    "carried disc arrived once and its own disc survived. '[KERFUR-DRILL] client DONE' ends it.")
-CFG_FLAG(kerfus_drill, "kerfus_drill", "dev", false, "VOTVCOOP_KERFUS_DRILL",
-    "Drill (BOTH peers): the host stays put; the client presses the plain kerfur (the Kerfus) on, walks to "
-    "a pile the director keeps 10 m from the host, and the Kerfus must settle by the client, not the host; "
-    "then the host possesses it, the client walks back once the haunting's energy pin shows, and the Kerfus "
-    "must go off away from where it settled. The rig client joins at the base. '[KERFUS-DRILL] client DONE "
-    "PASS|FAIL' ends it; '[KERFUS-DRILL] INVALID' is a step that could not run.")
-CFG_FLAG(kerfus_throw_drill, "kerfus_throw_drill", "dev", false, "VOTVCOOP_KERFUS_THROW_DRILL",
-    "Drill (BOTH peers): the host grabs the plain kerfur (the Kerfus) and lets it go or throws it, three times "
-    "off and three on, and grabs it once more; then the client grabs it twice. Each peer says whether its Kerfus "
-    "stayed one body: the copy where the host's hand has it, its centre of mass on the body, its welded "
-    "navigation pawn where the body carries it. The rig client joins at the base. '[KERFUS-THROW] host DONE "
-    "PASS|FAIL' ends it; '[KERFUS-THROW] INVALID' is a step that could not run.")
-CFG_FLAG(kerfur_serve_drill, "kerfur_serve_drill", "dev", false, "VOTVCOOP_KERFUR_SERVE_DRILL",
-    "Drill (BOTH peers): the host spawns a kerfur Omega, takes a red disc in hand and stays put; the client's "
-    "first command is get_reports, and the host's disc must stay in its hand with the Omega holding none, back "
-    "in the follow state; the client then walks to a pile the director keeps 10 m from the host and commands "
-    "follow, and the Omega must settle by it in the follow state (the client's 'leg A' line); then the client "
-    "commands idle, the host runs the kill verb, and the murderous Omega must go for the host. '[KERFUR-SERVE] "
-    "host DONE' ends it; '[KERFUR-SERVE] INVALID' is a step that could not run.")
+// The kerfur drills: their own file, one concept, included as _dev_key_index.inc is above.
+#include "coop/config/config_registry_rows_dev_kerfur.inc"
+CFG_ENUM(rig_verdict_selftest, "rig_verdict_selftest", "dev", "off", "off|pass|fail|invalid",
+    "VOTVCOOP_RIG_VERDICT_SELFTEST",
+    "Dev self-test (HOST): once a client's world is ready the host says 'rig: VERDICT rig-verdict-selftest "
+    "PASS|FAIL|INVALID' (the value), once per connection life (said again after the host's last client left), so "
+    "the rig's end-on-verdict watch can be shown all three endings with no drill: pass ends the run after the done "
+    "grace, fail at once as a failure, invalid at once as inconclusive.")
+CFG_ENUM(kerfur_serve_disc, "kerfur_serve_disc", "dev", "off", "off|on|swap|wh|busy", "VOTVCOOP_KERFUR_SERVE_DISC",
+    "Measurement (BOTH peers, with kerfur_serve_drill=1): replaces the drill's legs A to C. The client walks to the "
+    "host, takes a red disc in hand, aims at the host's Omega and presses get_reports through the player's own "
+    "radial dispatch (useSelectedAction), which the seat sends to the host. It then says what its hand holds and "
+    "how often the host's answer destroyed its disc, and the host says whether the Omega took a disc, whether the "
+    "client's disc still stands on its side, and how many PropSpawn and PropDestroy messages the host's session "
+    "accepted while the carried copy lived (a published copy would show there). It JUDGES: on expects the disc "
+    "consumed once, no consume-miss, the Omega holding it and nothing published; swap takes a second disc into the "
+    "client's hand right after the press (one consume-miss, no consume); wh holds the Wh disc the game refuses "
+    "itself (the disc kept, the game's hint shown, no copy built); busy presses a second time with another disc in "
+    "hand once the first was consumed (refused, the second disc kept, no new copy). '[KERFUR-SERVE] leg D:' is the "
+    "result line and it ends on 'rig: VERDICT kerfur-serve-disc PASS|FAIL|INVALID' (FAIL names the failing field, "
+    "INVALID is a step that could not run).")
 CFG_FLAG(door_drill, "door_drill", "dev", false, "VOTVCOOP_DOOR_DRILL",
     "Drill (BOTH peers): the client walks with the bot director to the nearest door its navmesh "
     "reaches and uses it as a player does -- three presses, each followed by a stay in its sensor until "
@@ -515,11 +499,9 @@ CFG_STRING(fall_drill, "fall_drill", "dev", "", "VOTVCOOP_FALL_DRILL", false,
     "drops a drive from 4 m once the client's world is ready; the client's DONE line ends it.")
 CFG_FLAG(prop_fall_no_coast, "prop_fall_no_coast", "dev", false, "VOTVCOOP_PROP_FALL_NO_COAST",
     "Developer: a falling host birth is not streamed to the clients (the fall drill's red).")
-CFG_STRING(sack_drill, "sack_drill", "dev", "", "VOTVCOOP_SACK_DRILL", false,
-    "Drill (BOTH peers): a client's point sack is paid by the host, once. run -- the host spawns a sack before the "
-    "client's puppet once its world is ready; the client aims and presses it; the host's DONE line ends it.")
-CFG_FLAG(point_sack_client_runs, "point_sack_client_runs", "dev", false, "VOTVCOOP_POINT_SACK_CLIENT_RUNS",
-    "Developer: a client's point sack runs the game's own body there instead of asking the host (the sack drill's red).")
+// The prop-intent drills' rows (a client's point sack, hook take-back and nametag, judged by the host): their own file,
+// one concept.
+#include "coop/config/config_registry_rows_dev_prop_intent.inc"
 CFG_ENUM(prop_syncer_drill, "prop_syncer_drill", "dev", "off", "off|kick|forge", "VOTVCOOP_PROP_SYNCER_DRILL",
     "Drill (host and BOTH clients, the same value; three peers): a client syncs a prop its own interaction moves. "
     "kick: the client in slot 1 walks to a keyed prop with the director, claims it, kicks it with the game's own "
@@ -542,6 +524,13 @@ CFG_FLAG(window_proc_red, "window_proc_red", "dev", false, "VOTVCOOP_WINDOW_PROC
     "Developer red arm: never set. 1 makes game_window_proc never subclass the game window, so no key reaches a "
     "native text field and the server browser selftest's INPUT TYPE phase must FAIL with \"the characters did not "
     "arrive\".")
+CFG_FLAG(prop_act_mre_open_off, "prop_act_mre_open_off", "dev", false, "VOTVCOOP_PROP_ACT_MRE_OPEN_OFF",
+    "Developer red arm: never set (HOST). 1 makes the host skip rolling the contents of an MRE a client opens or a first "
+    "aid kit it unpacks, so the act drill's honest phase must FAIL at the mre step with \"the host processed the commit "
+    "with no unpack: 0 unpacks on the host, 1 expected\".")
+CFG_FLAG(food_state_poison_off, "food_state_poison_off", "dev", false, "VOTVCOOP_FOOD_STATE_POISON_OFF",
+    "Developer red arm: never set (HOST). 1 sends every FoodState with no poison, so the act drill's mre step must FAIL "
+    "on the client with \"no poisoned content reached this client\".")
 // A drill seam, never on by default: the late-join drill sets it on the JOINER so that every seed landing before
 // its spawn is held and replays at the bind, and every drill line that uses it names it. Not with
 // bind_wait_selftest: its first check expects an unmarked eid to be refused.
@@ -572,21 +561,6 @@ CFG_FLAG(drone_call_drill, "drone_call_drill", "dev", false, "VOTVCOOP_DRONE_CAL
     "second press, and the client's DONE line says whether the drone flew on its copy; the host logs its "
     "drone's changes. "
     "Lines tagged [DRONE-CALL-DRILL].")
-CFG_INT(dronesack_drill, "dronesack_drill", "dev", 0, 0, 4, "VOTVCOOP_DRONESACK_DRILL",
-    "Drill (BOTH peers, the same value): the host puts a drone sack on the floor in front of itself and the client "
-    "says its mirror of it is bound. 1 -- the host drops a loot crate onto the sack; for 15 s each peer logs the "
-    "crate's local destroy (and the caller's class), the client whether its destroy seam sent a PropDestroy, the "
-    "host whether one reached it, and the sack's record counts. 2 -- the host spawns six loose props round the "
-    "sack and the client walks to each with the director, grabs it, carries it over the sack and lets go; each "
-    "peer logs the destroys it sees and the host then calls the delivery drone and logs when its sale clears the "
-    "drone's container. 3 -- the host itself drops six cups and one fresh crate onto the sack, one at a time, then "
-    "calls the drone; both peers take the container census around the sale and log the crate's "
-    "inventory index and which containers hold it afterwards. Arms 1 to 3 judge nothing. Lines tagged [SACK-DRILL] and "
-    "[SACK-CENSUS]. 4 -- arm 3, with the client walking to the sack and opening its screen before the sale; at the "
-    "host's sale marker it presses the first slot, a player's take, which is an act, so the press races the sale's "
-    "publication. Both peers judge it: the take is refused Gone and nothing comes out, and the sack stays at 0 on "
-    "the host (a publication that came first leaves nothing to press, which also passes). The client also judges its "
-    "mirror: it reads 0 within 2 s of the sale, or it fails. The mirror is logged 1, 5, 15 and 30 s after the sale.")
 CFG_STRING(sat_console_drill, "sat_console_drill", "dev", "", "VOTVCOOP_SAT_CONSOLE_DRILL", false,
     "Drill (BOTH peers): run -- a client types sd.cal, sauce.get and sv.hash at its SAT console; the host runs "
     "them on the terminal it keeps for that client and sends the lines back. rejoin -- the client leaves in the "
@@ -754,24 +728,23 @@ CFG_FLAG(class_lifetime_probe, "class_lifetime_probe", "dev", false, "VOTVCOOP_C
     "native class judged against the identity it had when last seen (the same object, the same address "
     "holding a new one, a new address, or gone), with the functions its watched rows name judged the "
     "same way. Read-only but for the slot serials it assigns.")
-CFG_FLAG(init_seam_probe, "init_seam_probe", "dev", false, "VOTVCOOP_INIT_SEAM_PROBE",
-    "Probe: a script-gate watch on every Init body of a keyed prop, counted by the body's owning "
-    "class, its caller, whether it runs inside another Init of the same object and whether the key "
-    "is still unset; logged every 30 s and at each world change. Holds the gate; read-only.")
-CFG_FLAG(key_parity_probe, "key_parity_probe", "dev", false, "VOTVCOOP_KEY_PARITY_PROBE",
-    "Probe: a shadow prop key index fed only by script-gate POST watches on init, setKey, getKey and "
-    "loadData, and the key index the mod keeps, each compared every 2 s against a walk of the live keyed "
-    "props; logs the props each lacks or holds under another key, with examples per world. Holds the "
-    "gate; read-only but for the slot serials it assigns.")
-CFG_FLAG(key_index_forget_one, "key_index_forget_one", "dev", false, "VOTVCOOP_KEY_INDEX_FORGET_ONE",
-    "Red arm of the prop key index's parity pass: once a session, after the seed, one filed prop of the "
-    "current world is dropped from the index. The pass must name it as a filing the feeds missed and file "
-    "it again within a full pass (about 20 s).")
+CFG_FLAG(class_resolve_drill, "class_resolve_drill", "dev", false, "VOTVCOOP_CLASS_RESOLVE_DRILL",
+    "Drill, the class resolver; set on BOTH peers. The client names prop Blueprint classes its object index "
+    "does not hold (from the engine's asset registry); the host loads and spawns three of them, and the client "
+    "must load each class on the host's word and hold a bound mirror of every one. The host prints 'rig: VERDICT "
+    "class-resolve PASS|FAIL|INVALID' (INVALID when the client holds every prop class, or the host cannot spawn "
+    "three) and 'class-resolve: DONE on host'. It MUTATES the world (three props on the host). Run it on a fresh "
+    "client: residency varies by run.")
+CFG_FLAG(class_resolve_lookup_only, "class_resolve_lookup_only", "dev", false, "VOTVCOOP_CLASS_RESOLVE_LOOKUP_ONLY",
+    "Developer red arm of the class-resolve drill: never set. On the CLIENT, the resolver's registry step is off, so "
+    "a class the client has not loaded is not loaded and the host's spawn of it is dropped, as before the resolver; "
+    "the host's verdict is FAIL.")
+// The prop key index's probes: their own file, one concept, included as _dev_probes.inc is above.
+#include "coop/config/config_registry_rows_dev_key_index.inc"
 // The permissions and action-log selftests' red arms: their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_selftest.inc"
-// The explosion lane's drill, birth line and selftest red arms: their own file, one concept, included as
-// _dev_port.inc is above.
+// The explosion lane's drill, birth line and selftest red arms: their own file, as _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_explosion.inc"
 // The Geom Octa lane's drill and red arm: their own file, one concept, included as _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_octa.inc"
@@ -796,3 +769,36 @@ CFG_FLAG(player_damage_no_refusal, "player_damage_no_refusal", "dev", false, "VO
     "Developer: disable puppet damage and ignite refusal for the damage hazard negative control.")
 // The Vulkan overlay arc's probes: their own file, one concept, included as _dev_nb.inc is above.
 #include "coop/config/config_registry_rows_dev_vulkan.inc"
+#include "coop/config/config_registry_rows_dev_ambient.inc"
+
+// The cremator probe's and lever lane's rows: their own file, one concept, included as _dev_vulkan.inc is above.
+#include "coop/config/config_registry_rows_dev_cremator.inc"
+
+// The woodchipper lane's drill and red arms: their own file, one concept, included as _dev_cremator.inc is above.
+#include "coop/config/config_registry_rows_dev_woodchipper.inc"
+// The world-sound lane's drill and red arms: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_world_sound.inc"
+// The prop-properties tool's red arms: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_prop_props.inc"
+// The disc drills' rows: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_disc.inc"
+// The equipment drill's rows: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_equip.inc"
+// The drone hover drill's bump arm and red: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_drone.inc"
+// The video camera hint drill and its red: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_vidcam.inc"
+// The nightmare lane's drill, staging and red arms: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_nightmare.inc"
+// The level-visit lane's drill and red arms: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_level_visit.inc"
+// The cargo lift drill's rows: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_cargo_lift.inc"
+// The ambient UFOs' drill and red arm: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_ufo.inc"
+// The black orb's drill and red arm: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_orb.inc"
+// The earth teleport's sky drill and red arm: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_sky_tp.inc"
+// The robot cleaner's drill and red arms: their own file, one concept.
+#include "coop/config/config_registry_rows_dev_roomba.inc"

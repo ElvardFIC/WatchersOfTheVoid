@@ -25,6 +25,7 @@ constexpr int kStory = 0;
 constexpr int kInfinite = 1;
 
 constexpr int kTutorial = 2;
+constexpr int kCustom = 3;
 constexpr int kAmbient = 6;
 constexpr int kSolar = 7;
 
@@ -54,9 +55,9 @@ int ReadLocal();
 int WriteTo(void* gameInstance, int mode);
 
 // Whether the running world lets its players cheat, as the game's own gate, lib_C::isBuoyant, answers when its
-// gamemode is not flying: the gamemode's hasWeapon, which Sandbox sets (mainGamemode.cpp:2879-2883,
-// lib.cpp:1646-1688). Read, never that gate called: its flying branch reads a key file and, without one, quits
-// the game (lib.cpp:1690-1698). False while flying, or when the gamemode or its members do not read. Game thread.
+// gamemode is not flying: the gamemode's hasWeapon, which Sandbox sets (CXXHeaderDump/mainGamemode.cpp:2879-2883,
+// CXXHeaderDump/lib.cpp:1646-1688). Read, never that gate called: its flying branch reads a key file and, without one, quits
+// the game (CXXHeaderDump/lib.cpp:1690-1698). False while flying, or when the gamemode or its members do not read. Game thread.
 bool CheatsAllowed(bool& allowed);
 
 // Whether the running world lets a player hold the rocket or sticky launcher, as the guns' own hold gate answers for

@@ -7,7 +7,7 @@ Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
     foreach($testName in @('wall_creative_sync','wall_creative_wrapper')) {
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE -ne 0){throw "Creative wall test compile failed: $testName"}
         & "$output/$testName.exe"
         if($LASTEXITCODE -ne 0){throw "Creative wall test failed: $testName"}

@@ -355,7 +355,7 @@ public:
     // (empty when the path is relayed or GNS knows none), asked right after the identity proof and
     // before a seat is given; true refuses the connection as banned, and whatever it wrote into
     // `whyOut` rides the close. Set once before Start spawns the net thread. MTA: the serial and IP
-    // checks in CGame::Packet_PlayerJoinData (CGame.cpp:1956, :1973).
+    // checks in CGame::Packet_PlayerJoinData (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1956, :1973).
     using BanCheckFn = bool (*)(const char* playerId, const char* address, char* whyOut, int whyLen);
     void SetBanCheck(BanCheckFn fn) { banCheck_ = fn; }
 

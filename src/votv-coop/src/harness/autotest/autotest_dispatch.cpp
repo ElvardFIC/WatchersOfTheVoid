@@ -1,5 +1,5 @@
 // harness/autotest/autotest_dispatch.cpp -- see harness/autotest_dispatch.h. Each routine is
-// described at its declaration in harness/autotest.h.
+// named at its declaration in harness/autotest/drill_threads.h.
 
 #include "harness/autotest_dispatch.h"
 
@@ -10,10 +10,15 @@
 #include "harness/autotest/driveslot.h"
 #include "coop/session/join_seed.h"  // the inline seed selftest
 #include "coop/config/config.h"
+#include "coop/dev/atv_gate_drill.h"
+#include "coop/dev/cremator_drill.h"
 #include "coop/dev/director/director.h"
+#include "coop/dev/mannequin_walker_drill.h"
 #include "ue_wrap/core/log.h"
 
 #include <windows.h>
+
+#include <string>
 
 namespace harness::autotest {
 namespace {
@@ -40,6 +45,18 @@ void SpawnIfRow(const coop::config_registry::FlagRow& row, const char* label,
                 LPTHREAD_START_ROUTINE thread, coop::net::Role role) {
     if (!cfg::ResolveFlag(row)) return;
     UE_LOGI("harness: %s=1 (%s) -- spawning %s thread", row.row->key, RoleStr(role), label);
+    if (HANDLE h = ::CreateThread(nullptr, 0, thread, nullptr, 0, nullptr)) {
+        ::CloseHandle(h);
+    }
+}
+
+// The same for a drill whose row names its arms: any value but off spawns the thread, which reads the row again to
+// pick its arm.
+void SpawnIfEnum(const coop::config_registry::EnumRow& row, const char* label,
+                 LPTHREAD_START_ROUTINE thread, coop::net::Role role) {
+    const std::string arm = cfg::ResolveEnum(row);
+    if (arm == "off") return;
+    UE_LOGI("harness: %s=%s (%s) -- spawning %s thread", row.row->key, arm.c_str(), RoleStr(role), label);
     if (HANDLE h = ::CreateThread(nullptr, 0, thread, nullptr, 0, nullptr)) {
         ::CloseHandle(h);
     }
@@ -181,6 +198,30 @@ void SpawnEnvGatedTests(coop::net::Role role) {
     // moving source; enable on one peer and read the other's pose diagnostic.
     SpawnIf("VOTVCOOP_RUN_MOVE_OSC", "move oscillator (interp verify)", &MoveOscThread, role);
 
+    SpawnIf("VOTVCOOP_RUN_BEAM_LOOK", "flashlight beam look (shadow flags, captures)", &BeamLookThread, role);
+    // The flashlight battery: each peer's runs out in turn and the other reads its puppet's light.
+    SpawnIf("VOTVCOOP_RUN_FLASH_BATTERY", "flashlight battery drill", &FlashBatteryThread, role);
+    SpawnIf("VOTVCOOP_RUN_DESK_VIEW", "desk signal view drill", &DeskViewThread, role);
+    SpawnIfEnum(coop::config_registry::rows::cap_label_drill, "refiner cap label drill", &CapLabelThread, role);
+    SpawnIf("VOTVCOOP_RUN_DISH_SOUND", "dish slew sound drill", &DishSoundThread, role);
+    // The save notice: the game's own save with and without an event, read on both peers.
+    SpawnIf("VOTVCOOP_RUN_SAVE_NOTICE", "save notice drill", &SaveNoticeThread, role);
+    SpawnIf("VOTVCOOP_RUN_VENT_CRAWLER", "vent crawler drill", &VentCrawlerThread, role);
+    SpawnIf("VOTVCOOP_RUN_CAN_STATE", "canned food state drill", &CanStateThread, role);
+    SpawnIf("VOTVCOOP_RUN_FOOD_STATE", "world food state drill", &FoodStateThread, role);
+    SpawnIfEnum(coop::config_registry::rows::world_sound_drill, "world sound drill", &WorldSoundThread, role);
+
+    SpawnIf("VOTVCOOP_RUN_PLANT_STATE", "plant drill", &PlantStateThread, role);
+    // The cargo lift, the base's elevator, as each peer sees it.
+    SpawnIfRow(coop::config_registry::rows::cargo_lift_drill, "cargo lift drill", &CargoLiftThread, role);
+    SpawnIf("VOTVCOOP_RUN_SV_REQUEST", "sv.request drill", &SvRequestThread, role);
+    SpawnIf("VOTVCOOP_RUN_MODULE_BUY", "module row drill", &ModuleBuyThread, role);
+    // A device's claim when its user ragdolls.
+    SpawnIf("VOTVCOOP_RUN_SEAT_RAGDOLL", "seat ragdoll drill", &SeatRagdollThread, role);
+    // How steadily the delivery drone flies and hovers on each peer.
+    SpawnIf("VOTVCOOP_RUN_DRONE_HOVER", "drone hover drill", &DroneHoverThread, role);
+    // The base computer's short circuit on both peers.
+    SpawnIfEnum(coop::config_registry::rows::desk_short_drill, "desk short drill", &DeskShortThread, role);
     // The bot-director halt probe, solo: measures the path query over the baked NavMesh and a
     // reflected AddMovementInput moving the possessed body.
     SpawnIf("VOTVCOOP_RUN_NAV_PROBE", "nav HALT probe (director Phase-0)", &NavHaltProbeThread, role);
@@ -196,6 +237,9 @@ void SpawnEnvGatedTests(coop::net::Role role) {
     // The container race: two peers walk to the same container and take the same item at a
     // barrier; each counts locally afterwards, and the driver sums across peers.
     SpawnIf("VOTVCOOP_RUN_CTAKE_RACE", "container concurrent-take race (director Phase-2)", &coop::director::ContainerRaceThread, role);
+
+    // The grab race: two peers aim at the same keyed prop and grab it at a barrier; each logs who holds it after.
+    SpawnIf("VOTVCOOP_RUN_GRAB_RACE", "prop grab race (one holder)", &coop::director::GrabRaceThread, role);
 
     // The after-join end-reason drill: the host kicks slot 1 once it is seated and in the world;
     // the client's log must carry the DISCONNECTED notice with the moderation code.
@@ -221,6 +265,41 @@ void SpawnEnvGatedTests(coop::net::Role role) {
     // The slip drill: a zero-damage ragdoll with `dead` already set must be shown to re-enter the
     // death chain, and our seam shown to refuse the menu travel it asks for.
     SpawnIf("VOTVCOOP_RUN_SLIP_DRILL", "slip / death re-entry drill", &SlipDrillThread, role);
+    SpawnIf("VOTVCOOP_RUN_SPILL", "spill drill", &SpillThread, role);
+
+    // The ambient creatures: deer and walking trees; dirt holes and beehive branches; a sus hole around a client.
+    SpawnIf("VOTVCOOP_RUN_AMBIENT_CREATURE", "ambient creature drill", &AmbientCreatureThread, role);
+    SpawnIf("VOTVCOOP_RUN_AMBIENT_FIELD", "ambient field drill", &AmbientFieldThread, role);
+    SpawnIf("VOTVCOOP_RUN_SUS_HOLE", "sus hole drill", &SusHoleThread, role);
+    // The cremator drill: the host pulls its lever and the client's copy must show the run, then show it again after a
+    // rejoin (1); a client sent into the running machine must die by it (g3).
+    SpawnIfEnum(coop::config_registry::rows::cremator_drill, "cremator drill", &coop::dev::cremator_drill::Thread, role);
+    // The class-resolve drill: the host spawns prop classes the client has not loaded, and the client must load and
+    // mirror each.
+    SpawnIfRow(coop::config_registry::rows::class_resolve_drill, "class-resolve drill", &ClassResolveDrillThread, role);
+    // The woodchipper drill: the client pours a gas can and presses the button (1), or feeds a paper to the running
+    // chipper (feed); the host judges each.
+    SpawnIfEnum(coop::config_registry::rows::woodchipper_drill, "woodchipper drill", &WoodchipperThread, role);
+    // The prop-properties tool: the host presses it on a prop it laid, the client takes a toolgun into its hand.
+    SpawnIf("VOTVCOOP_RUN_PROP_PROPS", "prop-properties drill", &PropPropsThread, role);
+    // The nightmare lane: both peers, or a staging value (sleeper, dreamer) for one.
+    SpawnIfEnum(coop::config_registry::rows::nightmare_drill, "nightmare drill", &NightmareThread, role);
+    SpawnIfEnum(coop::config_registry::rows::level_visit_drill, "level visit drill", &LevelVisitThread, role);
+    // The ambient UFOs: the host's rolled paths reach a client's copies; a joiner is sent them at its ready edge.
+    SpawnIfEnum(coop::config_registry::rows::ufo_drill, "UFO drill", &UfoDrillThread, role);
+    // The black orb: the host judges each encounter, a client's copy runs its part.
+    SpawnIfEnum(coop::config_registry::rows::orb_drill, "orb drill", &OrbDrillThread, role);
+    // The earth teleport: the host's black hole reaches a client's sky, and a joiner's at its ready edge.
+    SpawnIfEnum(coop::config_registry::rows::sky_tp_drill, "sky tp drill", &SkyTpDrillThread, role);
+    // The robot cleaner: the host runs it, a client's press is asked of the host, its copies follow the drive.
+    SpawnIfEnum(coop::config_registry::rows::roomba_drill, "roomba drill", &RoombaDrillThread, role);
+    // The walking mannequin's two-peer drill: armed by a value of the mannequin_drill row on both peers (`walker` or a red).
+    if (coop::dev::mannequin_walker_drill::Armed()) {
+        UE_LOGI("harness: mannequin_drill is a walker drill value (%s) -- spawning the mannequin drill thread", RoleStr(role));
+        if (HANDLE h = ::CreateThread(nullptr, 0, &coop::dev::mannequin_walker_drill::Thread, nullptr, 0, nullptr)) ::CloseHandle(h);
+    }
+    // The ATV drill: each act a player does at an ATV, decided on the events of the host path, green and eleven reds.
+    SpawnIfEnum(coop::config_registry::rows::atv_gate_drill, "ATV drill", &coop::dev::atv_gate_drill::Thread, role);
 }
 
 }  // namespace harness::autotest

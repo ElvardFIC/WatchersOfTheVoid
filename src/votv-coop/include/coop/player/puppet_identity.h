@@ -9,8 +9,8 @@
 // result the Blueprint reads has the puppet removed from the result. Every row runs on every machine: the host
 // refuses a client's puppet, a client the host's or another client's puppet touching its copy. Game thread.
 //
-// Divergence from MTA, whose handlers test a positive local identity (CClientGame.cpp:4481, IsLocalPlayer) and
-// deliver a pickup's personal effect to the toucher's own client (Server CPickup.cpp:435-438): here a deny-list
+// Divergence from MTA, whose handlers test a positive local identity (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:4481, IsLocalPlayer) and
+// deliver a pickup's personal effect to the toucher's own client (Server reference/mtasa-blue/Server/mods/deathmatch/logic/CPickup.cpp:435-438): here a deny-list
 // of puppet bodies, and no delivery yet -- a refused effect reaches nobody, and the world half of rows 1-5's
 // consumed creature is restored by the per-player delivery, not by un-refusing here.
 

@@ -62,6 +62,7 @@ uint16_t MintThrowNonce() { ++test::minted;return 0x1234; }
 void NoteThrow(void* p,uint8_t slot,uint16_t nonce) { CHECK(slot==test::slot);++test::notes;test::noted=p;test::nonce=nonce; }
 }
 namespace coop::npc_sync { bool KerfurIsHolding(void*) { return test::robot; } }
+namespace coop::prop_hold_claim { bool IsOwnHoldRefused(uint16_t){return false;} }
 namespace coop::trash_channel { int CtxForEid(coop::element::ElementId) { return test::trash?1:0; } }
 namespace coop::prop_throw { uint16_t ThrowSeqFor(void*) { return test::seq; } }
 namespace coop::prop_wire_parity { uint8_t PhysFlagsOf(void*) { return 5; } }

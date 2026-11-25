@@ -12,6 +12,7 @@
 #pragma once
 
 #include "coop/element/element.h"  // ElementId (GetNpcIdForActor)
+#include "ue_wrap/core/class_resolve.h"  // Family (NpcFamily)
 
 #include <string>  // RegisterHostNpcSilent className
 
@@ -75,7 +76,6 @@ void MapActorToNpcId(void* actor, coop::element::ElementId eid);
 // (a blueprint-internal call by name, as the kerfur's turn-off is): the PRE body exactly, the
 // reverse-map erase, the deferred drain and the destroy broadcast. The actor is a map key
 // only, never dereferenced, so a purged pointer is fine; a no-op when untracked.
-void SyncDestroyedNpcActor(void* actor);
 
 // The eid-keyed variant for the pose-walk dead-actor retire (a self-destroy the PRE never
 // sees). Keying by eid rather than through the actor map means a same-address slot rebind can
@@ -98,6 +98,7 @@ void ReleaseNpcElementSilent(coop::element::ElementId eid);
 // The trust-boundary check both sides use: true iff `cls` derives from one of the allowlisted
 // NPC bases, by a SuperStruct walk. False while the allowlist is not fully resolved.
 bool IsAllowlistedClass(void* cls);
+const ue_wrap::class_resolve::Family& NpcFamily();
 
 // Resolve the late allowlist entries (the event creatures) that have loaded since the last call,
 // through the object index: a lookup each, no object-array walk. Called before a check that may
@@ -147,5 +148,6 @@ struct DevSpawnRefs {
     void* gsCdo           = nullptr;  // GameplayStatics CDO (the call self)
 };
 bool GetDevSpawnRefs(DevSpawnRefs& out);
+
 
 }  // namespace coop::npc_sync

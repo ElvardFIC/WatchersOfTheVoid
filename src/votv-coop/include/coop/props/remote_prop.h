@@ -82,6 +82,16 @@ uint16_t DrivenHoldGeneration(int slot);
 // A drive on `actor` belonging to a slot other than `slot` (-1 excludes none). Game thread.
 bool IsActorDrivenByOtherThan(void* actor, int slot);
 
+// The slot other than `except` whose drive moves `actor`, the lowest when two do, or -1 (`except` -1
+// excludes none). Game thread.
+int DrivingSlotOf(void* actor, int except);
+
+// The host refused hold `holdGen` of the peer in `slot` (coop/props/prop_hold_claim): the hold
+// closes, its release moves nothing, and its drive ends if one started. A copy that no other drive
+// moves goes back to physics where that drive left it, whether or not this peer's player holds it (a
+// grab needs a simulating body). A generation of 0 or a slot out of range changes nothing. Game thread.
+void RefuseHold(int slot, uint16_t holdGen);
+
 // Register a wire-received prop mirror Element at `eid` bound to `actor`. Idempotent for
 // duplicate eids (a silent no-op); skips an eid of 0 (an unminted sender) and the invalid id.
 // The register-mirror pattern: allocate, insert under the manager mutex, register, roll back

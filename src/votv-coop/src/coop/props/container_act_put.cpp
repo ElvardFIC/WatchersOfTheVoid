@@ -5,7 +5,7 @@
 // the player would put in; on a grant the same verb runs again under the replay latch, if it still names that record,
 // and the commit says where the container stored it, or that it stored nothing. The take seat, the pending record and
 // the commit queue are container_act_request's (see container_act_request_internal.h). The fit runs on the client, on
-// the real actors (MTA's confirm reads only server state, CGame.cpp:3373-3417): the container's test needs the actor.
+// the real actors (MTA's confirm reads only server state, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3373-3417): the container's test needs the actor.
 // The same table holds two seats that ask nothing: the client's cancel of its own dingus and of an overlap put on a shared
 // mirror, and the host's judge of a prop a client drives into a box (container_act_host_overlap). Gameplay layer
 // (principle 7). Game thread.
@@ -20,13 +20,13 @@
 #include "coop/props/container_contents_io.h"
 #include "coop/props/container_contents_sync.h"
 #include "coop/props/container_slice_wire.h"
+#include "coop/props/prop_record_wire.h"
 
 #include "ue_wrap/actors/container_inventory.h"
 #include "ue_wrap/actors/container_view.h"
 #include "ue_wrap/actors/prop_use.h"
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/obj_keyed_cache.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
@@ -46,6 +46,7 @@ namespace coop::props::container_act_request::detail {
 namespace {
 
 namespace caw = coop::props::container_act_wire;
+namespace prw = coop::props::prop_record_wire;
 namespace ci  = ue_wrap::container_inventory;
 namespace cio = coop::props::container_contents_io;
 namespace csw = coop::props::container_slice_wire;
@@ -77,7 +78,7 @@ const char* RouteName(uint8_t route) { return route == kRouteR2 ? "R2" : "R3"; }
 bool g_noHoverGuard = false;   // R2's replay does not require that no slot is hovered
 bool g_noHandTable = false;    // the hand hash leaves out no class's ticking fields
 bool g_doubleDone = false;     // a put's done commit is queued twice
-bool g_noOverlapCancel = false;  // the client does not cancel the container's own overlap put on a shared mirror (the red)
+bool g_noOverlapCancel = false;  // the client does not cancel an overlap put on a shared mirror, from any caller (the red)
 
 // A read that tells a put from any other press and fails leaves the verb to run natively, unjudged: said once per
 // session, with the field, so a layout change cannot turn the feature off silently. kSayUnloaded is the hand-hash
@@ -136,8 +137,8 @@ sg::Verdict AskPut(uint8_t route, uint32_t eid, void* container, const SR::SaveR
         return sg::Verdict::Cancel;
     }
     if (!MayTravel(rec)) return sg::Verdict::Cancel;
-    const std::vector<uint8_t> wire = caw::RecordWire(rec);   // serialised once: its size and its hash
-    if (wire.size() > caw::kMaxRecordBytes - caw::kPutStoredSlack) {
+    const std::vector<uint8_t> wire = prw::RecordWire(rec);   // serialised once: its size and its hash
+    if (wire.size() > prw::kMaxRecordBytes - caw::kPutStoredSlack) {
         UE_LOGW("container_act: put eid=%u route=%s: the %ls is past the byte cap a put may ask", eid, RouteName(route),
                 rec.className.c_str());
         ShowBadReason();
@@ -342,10 +343,11 @@ uint32_t g_overlapNoFrame = 0;
 
 // A prop entering a shared mirror's box must never be filed by this client: the mirror is display only, and a local body
 // would add the record to the display and destroy the prop before the host's truth overrules it. The host judges a put
-// at its own overlap (container_act_host_overlap), so nothing is asked and nothing is sent: the call is cancelled. Only the
-// container's own overlap graph is cancelled; a roomba's and the drone sack's calls, made from their own graphs, run.
-// A call with no caller frame cannot be told from the overlap, so it is cancelled too (fails closed). On the host this
-// seat is the host's judge.
+// at its own overlap (container_act_host_overlap), so nothing is asked and nothing is sent: the call is cancelled, for
+// every caller (the container's own overlap graph, a drone sack's trigger forwarding what it takes to the drone's
+// container: run on a client, that local body filed the prop into this display mirror alone and destroyed it, and the
+// destroy took the host's copy with no record). Like PreDingus, the rule is the mirror's authority, not the caller's class.
+// A call with no caller frame is cancelled too (fails closed). On the host this seat is the host's judge.
 sg::Verdict PreOverlap(const sg::Call& c) {
     coop::net::Session* const s = LinkedSession();
     if (!s) return sg::Verdict::Run;
@@ -353,23 +355,17 @@ sg::Verdict PreOverlap(const sg::Call& c) {
     uint32_t eid = 0;
     if (SharedTarget(c.object, eid) == Target::Own) return sg::Verdict::Run;
     if (g_noOverlapCancel) return sg::Verdict::Run;   // the red: container_overlap_no_cancel, the BP body runs on the mirror
-    if (c.callerFunction) {
-        if (c.callerObject != c.object) return sg::Verdict::Run;
-        // Whether a caller function is the container's own overlap graph is asked of its name once per function.
-        static ue_wrap::ObjKeyedCache<bool, 8> sIsOwnGraph;
-        bool* own = sIsOwnGraph.Find(c.callerFunction);
-        if (!own) {
-            static const std::wstring kGraph = L"ExecuteUbergraph_prop_container";
-            own = &sIsOwnGraph.Insert(c.callerFunction, R::ToString(R::NameOf(c.callerFunction)).compare(0, kGraph.size(), kGraph) == 0);
-        }
-        if (!*own) return sg::Verdict::Run;
-    } else {
-        ++g_overlapNoFrame;
-    }
+    if (!c.callerFunction) ++g_overlapNoFrame;
     const uint32_t n = ++g_overlapCancelled;
-    if (n == 1 || n % 100 == 0)   // the first, then every 100th: a prop at a box's edge re-enters at the physics rate
-        UE_LOGI("container_act: overlap put on the shared mirror eid=%u cancelled, the host judges it (#%u, %u without a caller frame)",
-                static_cast<unsigned>(eid), n, g_overlapNoFrame);
+    if (n == 1 || n % 100 == 0) {   // the first, then every 100th: a prop at a box's edge re-enters at the physics rate
+        static R::ParamOffset sActor{L"actor"};
+        void* actor = nullptr;
+        ReadParam(sActor, c, actor);
+        UE_LOGI("container_act: overlap put on the shared mirror eid=%u cancelled, the host judges it (#%u, %u without a caller "
+                "frame; this one %ls from %ls)", static_cast<unsigned>(eid), n, g_overlapNoFrame,
+                actor && R::IsLive(actor) ? R::ClassNameOf(actor).c_str() : L"-",
+                c.callerObject && R::IsLive(c.callerObject) ? R::ClassNameOf(c.callerObject).c_str() : L"-");
+    }
     return sg::Verdict::Cancel;
 }
 

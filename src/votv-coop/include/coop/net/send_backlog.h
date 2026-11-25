@@ -99,7 +99,7 @@ public:
     // counted: it is held by design and is not a link backlog.
     size_t DepthBytes(int slot);
 
-    // The join gate: MTA's not-yet-joined player (CPlayerManager.cpp:159-172, BroadcastOnlyJoined). From
+    // The join gate: MTA's not-yet-joined player (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:159-172, BroadcastOnlyJoined). From
     // OpenJoinGate to CloseJoinGate, every Default-lane send to the slot is appended to the slot's join
     // queue in send order, except a send made inside a SnapshotSendScope for that slot. CloseJoinGate
     // splices the queue onto the slot's Default lane behind what is already there under the lock (a swap

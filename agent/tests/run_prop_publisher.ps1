@@ -6,12 +6,12 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- $includes=@('/I','agent/tests/prop_publisher_stubs','/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
+ $includes=@('/I',(Join-Path $PSScriptRoot 'prop_publisher_stubs'),'/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props')
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c /I src/votv-coop/include "/Fo$output/registry.obj" src/votv-coop/src/coop/config/config_registry.cpp
  if($LASTEXITCODE){throw 'Publisher config registry compile failed'}
  function Compile([string]$name,[string]$header=''){
   $forced=@();if($header){$forced=@("/FI$header")}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/prop_publisher_test.cpp "$output/registry.obj" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/prop_publisher_test.cpp" "$output/registry.obj" /link /OPT:REF
   if($LASTEXITCODE){throw "Publisher fixture compile failed: $name"}
  }
  Compile 'test'

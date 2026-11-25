@@ -41,7 +41,7 @@ RefusalOnce::Say RefusalOnce::Note(uint32_t eid) {
 }
 
 // The author of a refused slice is sent the host's truth: MTA's sync-back of a cancelled client change
-// (CGame.cpp:2777-2795).
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2777-2795).
 void RefuseNonBirth(uint32_t eid, uint8_t senderSlot) {
     g_refusals.Note(senderSlot, "not a birth", coop::net::RefusalTally::Clock::now());
     TruthSlot& t = g_truth[senderSlot];
@@ -65,7 +65,7 @@ bool SlotTruthDue(uint64_t lastAnyMs, uint64_t nowMs) {
     return lastAnyMs == 0 || nowMs >= lastAnyMs + kTruthSlotEveryMs;
 }
 
-// Divergence from MTA's unthrottled sync-back (CGame.cpp:2777-2795): its unit is one value, ours a whole container
+// Divergence from MTA's unthrottled sync-back (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2777-2795): its unit is one value, ours a whole container
 // blob, so the truth is bounded. A container that does not resolve gets no answer where MTA sends
 // REMOVE_ELEMENT_DATA (:2790-2794); the entity lane replicates its destroy.
 bool SendTruthBounded(uint32_t eid, int slot) {

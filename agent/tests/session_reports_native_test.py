@@ -3,12 +3,12 @@ from pathlib import Path
 import sys
 
 workspace = Path(__file__).resolve().parents[3]
-research = workspace / "_research"
-sys.path.insert(0, str(research))
+evidence_root = workspace / "_research"
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-assets = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else research / "current-assets"
+assets = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else evidence_root / "current-assets"
 
 
 def functions(asset):

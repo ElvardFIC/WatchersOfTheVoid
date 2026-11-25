@@ -7,12 +7,12 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($name in @('cord_intent_2170','cord_wrapper_2170')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/cord_2170_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/cord_2170_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $name"}
   & "$output/$name.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
  }
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/cord_2170_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/cord_32.obj" "/Fe$output/cord_32.exe" agent/tests/cord_intent_2170_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I "$PSScriptRoot/cord_2170_stubs" /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/cord_32.obj" "/Fe$output/cord_32.exe" "$PSScriptRoot/cord_intent_2170_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw '32-peer cord fixture compile failed'}
  & "$output/cord_32.exe"
  if($LASTEXITCODE -ne 0){throw '32-peer cord fixture failed'}

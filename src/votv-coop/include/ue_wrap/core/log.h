@@ -66,9 +66,9 @@ std::wstring BasePath();
 inline constexpr char kAddrOpen[] = "\xE2\x9F\xA8" "addr:";  // U+27E8 + "addr:"
 inline constexpr char kAddrClose[] = "\xE2\x9F\xA9";          // U+27E9
 inline constexpr char kLogFormatLine[] = "log format 1";
-// MTA and Source print a peer's address raw in the server's own log (CGame.cpp:1411,
-// EventLog.cpp:73), and MTA's client log, uploaded with a crash (CCrashDumpWriter.cpp:2450), holds
-// the server it dialled (CConnectManager.cpp:157). Ours holds every peer's address and leaves in
+// MTA and Source print a peer's address raw in the server's own log (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1411,
+// reference/source-sdk-2013/src/game/server/EventLog.cpp:73), and MTA's client log, uploaded with a crash (reference/mtasa-blue/Client/core/CCrashDumpWriter.cpp:2450), holds
+// the server it dialled (reference/mtasa-blue/Client/core/CConnectManager.cpp:157). Ours holds every peer's address and leaves in
 // a report, so the site marks it.
 // Pure, any thread, no lock, no log call. The value's own U+27E8 / U+27E9, CR and LF become
 // '?', so a value cannot end its own mark or its line. Used as Addr(x).c_str() in a varargs.

@@ -8,11 +8,11 @@ try {
         . (Join-Path $root '../_toolchain/env.ps1')
     }
     & cl /nologo /std:c++20 /EHsc /utf-8 `
-        /I agent/tests/laptop_2171_stubs `
+        /I "$PSScriptRoot/laptop_2171_stubs" `
         /I src/votv-coop/include `
         "/Fo$output/laptop_power_2171_test.obj" `
         "/Fe$output/laptop_power_2171_test.exe" `
-        agent/tests/laptop_power_2171_test.cpp /link /OPT:REF
+        "$PSScriptRoot/laptop_power_2171_test.cpp" /link /OPT:REF
     if ($LASTEXITCODE -ne 0) { throw 'Laptop power test compile failed' }
     & "$output/laptop_power_2171_test.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Laptop power test failed' }

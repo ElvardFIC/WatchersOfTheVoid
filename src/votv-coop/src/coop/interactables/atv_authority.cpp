@@ -45,7 +45,7 @@ namespace {
 
 // The buckets are the host's per-slot paces: a client past one costs the host no work and no answer beyond the
 // refusal. A leave takes no token. The stream bucket is per entry (atv_sync_internal.h).
-// The takeover pace is per sender; MTA's is per vehicle, one push per 1500 ms (CUnoccupiedVehicleSync.cpp:490).
+// The takeover pace is per sender; MTA's is per vehicle, one push per 1500 ms (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:490).
 constexpr IntentBudget kSeatBudget{4.f, 1.f};
 constexpr IntentBudget kTakeoverBudget{2.f, 1.f};
 constexpr IntentBudget kStreamBudget{16.f, 40.f};   // twice the 20 Hz a syncer sends
@@ -93,7 +93,7 @@ void Count(uint8_t slot, AtvRefusal r) {
 }
 
 // The verdict to its sender, with the seat and the syncer the host now holds for that ATV (0xFF and 0 without one).
-// Only the requester is answered; MTA broadcasts its confirm (CGame.cpp:3196-3197), a refusal going to the sender
+// Only the requester is answered; MTA broadcasts its confirm (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3196-3197), a refusal going to the sender
 // alone (:3358-3366), and here the stamp tells the other clients.
 void Answer(coop::net::Session& s, uint8_t slot, const coop::net::WireKey& key, uint8_t seq, AtvRefusal why,
             const AtvEntry* e) {
@@ -162,7 +162,7 @@ AtvRefusal SitTests(const AtvEntry& e, uint8_t who) {
 // The table's tests for a takeover by `who`: nobody sits in the ATV (a carrier never takes a driven one, and a
 // sit takes a carried one), and nobody else carries it: another client whose last block had the grabbed bit, or the
 // host's own player. No carry is stolen; a settling or parked ATV yields to a grab. A takeover is a grab, not
-// MTA's push by contact (CUnoccupiedVehicleSync.cpp:480-504), and that push steals from any syncer that is not
+// MTA's push by contact (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:480-504), and that push steals from any syncer that is not
 // persistent (:499-502).
 AtvRefusal TakeoverTests(const AtvEntry& e, uint8_t who) {
     // The developer red arm of the ATV health drill: the host-carry clause alone is skipped, so the drill's `judge`
@@ -192,6 +192,7 @@ void Grant(AtvEntry& e, uint8_t who, bool seat, bool carried, uint64_t nowMs) {
     e.lastGrabbed = carried;
     e.streamBucket.Reset();
     e.haveSyncerHealth = false;
+    coop::atv_sync::ForgetHorn(e);   // the last horn level replayed was the previous syncer's
     e.stampDue = true;
 }
 
@@ -202,6 +203,7 @@ void HandToHost(AtvEntry& e, uint8_t prev, uint64_t nowMs) {
     e.syncerSlot = 0;
     e.streamBucket.Reset();
     e.haveSyncerHealth = false;
+    coop::atv_sync::ForgetHorn(e);   // the last horn level replayed was the previous syncer's
     e.stampDue = true;
 }
 
@@ -291,7 +293,7 @@ bool IsLateSyncer(const AtvEntry& e, uint8_t slot, uint64_t nowMs) {
 
 bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t senderSlot, uint64_t nowMs) {
     // No time context: the lane is FIFO and no host code repositions a client-synced ATV. MTA's context guards a
-    // server move against a syncer's packet in flight (CUnoccupiedVehicleSync.cpp:285, CElement.cpp:1281-1305).
+    // server move against a syncer's packet in flight (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:285, reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1281-1305).
     // The developer red arm of the hostile drill's atv_state_forge: the sender test is skipped, so a forged block is
     // not counted `not_syncer` and applies, and the drill's table must fail. Resolved once.
     static const bool s_redNotSyncer =
@@ -351,8 +353,10 @@ void RunPass(uint64_t nowMs) {
         if (e.syncerSlot == 0 || !R::IsLiveByIndex(e.actor, e.idx)) continue;
         const uint8_t syncer = e.syncerSlot;
         // 1. silent: the host takes the ATV, and the seat with it when that client held it. MTA's syncer sends only
-        // on change (CUnoccupiedVehicleSync.cpp:459), so silence is normal there; here a syncer streams.
-        if (!s_redSilence && nowMs - e.lastBlockMs >= kSyncerSilenceMs) {
+        // on change (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:459), so silence is normal there; here a syncer streams.
+        const bool silent = nowMs - e.lastBlockMs >= kSyncerSilenceMs;
+        if (silent) ++g_counters.silentSeen;
+        if (!s_redSilence && silent) {
             if (e.occupantSlot == syncer) e.occupantSlot = kNoSeat;
             HandToHost(e, syncer, nowMs);
             ++g_counters.silenced;
@@ -364,7 +368,7 @@ void RunPass(uint64_t nowMs) {
         // 2. seated: the syncer is the occupant.
         if (e.occupantSlot != kNoSeat) continue;
         // 3. out of range, or at rest and uncarried: the host takes the ATV. MTA keeps an in-range syncer and hands an
-        // out-of-range vehicle to the nearest player (CUnoccupiedVehicleSync.cpp:127-146, :171-192); here the host's
+        // out-of-range vehicle to the nearest player (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:127-146, :171-192); here the host's
         // world is always loaded, and an ATV at rest returns to it, which MTA has no rule for.
         FVector atvAt; FRotator rot;
         if (!A::GetRootTransform(e.actor, atvAt, rot)) continue;
@@ -401,6 +405,7 @@ void ClearTable(AtvEntry& e) {
     e.blown = false;
     e.blownBy = 0xFF;
     e.haveSyncerHealth = false;
+    coop::atv_sync::ForgetHorn(e);   // the last horn level replayed was the previous syncer's
     e.stampDue = true;
 }
 

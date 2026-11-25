@@ -7,8 +7,8 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  foreach($testName in @('bucket_2153','building_wrapper_2153','wrappers_2129','gate_scope_2160')) {
-  $includes=if($testName -in @('building_wrapper_2153','gate_scope_2160')){@()}else{@('/I','agent/tests/material_2153_stubs','/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+  $includes=if($testName -in @('building_wrapper_2153','gate_scope_2160')){@()}else{@('/I',(Join-Path $PSScriptRoot 'material_2153_stubs'),'/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $testName"}
   & "$output/$testName.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}

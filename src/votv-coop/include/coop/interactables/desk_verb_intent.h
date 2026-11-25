@@ -10,7 +10,7 @@
 // content hash (row order differs per peer), the slot's drive and its row, the refiner's row. The host checks the
 // presser's reach, finds each on its own desk and replays the press with the presser's puppet as the player
 // (desk_press::PressForAnother), its writes reaching every peer on their own lanes; a miss is answered to the
-// presser alone. The press's gloss and sounds are the presser's (desk_verb_effects), as is the decode a start
+// presser alone. The press's gloss and sounds are the presser's (requester_feedback), as is the decode a start
 // begins (comp_sync). Every other button runs where it is pressed; the Kerfus intent is the shape. Game thread.
 
 #pragma once
@@ -29,6 +29,10 @@ void Install(coop::net::Session* session);
 
 // Settle the seams; HOST: run one queued press per peer per token. Game thread.
 void Tick(coop::net::Session& session);
+
+// HOST: `delta` to `slot`'s own profile stat `stat` (a save_main stats member, as "signals_processed"), which the
+// host's machine counted for a decode that slot began (DeskVerb op 4; comp_sync). Game thread.
+void SendStat(uint8_t slot, uint32_t seq, const wchar_t* stat, int32_t delta);
 
 // DeskVerb from `senderSlot`: a HOST queues a client's press, a CLIENT takes its verdict and effects.
 void OnMessage(coop::net::Session& session, const coop::net::DeskVerbPayload& p, int senderSlot);

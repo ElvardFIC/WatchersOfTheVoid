@@ -6,17 +6,24 @@
 // kind-to-channel router and the Install, Tick and event facade.
 
 #include "coop/interactables/interactable_sync.h"
+#include "coop/interactables/cargo_lift.h"            // the cargo lift adapter's read and apply
+#include "coop/interactables/cremator_state.h"        // the cremator adapter's read and apply
 #include "coop/interactables/interactable_channel.h"  // the generic engine: Adapter and Channel
 #include "coop/interactables/door_verb_intent.h"
+#include "coop/world/cargo_lift_sync.h"
+#include "coop/creatures/npc_sync.h"
 #include "coop/element/portable_identity.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/interactables/swinger_join_pose.h"     // a joiner's open lids at their host's places
 
+#include "coop/world/world_sound_sync.h"  // a faucet's click
+#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/devices/appliance.h"     // the six-class save-actor toggle family
 #include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/devices/kitchen_machine.h"
 #include "ue_wrap/devices/door.h"
 #include "ue_wrap/devices/door_box.h"      // lockers and the drone-console box
+#include "ue_wrap/devices/cargo_lift.h"
 #include "ue_wrap/devices/garage.h"
 #include "ue_wrap/devices/lightswitch.h"
 #include "ue_wrap/devices/security_camera.h"
@@ -144,6 +151,14 @@ const Adapter g_garageAdapter = {
     &ue_wrap::garage::TryReadOpen,
     [](void* a, bool on) -> bool { return ue_wrap::garage::ApplyOpen(a, on); },
 };
+// A state the wire brought to an appliance. A faucet whose state changed here was pressed on another peer, whose game
+// played its click there: this peer plays it at the faucet (coop/world/world_sound_sync).
+bool ApplyApplianceState(void* a, bool on) {
+    const bool applied = ue_wrap::appliance::ApplyState(a, on);
+    // Faucet clicks are observed by world_sound_sync at their native PlaySound2D call.
+    return applied;
+}
+
 // The appliance family (six Aactor_save_C descendants: faucet, sink, shower, kitchen oven,
 // serverBox, wall-unit tapes), symmetric single-bool toggles with no auto-revert. One adapter:
 // ue_wrap::appliance dispatches by class to the right bool offset and refresh verb, so the peer's
@@ -155,7 +170,7 @@ const Adapter g_applianceAdapter = {
     &ue_wrap::appliance::IsAppliance,
     &ue_wrap::appliance::GetKeyString,
     &ue_wrap::appliance::TryReadState,
-    [](void* a, bool on) -> bool { return ue_wrap::appliance::ApplyState(a, on); },
+    &ApplyApplianceState,
     nullptr,
     &ue_wrap::appliance::ResolvedClassCount,
 };
@@ -328,6 +343,28 @@ void* ResolveCamera(const std::wstring& key) {
     if (key.empty() || !ue_wrap::security_camera::EnsureResolved()) return nullptr;
     return g_cameraActive.ActorForKey(key);
 }
+
+std::wstring CrematorKey(void* cremator) { return ue_wrap::cremator::LeverWireKey(cremator); }
+
+void* ResolveCremator(const std::wstring& key) {
+    return key.empty() ? nullptr : ue_wrap::cremator::FindByLeverWireKey(key);
+}
+
+void OnCrematorVerb(void* cremator) { coop::door_verb_intent::OnCrematorFinished(cremator); }
+
+std::wstring CargoLiftKey(void* lift) { return ue_wrap::cargo_lift::Key(lift); }
+
+void* ResolveCargoLift(const std::wstring& key) {
+    if (key.empty()) return nullptr;
+    std::vector<ue_wrap::CachedObjRef> lifts;
+    ue_wrap::cargo_lift::Enumerate(lifts);
+    for (const auto& ref : lifts) if (ref.Get() && ue_wrap::cargo_lift::Key(ref.Get()) == key) return ref.Get();
+    return nullptr;
+}
+
+void OnCargoLiftVerb(void*) {}
+
+void ResendCargoLiftsTo(uint8_t slot) { coop::cargo_lift_sync::QueueConnect(slot); }
 
 bool ApplyingLightGroup(void* root) { return root && root == g_applyingGroup; }
 

@@ -2,9 +2,14 @@
 // ground truth.
 
 #include "coop/creatures/kerfur_command.h"
+#include "coop/creatures/kerfur_command_wire.h"
+#include "coop/creatures/kerfur_command_answer.h"
+#include "coop/creatures/kerfur_disc_carry.h"
+#include "coop/requester_feedback/requester_feedback.h"
 
 #include "coop/creatures/npc_sync.h"          // GetNpcIdForActor; NoteKerfurHolding so a take is not a throw
 #include "coop/creatures/served_player.h"
+#include "coop/element/intent_authority.h"  // the reach judge a client intent is held to
 #include "coop/element/mirror_manager.h"
 #include "coop/element/npc.h"
 #include "coop/element/registry.h"
@@ -62,6 +67,8 @@ namespace P  = ue_wrap::profile;
 namespace SP = coop::served_player;
 namespace sg = ue_wrap::script_gate;
 
+namespace kcw = coop::kerfur_command_wire;
+using KR = coop::net::kerfur_command_answer::KerfurRefusal;
 using coop::element::ElementId;
 using coop::element::kInvalidId;
 
@@ -77,6 +84,7 @@ bool g_killWatched = false;
 bool g_killLive = false;
 bool g_killRefused = false;
 bool g_saidUnserved = false;
+bool g_saidSendFailed = false;
 ue_wrap::CachedObjRef g_killClass,g_killFn;
 
 // Its follow, patrol, hand-back and turn read GetPlayerPawn, its disc insert getMainPlayer.
@@ -87,15 +95,21 @@ constexpr uint8_t kOmegaSeams = SP::kPlayerPawn | SP::kMainPlayer;
 // joiner's curtain and its first pose, a mid-join window rather than a verdict), or the Omega's seams and its
 // startKill watch still settling -- since the verb's own reads would take the host. A request past the cap, or
 // one that can never run (an unknown sender or command, an eid outside the host range), is refused into the
-// tally. Per-slot state: a leaver's queue goes with its occupant. Game thread.
-constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};
-constexpr size_t kMaxPending = 8;
+// tally. A get_reports that carries a disc keeps with it the verdict of its arrival (the hand lane showed that disc or
+// not). Per-slot state: a leaver's queue, and the discs queued in it, go with its occupant. Game thread.
 
-struct QueuedCmd {coop::net::KerfurCommandPayload packet{};coop::element::Registry::IdentitySnapshot identity;ue_wrap::CachedObjRef actor,cls;};
+// A request in a sender's queue: the command, and whether its disc tail passed the host's judge at arrival.
+struct Queued {
+    kcw::Request req;
+    bool tailOk = true;
+};
+
+struct QueuedCmd {kcw::Request request{};coop::kerfur_disc_carry::TailVerdict tail=coop::kerfur_disc_carry::TailVerdict::Ok;coop::element::Registry::IdentitySnapshot identity;ue_wrap::CachedObjRef actor,cls;};
 struct Slot {
     coop::net::IntentQueue<QueuedCmd> queue;
     uint32_t generation=0;uint64_t ready=0,epoch=0;
     bool waitSaid = false;  // the head's wait, said once a streak
+    bool preSaid = false;   // a refusal before the queue (full, or an eid outside the host range), answered once a streak
 };
 coop::roster_ledger::PerSlotState<Slot> g_slots;
 coop::net::RefusalTally g_tally{"kerfur_command"};
@@ -105,22 +119,23 @@ coop::roster_ledger::PerSlotState<uint32_t> g_runs;
 coop::roster_ledger::PerSlotState<uint32_t> g_refused;
 
 // Re-entrancy guard: the host executes a verb by re-invoking actionName via ProcessEvent (HostRunVerb),
-// which re-enters the actionName interceptor. The thread-local flag makes TryRecordMenuCommand pass that
-// re-entry through instead of recording it (else infinite loop). Game thread; the PE dispatch is
-// synchronous on the same thread, so thread_local suffices.
+// which re-enters the seat's actionName watch. The flag makes TryRecordMenuCommand pass that re-entry through
+// instead of recording it (else infinite loop). Game thread; the dispatch is synchronous on the same thread, so
+// thread_local suffices.
 thread_local bool t_inHostExec = false;
 
-// ---- recorded actions (interceptor -> Tick) ----------------------------------------------------
+// ---- recorded actions (the seat -> Tick) ---------------------------------------------------------
 struct PendingCmd {
     void*   actor = nullptr;
     int32_t internalIdx = -1;
     Command command = Command::Invalid;
     bool    isClient = false;
+    std::optional<coop::kerfur_disc_carry::Capture> disc;
     uint32_t serial=0,world=0,actorSerial=0;uint64_t epoch=0,stops=0;
     void* worldObject=nullptr;coop::net::Session* session=nullptr;
 };
-std::mutex g_qMutex;
 std::vector<PendingCmd> g_queue;
+std::mutex g_qMutex;
 
 std::atomic<uint64_t> g_execEpoch{1};uint64_t g_commandAttempt=0,g_stageAttempt=0;bool g_pumping=false,g_registeringKill=false;
 struct Scope {
@@ -202,17 +217,38 @@ bool HasBody(uint8_t slot) {
     return rp && rp->valid() && rp->HasPose();
 }
 
-// Settling, not refused: a refusal is final, and its commands run for the host instead of waiting.
+// Settling, not refused: a refusal is final, and a client's commands are answered instead of waiting (ExecuteHostCommand).
 bool Settling() {
     return (!g_killLive && !g_killRefused) || (!SP::SeamsReady(kOmegaSeams) && !SP::SeamsRefused(kOmegaSeams));
 }
 
-bool CanRunFor(uint8_t slot) { return HasBody(slot) && !Settling(); }
+// The verb runs inside a feedback scope, whose seams stand only once requester_feedback is ready (subsystems::Install
+// installs and ticks it for every lane): the head waits for
+// them, or runs into the refusal when they never will (RunRequest).
+bool CanRunFor(uint8_t slot) {
+    return HasBody(slot) && !Settling() &&
+           (coop::requester_feedback::Ready() || coop::requester_feedback::Refused());
+}
 
 // One refusal into the tally, and into the sender's count when the slot is a client's (1 and up).
 void Refuse(uint8_t slot, const char* why) {
     if (slot >= 1 && slot < coop::players::kMaxPeers) ++g_refused[slot];
     g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
+}
+
+// The requester told why its well-formed command was refused: a client's only, the host's own has nobody to tell.
+void Answer(uint8_t slot, uint32_t requestId, KR reason) {
+    if (slot == coop::players::kPeerIdHost) return;
+    coop::kerfur_command_answer::SendRefused(LoadSession(), slot, requestId, static_cast<uint8_t>(reason));
+}
+
+// A refusal made before the queue is answered once a streak (cleared when the sender's next request runs), so a
+// flooding sender is told once and not once a packet.
+void AnswerOnceAStreak(uint8_t slot, uint32_t requestId, KR reason) {
+    Slot& sl = g_slots[slot];
+    if (sl.preSaid) return;
+    sl.preSaid = true;
+    Answer(slot, requestId, reason);
 }
 
 // The game's own guard on every relayed verb (bytecode @20950-@22108): a kerfur on a job -- fixing
@@ -473,7 +509,7 @@ void RefuseAtServe(uint8_t slot, const char* why) {
 
 // A request whose sender has a body: validated against the kerfur as it is now, then run.
 void RunRequest(const QueuedCmd& queued,uint8_t slot,const std::function<bool()>& sender){
-    ++g_runs[slot];const auto& payload=queued.packet;
+    ++g_runs[slot];g_slots[slot].waitSaid=false;g_slots[slot].preSaid=false;const auto& payload=queued.request.head;
     const auto current=[&]{coop::element::Registry::IdentitySnapshot now;
         return sender()&&coop::element::Registry::Get().ReadIdentity(payload.elementId,now)&&now.incarnation==queued.identity.incarnation&&now.type==coop::element::ElementType::Npc&&
             !now.mirror&&!now.deleting&&queued.actor.Get()&&queued.cls.Get()&&now.actor==queued.actor.Raw()&&R::ClassOf(now.actor)==queued.cls.Raw()&&queued.actor.Get()&&queued.cls.Get()&&sender();};
@@ -482,6 +518,36 @@ void RunRequest(const QueuedCmd& queued,uint8_t slot,const std::function<bool()>
     }
     const bool kind=K::IsKerfurActor(queued.actor.Raw());if(!current()||!kind)return;
     const bool kill=K::ReadKill(queued.actor.Raw());if(!current()||kill)return;
+    if (queued.request.hasRecord) {
+        if (queued.tail != coop::kerfur_disc_carry::TailVerdict::Ok) {
+            Answer(slot, payload.requestId, KR::Unavailable);
+            RefuseAtServe(slot, "disc tail unavailable at arrival");
+            return;
+        }
+        const auto gate = coop::kerfur_disc_carry::ReadGate(queued.actor.Raw());
+        if (gate == coop::kerfur_disc_carry::Gate::Busy) {
+            Answer(slot, payload.requestId, KR::Busy);
+            RefuseAtServe(slot, "Omega busy before disc carry");
+            return;
+        }
+        if (gate == coop::kerfur_disc_carry::Gate::HasDisc) {
+            Answer(slot, payload.requestId, KR::Busy);
+            RefuseAtServe(slot, "Omega already holds a disc");
+            return;
+        }
+        coop::kerfur_disc_carry::HandScope hand(slot, queued.request.record);
+        if (!hand.ok() || !current()) {
+            Answer(slot, payload.requestId, KR::Unavailable);
+            RefuseAtServe(slot, "could not stage the requested disc");
+            return;
+        }
+        ExecuteHostCommand(payload.elementId, queued.actor.Raw(), static_cast<Command>(payload.command), slot, current);
+        const bool consumed = hand.Consumed();
+        hand.Close();
+        if (consumed) coop::kerfur_command_answer::SendConsumed(LoadSession(), slot, payload.requestId);
+        else Answer(slot, payload.requestId, KR::Unavailable);
+        return;
+    }
     ExecuteHostCommand(payload.elementId,queued.actor.Raw(),static_cast<Command>(payload.command),slot,current);
 }
 void ServeQueues(){
@@ -494,7 +560,10 @@ void ServeQueues(){
         queue.queue.Serve(kBudget,coop::net::NowMs,[&](const QueuedCmd& request){
             if(!current())return coop::net::Served::Done;
             const bool canRun=CanRunFor(slot);if(!current())return coop::net::Served::Done;
-            if(!canRun)return coop::net::Served::Wait;
+            if(!canRun){
+                if(!queue.waitSaid){coop::kerfur_command_answer::SendWaits(scope.session,slot,request.request.head.requestId);queue.waitSaid=true;}
+                return coop::net::Served::Wait;
+            }
             RunRequest(request,slot,current);return coop::net::Served::Done;
         });
     }
@@ -605,7 +674,9 @@ bool TryRecordMenuCommand(void* self, const std::wstring& name, bool isClient) {
     pc.actor = self;
     pc.internalIdx = R::InternalIndexOf(self);
     pc.command = CommandFromActionName(name);
-    pc.isClient = isClient;pc.session=s;pc.serial=coop::net::session_serial::Current();pc.world=ue_wrap::world_identity::Generation();pc.worldObject=ue_wrap::world_identity::CurrentWorld();pc.stops=s->StopCount();pc.epoch=g_execEpoch.load();pc.actorSerial=R::SlotSerial(pc.internalIdx);
+    pc.isClient = isClient;
+    if (isClient && pc.command == Command::GetReports) pc.disc = coop::kerfur_disc_carry::CaptureHeld();
+    pc.session=s;pc.serial=coop::net::session_serial::Current();pc.world=ue_wrap::world_identity::Generation();pc.worldObject=ue_wrap::world_identity::CurrentWorld();pc.stops=s->StopCount();pc.epoch=g_execEpoch.load();pc.actorSerial=R::SlotSerial(pc.internalIdx);
     {
         std::lock_guard<std::mutex> lk(g_qMutex);
         // The radial confirm records the verb, then actionName's interceptor records it again
@@ -639,12 +710,71 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
     const auto scope=*g_boundExecution;const auto generation=s->peerGenerationForSlot(senderPeerSlot);const auto ready=s->SlotWorldReadyRevision(senderPeerSlot);
     if(!generation||!s->IsSlotConnected(senderPeerSlot)||!s->IsSlotWorldReady(senderPeerSlot))return;
     auto& slot=g_slots[senderPeerSlot];if(slot.epoch!=scope.epoch||slot.generation!=generation||slot.ready!=ready){slot=Slot{};slot.epoch=scope.epoch;slot.generation=generation;slot.ready=ready;}
-    QueuedCmd queued;queued.packet=payload;
+    QueuedCmd queued;queued.request.head=payload;
     if(coop::element::Registry::Get().ReadIdentity(payload.elementId,queued.identity)&&queued.identity.actor&&R::IsLiveByIndex(queued.identity.actor,queued.identity.internalIdx)){
         queued.actor.Set(queued.identity.actor);queued.cls.Set(R::ClassOf(queued.identity.actor));
     }
     if(!scope.Current()||s->peerGenerationForSlot(senderPeerSlot)!=generation||s->SlotWorldReadyRevision(senderPeerSlot)!=ready)return;
     if(!slot.queue.Push(std::move(queued),kMaxPending))Refuse(senderPeerSlot,"queue full");
+}
+
+void OnCommandChunk(const coop::net::BlobChunkPayload& chunk, uint8_t senderPeerSlot) {
+    BindExecution();
+    auto* session = LoadSession();
+    if (!g_boundExecution || !g_boundExecution->Current() || g_boundExecution->role != coop::net::Role::Host ||
+        !g_boundExecution->linked || !session) return;
+    if (!senderPeerSlot || senderPeerSlot >= coop::players::kMaxPeers) {
+        Refuse(senderPeerSlot, "unknown sender");
+        return;
+    }
+    kcw::Request request;
+    const char* why = "malformed command blob";
+    const auto feed = kcw::OnChunk(chunk, senderPeerSlot, request, &why);
+    if (feed == kcw::Feed::Incomplete) return;
+    if (feed == kcw::Feed::Malformed) {
+        Refuse(senderPeerSlot, why);
+        return;
+    }
+    const auto& payload = request.head;
+    if (!payload.requestId || payload.requestId != chunk.blobSeq ||
+        payload.command > static_cast<uint8_t>(Command::Equipment) ||
+        !coop::element::Registry::IsAllowedHostAllocatedEid(payload.elementId)) {
+        Refuse(senderPeerSlot, "invalid command identity");
+        return;
+    }
+    const auto scope = *g_boundExecution;
+    const auto generation = session->peerGenerationForSlot(senderPeerSlot);
+    const auto ready = session->SlotWorldReadyRevision(senderPeerSlot);
+    if (!generation || !session->IsSlotConnected(senderPeerSlot) || !session->IsSlotWorldReady(senderPeerSlot)) return;
+    auto& slot = g_slots[senderPeerSlot];
+    if (slot.epoch != scope.epoch || slot.generation != generation || slot.ready != ready) {
+        slot = Slot{};
+        slot.epoch = scope.epoch;
+        slot.generation = generation;
+        slot.ready = ready;
+    }
+    QueuedCmd queued;
+    queued.request = std::move(request);
+    if (queued.request.hasRecord) {
+        const char* tailWhy = "invalid disc tail";
+        queued.tail = coop::kerfur_disc_carry::JudgeTail(queued.request.record, senderPeerSlot,
+                                                          coop::net::NowMs(), &tailWhy);
+        if (queued.tail == coop::kerfur_disc_carry::TailVerdict::Malformed) {
+            Refuse(senderPeerSlot, tailWhy);
+            return;
+        }
+    }
+    if (coop::element::Registry::Get().ReadIdentity(payload.elementId, queued.identity) && queued.identity.actor &&
+        R::IsLiveByIndex(queued.identity.actor, queued.identity.internalIdx)) {
+        queued.actor.Set(queued.identity.actor);
+        queued.cls.Set(R::ClassOf(queued.identity.actor));
+    }
+    if (!scope.Current() || session->peerGenerationForSlot(senderPeerSlot) != generation ||
+        session->SlotWorldReadyRevision(senderPeerSlot) != ready) return;
+    if (!slot.queue.Push(std::move(queued), kMaxPending)) {
+        AnswerOnceAStreak(senderPeerSlot, payload.requestId, KR::QueueFull);
+        Refuse(senderPeerSlot, "queue full");
+    }
 }
 
 void NoteRefused(uint8_t senderPeerSlot, const char* why) { Refuse(senderPeerSlot, why); }
@@ -654,9 +784,9 @@ void Tick() {
     BindExecution();auto* s=LoadSession();if(!g_boundExecution||!g_boundExecution->Current()||!s)return;const auto scope=*g_boundExecution;
     if(scope.role==coop::net::Role::Host)PumpTakenNotices();else PumpTakenCleanup();if(!scope.Current())return;
 
-    // 1) drain recorded actions (interceptor cancelled the local dispatch; we act here).
+    // 1) drain recorded actions (the seat cancelled the local dispatch; we act here).
     std::vector<PendingCmd> ready;
-    { std::lock_guard<std::mutex> lk(g_qMutex); if (!g_queue.empty()) ready.swap(g_queue); }
+    if (!g_queue.empty()) ready.swap(g_queue);
     for (const PendingCmd& pc : ready) {
         if(!scope.Current())return;
         if(pc.session!=s||pc.epoch!=scope.epoch||pc.serial!=scope.serial||pc.world!=scope.world||pc.worldObject!=scope.object||pc.stops!=scope.stops||pc.isClient!=(scope.role==coop::net::Role::Client)||R::SlotSerial(pc.internalIdx)!=pc.actorSerial)continue;
@@ -664,24 +794,39 @@ void Tick() {
         if (pc.isClient) {
             const ElementId eid = FindWireEidForNpcActor(pc.actor);
             if (eid == kInvalidId) {
+                // The seat cancelled this machine's own copy, so the player is told here, with no send.
                 UE_LOGW("kerfur_command[client]: command %u on an UNTRACKED kerfur -- no request "
                         "(not adopted yet / rogue local)", static_cast<unsigned>(pc.command));
+                coop::kerfur_command_answer::ShowLocal(static_cast<uint8_t>(KR::Unavailable));
                 continue;
             }
-            coop::net::KerfurCommandPayload p{};
-            p.elementId = static_cast<uint32_t>(eid);
-            p.command   = static_cast<uint8_t>(pc.command);
-            if (s->connected())
-                s->SendReliable(coop::net::ReliableKind::KerfurCommand, &p, sizeof(p));
-            UE_LOGI("kerfur_command[client]: sent command=%u eid=%u",
-                    static_cast<unsigned>(pc.command), eid);
+            kcw::Request req;
+            req.head.elementId = static_cast<uint32_t>(eid);
+            req.head.command   = static_cast<uint8_t>(pc.command);
+            req.head.requestId = coop::kerfur_command_answer::NextRequestId();
+            if (pc.disc) {
+                req.hasRecord = true;
+                req.record = pc.disc->record;
+            }
+            if (!s->connected() || !kcw::Send(s, req)) {
+                if (!g_saidSendFailed) {
+                    g_saidSendFailed = true;
+                    UE_LOGW("kerfur_command[client]: command %u eid=%u did not go to the host (said once)",
+                            static_cast<unsigned>(pc.command), eid);
+                }
+                coop::kerfur_command_answer::ShowLocal(static_cast<uint8_t>(KR::Unavailable));
+                continue;
+            }
+            // A pledge is made at the send, with the id its answer will name; one that did not go is never made.
+            coop::kerfur_command_answer::HoldSent(req.head.requestId,
+                                                  pc.disc ? std::optional<coop::kerfur_disc_carry::Pledge>(pc.disc->pledge)
+                                                          : std::nullopt);
+            UE_LOGI("kerfur_command[client]: sent command=%u eid=%u request=%u%s",
+                    static_cast<unsigned>(pc.command), eid, req.head.requestId, pc.disc ? " with the held disc" : "");
         } else {
-            // The host's own menu use: requester = host; execute locally.
+            // The host's own menu use, of an Omega serving a client: requester = host; hand it back and run it. The
+            // eid is for the log only, so an untracked Omega still runs.
             const ElementId eid = coop::npc_sync::GetNpcIdForActor(pc.actor);
-            if (eid == kInvalidId) {
-                UE_LOGW("kerfur_command[host]: own command on an UNTRACKED kerfur -- skipped");
-                continue;
-            }
             ExecuteHostCommand(eid, pc.actor, pc.command, coop::players::kPeerIdHost);
         }
     }
@@ -690,6 +835,8 @@ void Tick() {
     // window has passed, both only on a running host: the queues are the host's, and the roster's bringup resets them
     // off this thread, so no Tick touches them outside a running host session; 4) the startKill watch, until settled.
     if (s->running() && s->role() == coop::net::Role::Host) {
+        kcw::Sweep();
+        coop::kerfur_command_answer::TickOwed(s);
         ServeQueues();
         g_tally.Flush(coop::net::RefusalTally::Clock::now());
     }

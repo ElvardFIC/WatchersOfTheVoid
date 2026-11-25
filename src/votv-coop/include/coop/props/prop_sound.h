@@ -25,6 +25,9 @@ namespace coop::prop_sound {
 // feedback every grab plays. Pairs with PlayGrabSound at the GRAB-IN edge.
 void PlayUseClick(void* propActor);
 
+// A faucet's click (door0_open, natively PlaySound2D on its presser alone), spatialized at the faucet for the other peers.
+// True when the play call was made; false when the faucet, the asset or the faucet's place did not resolve (said).
+
 // The grabbed prop's per-material pickup cue at the prop's location.
 // prop_C reads its cached physSoundData; plain-Actor grabs (the clump)
 // resolve root material -> physmat -> the same physSound row. Silent when
@@ -53,10 +56,24 @@ void PlayLandSound(void* propActor);
 // = any live actor in the world (typically the local player).
 void PlayInventoryBlipAt(void* worldCtx, const ue_wrap::FVector& loc);
 
+// A spilled liquid's splash (water_splash_Cue, vol 0.5 / pitch 1.25, att_small -- grimeProjectile_C's own at its hit),
+// at a spill another peer's flight landed (coop/world/spill_sync). `worldCtx` = any live actor in the world.
+void PlaySpillSplashAt(void* worldCtx, const ue_wrap::FVector& loc);
+
+// A beer's or wine's pour (fuel1, vol 0.5 / pitch 1.0, att_default -- prop_snack_beer_C's tick plays it at the bottle
+// each time it pours), at a bottle another peer poured (coop/world/spill_sync).
+void PlayBottlePourAt(void* worldCtx, const ue_wrap::FVector& loc);
+
+// An MRE's opening (mreOpen_Cue, vol 1.0 / pitch 1.0, att_small -- what prop_food_mre_C plays at its place), heard once
+// on the opener when its copy is removed (coop/props/prop_act_request) and once on the host when it rolled the contents
+// (coop/props/prop_act_host); no other peer hears it. `worldCtx` = any live actor in the world.
+void PlayMreOpenAt(void* worldCtx, const ue_wrap::FVector& loc);
+
 // The game's own save-denied/failed click (button_keypad_deny -- the desk play-screen deny
 // @23927 and the keypad deny, vol 0.5 / pitch 1.0), played at the LOCAL player whose action was
 // denied, which today is the device-occupancy busy deny. `playerActor` = the denied local
 // mainPlayer_C.
 void PlayDenyClick(void* playerActor);
+
 
 }  // namespace coop::prop_sound

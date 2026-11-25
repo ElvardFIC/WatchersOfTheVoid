@@ -4,6 +4,7 @@
 
 #include "coop/element/mirror_manager.h"
 #include "coop/element/prop.h"
+#include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/local_streams.h"  // CurrentHoldGen, the hold a stick ends
@@ -13,8 +14,11 @@
 #include "coop/props/bracket_position_wait.h"  // KeepIfWaiting: a stick for a spawn that waits for the bracket's end
 #include "coop/props/prop_drive_host.h"  // OverrideClientSyncer: a replay that writes the copy ends a client's row on it
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_lifecycle.h"
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "coop/props/remote_prop.h"
+#include "ue_wrap/engine/actor_end_play.h"
+#include "ue_wrap/engine/engine_attach.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_physics.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -26,11 +30,13 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -49,12 +55,9 @@ UE_FACT_FN(kRowCompUbergraph, "prop_stick_sync", L"comp_wallAttachable_C",
 UE_FACT_FN(kRowUnstick, "prop_stick_sync", L"comp_wallAttachable_C", L"unstick", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
-// The two halves latch on their own. Signature drift (a recooked BP) latches a half
-// installed-but-REFUSING: the install stops retrying, and without the second latch a received
-// message would write its frame past the 16-byte buffer on a peer whose game build still has the
-// old signature.
+// The observer and unstick verb latch independently. Stick application uses the exact support
+// component carried on the wire, so it never dispatches forceStick on a receiver.
 std::atomic<bool> g_stickInstalled{false};
-std::atomic<bool> g_stickDisabled{false};
 std::atomic<bool> g_unstickInstalled{false};
 std::atomic<bool> g_unstickDisabled{false};
 
@@ -69,17 +72,13 @@ coop::net::Session* LoadSession() {
 // go stale across a world change.
 void* g_compClass        = nullptr;  // comp_wallAttachable_C
 void* g_uberFn           = nullptr;  // comp_wallAttachable_C::ExecuteUbergraph_comp_wallAttachable
-void* g_forceStickFn     = nullptr;  // comp_wallAttachable_C::forceStick(bool skipHolding)
 void* g_unstickFn        = nullptr;  // comp_wallAttachable_C::unstick(bool withTool)
 int32_t g_entryParamOff  = -1;       // ExecuteUbergraph 'EntryPoint' int32 param offset
-int32_t g_skipHoldingOff = -1;       // forceStick 'skipHolding' bool param offset
 int32_t g_withToolOff    = -1;       // unstick 'withTool' bool param offset
 int32_t g_compPropOff    = -1;       // comp_wallAttachable_C::prop (Aprop_C*) field offset
-// NOTE this module never dispatches a prop's init() itself: init is overridden
-// along the camera lineage, and the component's own verbs -- the forceStick
-// replay and the unstick -- run the right override inside the Blueprint.
-// Only the raw fallback writes the flags and applies the simulate recompute
-// (SetSimulatePhysics(NOT(static||frozen||sleep))) directly.
+// NOTE this module never dispatches a prop's init() itself: init is overridden along the camera
+// lineage, and the component's own unstick runs the right override inside the Blueprint. A stick
+// writes the replicated flags and attaches to the sender's exact support component.
 
 // The commit's ubergraph entry: offset 45 in ExecuteUbergraph_comp_wallAttachable, from
 // the kismet bytecode. The byte offset is part of the cooked BP the same way the keypad
@@ -142,9 +141,8 @@ bool HasWallAttachMember(void* actor) {
 // Same record-then-act shape as kerfur_convert.
 //
 // A stick: NO settle delay. frozen/static are already final when the POST observer fires (the
-// commit body ran inside the observed dispatch), the commit pose is where the trace succeeded
-// (the receiver only pre-positions its own re-trace), and the receiver's forceStick replay
-// re-derives the settled pose and plays its own glide/VFX. A delay re-opens the
+// commit body ran inside the observed dispatch), and the actor's current parent component is the
+// exact support the receiver will attach to. A delay re-opens the
 // release-beats-stick window: the hold breaks 0-100 ms after the commit and that PropRelease must
 // not arrive before the PropStickState. GNS orders reliable delivery WITHIN a lane, so the pair is
 // FIFO only because both ride the one Default lane (LaneForKind in
@@ -162,6 +160,28 @@ constexpr int kMaxPending = 8;
 std::mutex g_pendingMutex;
 Pending g_pending[kMaxPending];
 int g_pendingCount = 0;
+
+struct PendingSupport {
+    coop::net::PropStickStatePayload payload{};
+    uint8_t senderPeerSlot = 0xFF;
+    uint64_t queuedAt = 0;
+    uint32_t worldGeneration = 0;
+};
+constexpr int kMaxPendingSupport = 64;
+std::mutex g_pendingSupportMutex;
+PendingSupport g_pendingSupport[kMaxPendingSupport];
+int g_pendingSupportCount = 0;
+
+struct SupportAttachment {
+    ue_wrap::CachedObjRef prop;
+    ue_wrap::CachedObjRef support;
+    uint32_t worldGeneration = 0;
+    bool used = false;
+    bool retire = false;
+};
+constexpr int kMaxSupportAttachments = 256;
+SupportAttachment g_supportAttachments[kMaxSupportAttachments];
+bool g_supportSinkInstalled = false;
 
 uint64_t NowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -260,12 +280,381 @@ Fill FillIdentityAndPose(coop::net::PropStickStatePayload& p, void* prop, std::w
     return Fill::Ok;
 }
 
-// Each half settles on its first attempt: the class loads with its functions, so a name that does not
-// resolve is a recooked Blueprint, and a full table is a capacity fault to fix, not a slot to wait for.
-// A settled half that failed is latched disabled, so a received message is refused rather than written
-// into a frame it no longer fits.
+bool CopyWireKey(coop::net::WireKey& out, const std::wstring& value, bool allowEmpty) {
+    if (value.empty()) return allowEmpty;
+    if (value.size() > sizeof(out.data)) return allowEmpty;
+    out.len = static_cast<uint8_t>(value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        const wchar_t c = value[i];
+        if (c < 0x21 || c > 0x7E) {
+            if (allowEmpty) {
+                out.len = 0;
+                return true;
+            }
+            return false;
+        }
+        out.data[i] = static_cast<char>(c);
+    }
+    return true;
+}
+
+bool CopyWireClass(coop::net::WireClassName& out, const std::wstring& value) {
+    if (value.empty() || value.size() > sizeof(out.data)) return false;
+    out.len = static_cast<uint8_t>(value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        const wchar_t c = value[i];
+        if (c < 0x21 || c > 0x7E) return false;
+        out.data[i] = static_cast<char>(c);
+    }
+    return true;
+}
+
+bool DecodeWireKey(const coop::net::WireKey& wire, std::wstring& out, bool allowEmpty) {
+    if (wire.len > sizeof(wire.data) || (!allowEmpty && wire.len == 0)) return false;
+    out.clear();
+    out.reserve(wire.len);
+    for (uint8_t i = 0; i < wire.len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(wire.data[i]);
+        if (c < 0x21 || c > 0x7E) return false;
+        out.push_back(static_cast<wchar_t>(c));
+    }
+    return true;
+}
+
+bool DecodeWireClass(const coop::net::WireClassName& wire, std::wstring& out) {
+    if (wire.len == 0 || wire.len > sizeof(wire.data)) return false;
+    out.clear();
+    out.reserve(wire.len);
+    for (uint8_t i = 0; i < wire.len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(wire.data[i]);
+        if (c < 0x21 || c > 0x7E) return false;
+        out.push_back(static_cast<wchar_t>(c));
+    }
+    return true;
+}
+
+bool ValidSupportIdentity(const coop::net::PropStickStatePayload& p) {
+    std::wstring key, cls, actor, component;
+    return p.elementId < coop::element::kMaxElements &&
+           (p.elementId != 0 || p.key.len != 0) &&
+           DecodeWireKey(p.key, key, p.elementId == 0) &&
+           (p.support.elementId == 0 || p.support.elementId < coop::element::kMaxElements) &&
+           DecodeWireClass(p.support.className, cls) &&
+           DecodeWireKey(p.support.actorName, actor, p.support.elementId != 0) &&
+           DecodeWireKey(p.support.componentName, component, false);
+}
+
+bool FillSupportIdentity(coop::net::PropStickStatePayload& p, void* prop) {
+    void* supportActor = nullptr;
+    void* component = nullptr;
+    if (!E::GetAttachParentActor(prop, supportActor) || !supportActor ||
+        !E::GetAttachParentComponent(prop, component) || !component ||
+        R::OuterOf(component) != supportActor)
+        return false;
+
+    void* const currentWorld = ue_wrap::world_identity::CurrentWorld();
+    if (!currentWorld || ue_wrap::world_identity::WorldOf(supportActor) != currentWorld) return false;
+    void* const actorClass = R::FindClass(L"Actor");
+    void* const sceneClass = R::FindClass(L"SceneComponent");
+    void* const supportClass = R::ClassOf(supportActor);
+    void* const componentClass = R::ClassOf(component);
+    if (!actorClass || !sceneClass || !supportClass || !componentClass ||
+        !R::IsDescendantOfAny(supportClass, &actorClass, 1) ||
+        !R::IsDescendantOfAny(componentClass, &sceneClass, 1))
+        return false;
+
+    const std::wstring className = R::ClassNameOf(supportActor);
+    const std::wstring actorName = R::ToString(R::NameOf(supportActor));
+    const std::wstring componentName = R::ToString(R::NameOf(component));
+    if (!CopyWireClass(p.support.className, className) ||
+        !CopyWireKey(p.support.actorName, actorName, true) ||
+        !CopyWireKey(p.support.componentName, componentName, false))
+        return false;
+    const coop::element::ElementId supportId = coop::element::Registry::Get().EidForActor(supportActor);
+    p.support.elementId = supportId < coop::element::kMaxElements ? supportId : 0;
+    return p.support.elementId != 0 || p.support.actorName.len != 0;
+}
+
+enum class SupportResolution { Found, Missing, Invalid };
+
+SupportResolution ResolveSupport(const coop::net::PropStickStatePayload& p,
+                                 void*& supportActor, void*& component) {
+    supportActor = nullptr;
+    component = nullptr;
+    std::wstring className, actorName, componentName;
+    if (!ValidSupportIdentity(p) ||
+        !DecodeWireClass(p.support.className, className) ||
+        !DecodeWireKey(p.support.actorName, actorName, p.support.elementId != 0) ||
+        !DecodeWireKey(p.support.componentName, componentName, false))
+        return SupportResolution::Invalid;
+
+    void* const currentWorld = ue_wrap::world_identity::CurrentWorld();
+    if (!currentWorld) return SupportResolution::Missing;
+    if (p.support.elementId != 0) {
+        coop::element::Registry::IdentitySnapshot identity{};
+        if (coop::element::Registry::Get().ReadIdentity(p.support.elementId, identity)) {
+            if (identity.deleting || !identity.actor ||
+                !R::IsLiveByIndex(identity.actor, identity.internalIdx))
+                return SupportResolution::Missing;
+            supportActor = identity.actor;
+            if (R::ClassNameOf(supportActor) != className)
+                return SupportResolution::Invalid;
+        }
+    }
+
+    if (!supportActor && !actorName.empty()) {
+        int matches = 0;
+        for (void* candidate : R::FindObjectsByClass(className.c_str())) {
+            if (!candidate || !R::IsLive(candidate) ||
+                ue_wrap::world_identity::WorldOf(candidate) != currentWorld ||
+                R::ToString(R::NameOf(candidate)) != actorName)
+                continue;
+            supportActor = candidate;
+            if (++matches > 1) return SupportResolution::Invalid;
+        }
+    }
+    if (!supportActor) return SupportResolution::Missing;
+    if (ue_wrap::world_identity::WorldOf(supportActor) != currentWorld)
+        return SupportResolution::Missing;
+
+    void* const sceneClass = R::FindClass(L"SceneComponent");
+    if (!sceneClass) return SupportResolution::Missing;
+    int componentMatches = 0;
+    for (const R::ObjectRef& child : R::ChildObjectsOf(supportActor)) {
+        if (!child.object || child.name != componentName ||
+            !R::IsLive(child.object) ||
+            ue_wrap::world_identity::WorldOf(child.object) != currentWorld)
+            continue;
+        void* const childClass = R::ClassOf(child.object);
+        if (!childClass || !R::IsDescendantOfAny(childClass, &sceneClass, 1)) continue;
+        component = child.object;
+        if (++componentMatches > 1) return SupportResolution::Invalid;
+    }
+    return componentMatches == 1 ? SupportResolution::Found : SupportResolution::Missing;
+}
+
+void OnSupportEndPlay(void* actor, ue_wrap::actor_end_play::Reason reason) {
+    if (reason != ue_wrap::actor_end_play::Reason::Destroyed &&
+        reason != ue_wrap::actor_end_play::Reason::RemovedFromWorld)
+        return;
+    for (SupportAttachment& attachment : g_supportAttachments) {
+        if (attachment.used && attachment.support.Is(actor)) attachment.retire = true;
+    }
+}
+
+bool EnsureSupportSink() {
+    if (g_supportSinkInstalled) return true;
+    if (!ue_wrap::actor_end_play::IsInstalled()) return false;
+    g_supportSinkInstalled = ue_wrap::actor_end_play::AddSink(&OnSupportEndPlay);
+    if (!g_supportSinkInstalled)
+        UE_LOGE("prop_stick_sync: support EndPlay sink unavailable -- exact wall attachments are disabled");
+    return g_supportSinkInstalled;
+}
+
+int SupportAttachmentSlot(void* prop) {
+    int freeSlot = -1;
+    for (int i = 0; i < kMaxSupportAttachments; ++i) {
+        SupportAttachment& attachment = g_supportAttachments[i];
+        if (attachment.used && attachment.prop.Is(prop)) return i;
+        if (!attachment.used && freeSlot < 0) freeSlot = i;
+    }
+    return freeSlot;
+}
+
+bool HasSupportAttachment(void* prop) {
+    for (const SupportAttachment& attachment : g_supportAttachments) {
+        if (attachment.used && attachment.prop.Is(prop)) return true;
+    }
+    return false;
+}
+
+void ForgetSupportAttachment(void* prop) {
+    for (SupportAttachment& attachment : g_supportAttachments) {
+        if (attachment.used && attachment.prop.Is(prop)) {
+            attachment = SupportAttachment{};
+        }
+    }
+}
+
+void TickSupportAttachments() {
+    const uint32_t generation = ue_wrap::world_identity::Generation();
+    for (SupportAttachment& attachment : g_supportAttachments) {
+        if (!attachment.used) continue;
+        if (attachment.worldGeneration != generation) {
+            attachment = SupportAttachment{};
+            continue;
+        }
+        void* prop = attachment.prop.Get();
+        if (!prop) {
+            attachment = SupportAttachment{};
+            continue;
+        }
+        if (!attachment.retire && attachment.support.Get()) continue;
+        attachment = SupportAttachment{};
+        coop::prop_lifecycle::DestroyLocalProp(prop, /*deferred=*/false);
+    }
+}
+
+bool SamePendingSupport(const PendingSupport& pending, const coop::net::PropStickStatePayload& payload,
+                        uint8_t senderPeerSlot) {
+    return pending.senderPeerSlot == senderPeerSlot &&
+           pending.payload.elementId == payload.elementId &&
+           pending.payload.key.len == payload.key.len &&
+           std::memcmp(pending.payload.key.data, payload.key.data, payload.key.len) == 0 &&
+           pending.payload.support.elementId == payload.support.elementId &&
+           pending.payload.support.componentName.len == payload.support.componentName.len &&
+           std::memcmp(pending.payload.support.componentName.data, payload.support.componentName.data,
+                       payload.support.componentName.len) == 0 &&
+           pending.payload.flags == payload.flags;
+}
+
+bool SamePendingProp(const PendingSupport& pending, const coop::net::PropStickStatePayload& payload,
+                     uint8_t senderPeerSlot) {
+    return pending.senderPeerSlot == senderPeerSlot &&
+           pending.payload.elementId == payload.elementId &&
+           pending.payload.key.len == payload.key.len &&
+           std::memcmp(pending.payload.key.data, payload.key.data, payload.key.len) == 0;
+}
+
+void CancelPendingSupport(const coop::net::PropStickStatePayload& payload, uint8_t senderPeerSlot) {
+    std::lock_guard<std::mutex> lk(g_pendingSupportMutex);
+    for (int i = 0; i < g_pendingSupportCount;) {
+        if (SamePendingProp(g_pendingSupport[i], payload, senderPeerSlot)) {
+            g_pendingSupport[i] = g_pendingSupport[--g_pendingSupportCount];
+            continue;
+        }
+        ++i;
+    }
+}
+
+void QueuePendingSupport(const coop::net::PropStickStatePayload& payload, uint8_t senderPeerSlot,
+                         uint64_t queuedAt = 0) {
+    std::lock_guard<std::mutex> lk(g_pendingSupportMutex);
+    for (int i = 0; i < g_pendingSupportCount; ++i) {
+        PendingSupport& pending = g_pendingSupport[i];
+        if (SamePendingProp(pending, payload, senderPeerSlot)) {
+            if (SamePendingSupport(pending, payload, senderPeerSlot)) {
+                if (queuedAt && queuedAt < pending.queuedAt) pending.queuedAt = queuedAt;
+                return;
+            }
+            pending.payload = payload;
+            pending.queuedAt = queuedAt ? queuedAt : NowMs();
+            pending.worldGeneration = ue_wrap::world_identity::Generation();
+            return;
+        }
+    }
+    if (g_pendingSupportCount >= kMaxPendingSupport) {
+        UE_LOGW("prop_stick_sync: exact-support wait list full -- dropped stick for eid=%u",
+                payload.elementId);
+        return;
+    }
+    PendingSupport& pending = g_pendingSupport[g_pendingSupportCount++];
+    pending.payload = payload;
+    pending.senderPeerSlot = senderPeerSlot;
+    pending.queuedAt = queuedAt ? queuedAt : NowMs();
+    pending.worldGeneration = ue_wrap::world_identity::Generation();
+}
+
+void DrainPendingSupport() {
+    PendingSupport ready[kMaxPendingSupport];
+    int count = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_pendingSupportMutex);
+        count = g_pendingSupportCount;
+        for (int i = 0; i < count; ++i) ready[i] = g_pendingSupport[i];
+        g_pendingSupportCount = 0;
+    }
+    const uint64_t now = NowMs();
+    const uint32_t generation = ue_wrap::world_identity::Generation();
+    for (int i = 0; i < count; ++i) {
+        if (ready[i].worldGeneration != generation) continue;
+        if (now < ready[i].queuedAt || now - ready[i].queuedAt >= 10000) {
+            UE_LOGW("prop_stick_sync: exact support for key '%.*s' eid=%u did not arrive within 10s",
+                    ready[i].payload.key.len, ready[i].payload.key.data, ready[i].payload.elementId);
+            continue;
+        }
+        OnStickState(ready[i].payload, ready[i].senderPeerSlot);
+        std::lock_guard<std::mutex> lk(g_pendingSupportMutex);
+        for (int j = 0; j < g_pendingSupportCount; ++j) {
+            if (SamePendingSupport(g_pendingSupport[j], ready[i].payload, ready[i].senderPeerSlot)) {
+                g_pendingSupport[j].queuedAt = ready[i].queuedAt;
+                break;
+            }
+        }
+    }
+}
+
+bool ApplySupportStick(void* prop, const coop::net::PropStickStatePayload& payload,
+                       void* supportActor, void* component, const std::wstring& keyW) {
+    if (!EnsureSupportSink()) {
+        UE_LOGW("prop_stick_sync: cannot attach key='%ls' -- support EndPlay sink is unavailable", keyW.c_str());
+        return false;
+    }
+    const int slot = SupportAttachmentSlot(prop);
+    if (slot < 0) {
+        UE_LOGE("prop_stick_sync: support attachment table full -- refusing key='%ls'", keyW.c_str());
+        return false;
+    }
+
+    ue_wrap::FVector oldLoc{};
+    ue_wrap::FRotator oldRot{};
+    if (!E::TryGetActorLocation(prop, oldLoc) || !E::TryGetActorRotation(prop, oldRot)) return false;
+    void* oldComponent = nullptr;
+    if (!E::GetAttachParentComponent(prop, oldComponent)) return false;
+    const bool wasFrozen = ue_wrap::prop::IsFrozen(prop);
+    const bool wasStatic = ue_wrap::prop::IsStatic(prop);
+    const bool wasSimulating = E::IsActorRootSimulatingPhysics(prop);
+
+    const auto restore = [&]() {
+        void* currentComponent = nullptr;
+        if (E::GetAttachParentComponent(prop, currentComponent) && currentComponent != oldComponent &&
+            currentComponent)
+            E::DetachActorFromParent(prop);
+        if (oldComponent && R::IsLive(oldComponent))
+            E::AttachActorToComponentKeepWorld(prop, oldComponent);
+        ue_wrap::prop::WriteFrozen(prop, wasFrozen);
+        ue_wrap::prop::WriteStatic(prop, wasStatic);
+        E::SetActorSimulatePhysics(prop, wasSimulating);
+        E::SetActorLocation(prop, oldLoc);
+        E::SetActorRotation(prop, oldRot);
+    };
+
+    coop::remote_prop::ClearAnyDriveFor(prop);
+    if (oldComponent && oldComponent != component && !E::DetachActorFromParent(prop)) {
+        UE_LOGW("prop_stick_sync: could not detach key='%ls' from its previous support", keyW.c_str());
+        return false;
+    }
+    if (!E::SetActorLocation(prop, ue_wrap::FVector{payload.locX, payload.locY, payload.locZ}) ||
+        !E::SetActorRotation(prop, ue_wrap::FRotator{payload.rotPitch, payload.rotYaw, payload.rotRoll})) {
+        restore();
+        UE_LOGW("prop_stick_sync: sender pose could not be applied for key='%ls'", keyW.c_str());
+        return false;
+    }
+    ue_wrap::prop::WriteFrozen(prop, (payload.flags & 1u) != 0);
+    ue_wrap::prop::WriteStatic(prop, (payload.flags & 2u) != 0);
+    if (!E::SetActorSimulatePhysics(prop, false) || !E::AttachActorToComponentKeepWorld(prop, component)) {
+        restore();
+        UE_LOGW("prop_stick_sync: exact support attach failed for key='%ls' support=%p component=%p",
+                keyW.c_str(), supportActor, component);
+        return false;
+    }
+
+    SupportAttachment& attachment = g_supportAttachments[slot];
+    attachment.prop.Set(prop);
+    attachment.support.Set(supportActor);
+    attachment.worldGeneration = ue_wrap::world_identity::Generation();
+    attachment.retire = false;
+    attachment.used = true;
+    UE_LOGI("prop_stick_sync: STICK applied key='%ls' eid=%u support=%u '%.*s'/%.*s",
+            keyW.c_str(), payload.elementId, payload.support.elementId,
+            payload.support.className.len, payload.support.className.data,
+            payload.support.componentName.len, payload.support.componentName.data);
+    return true;
+}
+
+// Each half settles on its first attempt: a name that does not resolve is a recooked Blueprint, and a
+// full table is a capacity fault to fix, not a slot to wait for.
 void DisableStickHalf() {
-    g_stickDisabled.store(true, std::memory_order_release);
     g_stickInstalled.store(true, std::memory_order_release);
 }
 void DisableUnstickHalf() {
@@ -277,23 +666,11 @@ void InstallStickHalf() {
     const ue_wrap::facts::Resolved uber = ue_wrap::facts::ResolveOn(kRowCompUbergraph, g_compClass);
     g_uberFn = uber.Fn();
     g_entryParamOff = g_uberFn ? R::FindParamOffset(g_uberFn, L"EntryPoint") : -1;
-    g_forceStickFn = R::FindFunction(g_compClass, L"forceStick");
-    g_skipHoldingOff = g_forceStickFn ? R::FindParamOffset(g_forceStickFn, L"skipHolding") : -1;
-    if (!g_uberFn || g_entryParamOff < 0 || !g_forceStickFn || g_skipHoldingOff < 0) {
-        UE_LOGE("prop_stick_sync: stick resolve failed (uber=%p entryOff=%d force=%p skipOff=%d) -- stick half "
-                "DISABLED (a recooked comp_wallAttachable)", g_uberFn, g_entryParamOff, g_forceStickFn,
-                g_skipHoldingOff);
-        DisableStickHalf();
-        return;
-    }
-    const int32_t forceFrame = R::FunctionFrameSize(g_forceStickFn);
-    if (g_skipHoldingOff >= 16 || forceFrame > 16) {
-        // forceStick's dispatch frame is a 16-byte zeroed buffer; a param offset OR a
-        // PropertiesSize past it means the signature changed (game update) -- refuse rather than
-        // over-write (the offset) or let ProcessEvent memcpy past our buffer (the frame size; the
-        // house pattern of ue_wrap/engine/engine_physics).
-        UE_LOGE("prop_stick_sync: forceStick signature drift (skipHoldingOff=%d frameSize=%d vs a 16-byte "
-                "frame) -- stick half DISABLED (re-RE comp_wallAttachable)", g_skipHoldingOff, forceFrame);
+    const int32_t uberFrame = g_uberFn ? R::FunctionFrameSize(g_uberFn) : 0;
+    if (!g_uberFn || g_entryParamOff < 0 || uberFrame < 4 ||
+        g_entryParamOff > uberFrame - static_cast<int32_t>(sizeof(int32_t))) {
+        UE_LOGE("prop_stick_sync: stick observer resolve failed (uber=%p entryOff=%d frame=%d) -- observer "
+                "DISABLED (a recooked comp_wallAttachable)", g_uberFn, g_entryParamOff, uberFrame);
         DisableStickHalf();
         return;
     }
@@ -303,8 +680,8 @@ void InstallStickHalf() {
         return;
     }
     g_stickInstalled.store(true, std::memory_order_release);
-    UE_LOGI("prop_stick_sync: stick half installed (commit entry %d, entryOff=%d, comp.prop@%d, skipHoldingOff=%d)",
-            kStickCommitEntry, g_entryParamOff, g_compPropOff, g_skipHoldingOff);
+    UE_LOGI("prop_stick_sync: stick observer installed (commit entry %d, entryOff=%d, comp.prop@%d)",
+            kStickCommitEntry, g_entryParamOff, g_compPropOff);
 }
 
 void InstallUnstickHalf() {
@@ -359,36 +736,6 @@ void InstallOnDemand() {
     InstallHalves();
 }
 
-// The component's own forceStick on this peer's copy at the pose it now has (skipHolding: nobody
-// holds the copy), and the raw fallback when this peer's re-trace finds no surface there. True when
-// the replay stuck it. Game thread.
-bool ReplayStick(void* prop, void* comp, uint8_t flags, const std::wstring& keyW) {
-    // The pose before the replay, which only the raw fallback below restores, and only if read whole.
-    ue_wrap::FVector loc{};
-    ue_wrap::FRotator rot{};
-    const bool poseRead = E::TryGetActorLocation(prop, loc) && E::TryGetActorRotation(prop, rot);
-    // Simulate on first: the Blueprint's canStick precondition, which a drive or a park took away.
-    E::SetActorSimulatePhysics(prop, true);
-    uint8_t frame[16] = {};
-    frame[g_skipHoldingOff] = 1;  // skipHolding=true (nobody holds the mirror)
-    R::CallFunction(comp, g_forceStickFn, frame);
-    if (ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop)) return true;
-    // Trace divergence (different geometry state on this peer) -- the raw fallback: write the
-    // flagged field + physics off + re-pose. This is SP's own save-load degraded mode (frozen at
-    // pose, un-attached); the direct simulate toggle IS init()'s only relevant effect here (the note
-    // on the init overrides).
-    if (flags & 2u) ue_wrap::prop::WriteStatic(prop, true);
-    else            ue_wrap::prop::WriteFrozen(prop, true);
-    E::SetActorSimulatePhysics(prop, false);
-    if (poseRead) {   // unread: frozen where the replay left it, never re-posed at the origin or a zero facing
-        E::SetActorLocation(prop, loc);
-        E::SetActorRotation(prop, rot);
-    }
-    UE_LOGW("prop_stick_sync: forceStick replay diverged for key='%ls' -- raw frozen-write fallback applied%s",
-            keyW.c_str(), poseRead ? "" : " (the pose before the replay unread: not re-posed)");
-    return false;
-}
-
 bool BroadcastStick(coop::net::Session* s, void* prop, bool frozen, bool statiq) {
     coop::net::PropStickStatePayload p{};
     std::wstring keyW;
@@ -396,6 +743,11 @@ bool BroadcastStick(coop::net::Session* s, void* prop, bool frozen, bool statiq)
         return false;
     }
     p.flags = (frozen ? 1u : 0u) | (statiq ? 2u : 0u);
+    if (!FillSupportIdentity(p, prop)) {
+        UE_LOGW("prop_stick_sync: cannot publish STICK key='%ls' -- exact support identity is unavailable",
+                keyW.c_str());
+        return false;
+    }
     // The hold this stick ends, when the stuck prop is the one this peer holds (the release edge
     // runs after this pass); 0 closes nothing.
     p.holdGen = (coop::local_streams::LastHeldActor() == prop) ? coop::local_streams::CurrentHoldGen()
@@ -403,6 +755,26 @@ bool BroadcastStick(coop::net::Session* s, void* prop, bool frozen, bool statiq)
     if (!s->SendReliable(coop::net::ReliableKind::PropStickState, &p, sizeof(p))) return false;
     UE_LOGI("prop_stick_sync: broadcast STICK key='%ls' eid=%u flags=%u pose=(%.0f,%.0f,%.0f)",
             keyW.c_str(), p.elementId, p.flags, p.locX, p.locY, p.locZ);
+    return true;
+}
+
+bool SendCurrentToSlotImpl(coop::net::Session* s, void* prop, int peerSlot) {
+    if (!s || !prop || !(ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop))) return true;
+    if (!WallAttachCompOf(prop)) return true;
+    void* supportActor = nullptr;
+    if (!E::GetAttachParentActor(prop, supportActor) || !supportActor) return true;
+    coop::net::PropStickStatePayload p{};
+    std::wstring keyW;
+    if (FillIdentityAndPose(p, prop, keyW) != Fill::Ok) return false;
+    p.flags = (ue_wrap::prop::IsFrozen(prop) ? 1u : 0u) | (ue_wrap::prop::IsStatic(prop) ? 2u : 0u);
+    if (!FillSupportIdentity(p, prop)) {
+        UE_LOGW("prop_stick_sync: snapshot STICK key='%ls' has no exact support identity", keyW.c_str());
+        return false;
+    }
+    if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::PropStickState, &p, sizeof(p))) {
+        UE_LOGW("prop_stick_sync: snapshot STICK send refused key='%ls' slot=%d", keyW.c_str(), peerSlot);
+        return false;
+    }
     return true;
 }
 
@@ -444,6 +816,12 @@ void ApplyUnstick(void* prop, const coop::net::PropStickStatePayload& p, const s
     // Native init() is virtual and can tear down/replace a subclass's actor.
     if (!ref.Get()) return;
     if (wasStuck && (ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop))) return;
+    if (HasSupportAttachment(prop)) {
+        void* parent = nullptr;
+        if (E::GetAttachParentComponent(prop, parent) && parent && !E::DetachActorFromParent(prop))
+            UE_LOGW("prop_stick_sync: UNSTICK key='%ls' could not detach its exact support", keyW.c_str());
+        ForgetSupportAttachment(prop);
+    }
     // init() recomputes simulation. A late unstick under a network drive must
     // restore its kinematic body; a real local physics-handle grab stays simulating.
     const bool localHeld = coop::local_prop_hold::IsHeld(prop);
@@ -464,8 +842,13 @@ void ApplyUnstick(void* prop, const coop::net::PropStickStatePayload& p, const s
 
 }  // namespace
 
+bool SendCurrentToSlot(coop::net::Session* session, void* prop, int peerSlot) {
+    return SendCurrentToSlotImpl(session, prop, peerSlot);
+}
+
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    EnsureSupportSink();
     if (!g_pryWatchInstalled)
         g_pryWatchInstalled = sg::WatchName(L"crowbarOpen", kTagPry, &OnPryPre, nullptr);
     if (g_stickInstalled.load(std::memory_order_acquire) && g_unstickInstalled.load(std::memory_order_acquire))
@@ -478,13 +861,14 @@ void Install(coop::net::Session* session) {
 }
 
 void Tick() {
+    TickSupportAttachments();
+    DrainPendingSupport();
     // Drain every record since the last pass. Game thread; MUST run before local_streams' release
     // edge in the pump pass (header note on the stick-before-release ordering).
     Pending ready[kMaxPending];
     int nReady = 0;
     {
         std::lock_guard<std::mutex> lk(g_pendingMutex);
-        if (g_pendingCount == 0) return;
         nReady = g_pendingCount;
         for (int i = 0; i < g_pendingCount; ++i) ready[i] = g_pending[i];
         g_pendingCount = 0;
@@ -526,15 +910,17 @@ void Tick() {
 }
 
 void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t senderPeerSlot) {
-    // Game thread (event_feed drain). Resolve key-first, eid fallback (the
-    // PropDestroy shape). A stick ends the sticking peer's hold whatever this peer makes of the
-    // stick itself -- a copy it cannot resolve, a half that did not install -- so the hold closes
-    // first, and a pose of it still in flight starts nothing here. An unstick carries 0 and closes
-    // nothing.
+    // Game thread (event_feed drain). Resolve key-first, eid fallback (the PropDestroy shape).
     UE_ASSERT_GAME_THREAD("prop_stick_sync::OnStickState");
-    if ((payload.flags & ~3u) || (payload.flags == 0 && payload.holdGen != 0)) return;
-    coop::remote_prop::CloseHold(senderPeerSlot, payload.holdGen);
     const bool unstick = payload.flags == 0;
+    if (senderPeerSlot >= coop::net::kMaxPeers || (payload.flags & ~3u) ||
+        (!unstick && !ValidSupportIdentity(payload)) || (unstick && payload.holdGen != 0)) {
+        UE_LOGW("prop_stick_sync: invalid %s state from slot %u -- dropped",
+                unstick ? "UNSTICK" : "STICK", senderPeerSlot);
+        return;
+    }
+    CancelPendingSupport(payload, senderPeerSlot);
+    coop::remote_prop::CloseHold(senderPeerSlot, payload.holdGen);
     const std::wstring keyW = coop::remote_prop::KeyToWString(payload.key);
     void* prop = nullptr;
     if (!keyW.empty() && keyW != L"None")
@@ -570,52 +956,32 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
                 unstick ? "UNSTICK" : "STICK", prop);
         return;
     }
-    const std::atomic<bool>& installed = unstick ? g_unstickInstalled : g_stickInstalled;
-    const std::atomic<bool>& disabled = unstick ? g_unstickDisabled : g_stickDisabled;
-    if (!installed.load(std::memory_order_acquire)) InstallOnDemand();
-    if (!installed.load(std::memory_order_acquire)) {
-        static bool sSaid = false;
-        if (!sSaid) {
-            sSaid = true;
-            UE_LOGW("prop_stick_sync: %s for key='%ls' before the lane installed -- dropped (said once)",
-                    unstick ? "UNSTICK" : "STICK", keyW.c_str());
-        }
-        return;
-    }
-    if (disabled.load(std::memory_order_acquire)) {
-        static bool sWarned = false;
-        if (!sWarned) {
-            sWarned = true;
-            UE_LOGW("prop_stick_sync: %s received while signature-disabled -- dropping (peer game builds differ)",
-                    unstick ? "UNSTICK" : "STICK");
-        }
-        return;
-    }
-    // Both halves write the copy's pose or physics, so a client that syncs the prop loses it first, as to a host verb
-    // (its next row would drag the copy back off the wall). A no-op off the host and for a prop with no client row.
-    coop::prop_drive_host::OverrideClientSyncer(prop, unstick ? "unstick replay" : "stick replay");
     if (unstick) {
+        if (!g_unstickInstalled.load(std::memory_order_acquire)) InstallOnDemand();
+        if (!g_unstickInstalled.load(std::memory_order_acquire) ||
+            g_unstickDisabled.load(std::memory_order_acquire)) {
+            UE_LOGW("prop_stick_sync: UNSTICK for key='%ls' -- unstick verb is unavailable", keyW.c_str());
+            return;
+        }
+        coop::prop_drive_host::OverrideClientSyncer(prop, "unstick replay");
         ApplyUnstick(prop, payload, keyW, senderPeerSlot);
         return;
     }
-    // 1. Stop any kinematic drive on it (the sticking peer was holding it, so its PropPose stream
-    //    was driving our copy). Cache clear only -- no physics re-enable (that is exactly the falling
-    //    bug).
-    coop::remote_prop::ClearAnyDriveFor(prop);
-    // 2. Pre-pose at the sender's commit transform (where its stick trace
-    //    succeeded) so the SP replay's re-trace scans the same surface; the
-    //    replay's own glide settles the final pose.
-    ue_wrap::FVector  loc{payload.locX, payload.locY, payload.locZ};
-    ue_wrap::FRotator rot{payload.rotPitch, payload.rotYaw, payload.rotRoll};
-    E::SetActorLocation(prop, loc);
-    E::SetActorRotation(prop, rot);
-    // 3. SP replay: dispatch the comp's OWN forceStick (skipHolding=true): SP performs the field
-    //    write + KeepWorld attach + OnDestroyed binding + eff_OC_freeze VFX + glide. The
-    //    receiver-side forceStick enters the ubergraph LOCALLY -- our own POST observer does NOT
-    //    fire (no echo by construction).
-    if (ReplayStick(prop, comp, payload.flags, keyW))
-        UE_LOGI("prop_stick_sync: STICK applied key='%ls' eid=%u (SP replay, slot %u)",
-                keyW.c_str(), payload.elementId, senderPeerSlot);
+
+    void* supportActor = nullptr;
+    void* supportComponent = nullptr;
+    const SupportResolution support = ResolveSupport(payload, supportActor, supportComponent);
+    if (support == SupportResolution::Missing) {
+        QueuePendingSupport(payload, senderPeerSlot);
+        return;
+    }
+    if (support == SupportResolution::Invalid) {
+        UE_LOGW("prop_stick_sync: exact support identity is ambiguous or invalid for key='%ls' -- dropped",
+                keyW.c_str());
+        return;
+    }
+    coop::prop_drive_host::OverrideClientSyncer(prop, "exact-support stick");
+    ApplySupportStick(prop, payload, supportActor, supportComponent, keyW);
 }
 
 void ConvergeStuck(void* actor, uint8_t physFlags) {
@@ -636,23 +1002,16 @@ void ConvergeStuck(void* actor, uint8_t physFlags) {
         return;
     }
     if (hostStuck == copyStuck) return;
-    InstallOnDemand();  // a join's snapshot can arrive before Install has run
     const std::wstring keyW = ue_wrap::prop::GetInteractableKeyString(actor);
     if (!hostStuck) {
+        InstallOnDemand();  // a join's snapshot can arrive before Install has run
         const bool ok = ReplayUnstick(actor);
         UE_LOGI("prop_stick_sync: join converge key='%ls' -- stuck here, free on the host: the component's unstick "
                 "%s", keyW.c_str(), ok ? "ran" : "did not run");
         return;
     }
-    if (!g_stickInstalled.load(std::memory_order_acquire) || g_stickDisabled.load(std::memory_order_acquire)) {
-        UE_LOGW("prop_stick_sync: join converge key='%ls' -- stuck on the host, free here, and the stick half is "
-                "not installed; the copy stays free", keyW.c_str());
-        return;
-    }
-    const uint8_t flags = (physFlags & pf::kStatic) ? 2u : 1u;
-    if (ReplayStick(actor, comp, flags, keyW))
-        UE_LOGI("prop_stick_sync: join converge key='%ls' -- free here, stuck on the host: the component's "
-                "forceStick ran at the host's pose", keyW.c_str());
+    UE_LOGW("prop_stick_sync: join converge key='%ls' -- waiting for the snapshot's exact support state",
+            keyW.c_str());
 }
 
 bool IsWallAttachable(void* actor) {
@@ -680,8 +1039,14 @@ bool ReplayUnstick(void* actor) {
 
 void OnDisconnect() {
     g_onDemandTried = false;
-    std::lock_guard<std::mutex> lk(g_pendingMutex);
-    g_pendingCount = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_pendingMutex);
+        g_pendingCount = 0;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_pendingSupportMutex);
+        g_pendingSupportCount = 0;
+    }
 }
 
 }  // namespace coop::prop_stick_sync

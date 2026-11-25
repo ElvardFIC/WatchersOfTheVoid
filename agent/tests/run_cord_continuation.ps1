@@ -6,20 +6,20 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- $includes=@('/I','agent/tests/cord_2170_stubs','/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs','/I','src/votv-coop/include')
+ $includes=@('/I',(Join-Path $PSScriptRoot 'cord_2170_stubs'),'/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'),'/I','src/votv-coop/include')
  function Compile([string]$name,[string]$header=''){
   $forced=@();if($header){$forced=@("/FI$header")}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/cord_continuation_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/cord_continuation_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw "Cord continuation compile failed: $name"}
  }
  Compile 'test'
  & "$output/test.exe"
  if($LASTEXITCODE){throw 'Cord continuation fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes "/Fo$output/delivery.obj" "/Fe$output/delivery.exe" agent/tests/cord_delivery_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes "/Fo$output/delivery.obj" "/Fe$output/delivery.exe" "$PSScriptRoot/cord_delivery_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Cord recipient delivery compile failed'}
  & "$output/delivery.exe"
  if($LASTEXITCODE){throw 'Cord recipient delivery fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes "/Fo$output/drag.obj" "/Fe$output/drag.exe" agent/tests/cord_drag_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 @includes "/Fo$output/drag.obj" "/Fe$output/drag.exe" "$PSScriptRoot/cord_drag_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Cord drag compile failed'}
  & "$output/drag.exe"
  if($LASTEXITCODE){throw 'Cord drag fixture failed'}

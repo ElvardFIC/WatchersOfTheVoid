@@ -10,18 +10,18 @@ try {
  $offset=[regex]::Match($reflection,'(?ms)^int32_t InstanceOffset::Of\(.*?^\}').Value
  if(-not $offset){throw 'Production InstanceOffset seam missing'}
  [IO.File]::WriteAllText((Join-Path $output 'instance_offset_production.inc'),("namespace ue_wrap::reflection {`n"+$offset+"`n}"))
- & cl /nologo /std:c++20 /EHsc /utf-8 /Gy "/I$output" /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" agent/tests/container_refund_wrapper_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /utf-8 /Gy "/I$output" /I src/votv-coop/include "/Fo$output/wrapper.obj" "/Fe$output/wrapper.exe" "$PSScriptRoot/container_refund_wrapper_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Container refund wrapper fixture compile failed'}
  & "$output/wrapper.exe"
  if($LASTEXITCODE){throw 'Container refund wrapper regression failed'}
- & "$env:USERPROFILE/.local/bin/python3.15.exe" agent/tests/container_recovery_native_test.py
+ & "$env:USERPROFILE/.local/bin/python3.15.exe" "$PSScriptRoot/container_recovery_native_test.py"
  if($LASTEXITCODE){throw 'Container recovery cooked native contract failed'}
  if(-not $WrapperOnly){
   function Build-Controller([string]$Name,[string]$SourcePath){
-   $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I','agent/tests/container_recovery_stubs','/I','src/votv-coop/include')
+   $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I',(Join-Path $PSScriptRoot 'container_recovery_stubs'),'/I','src/votv-coop/include')
    if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define CONTAINER_RECOVERY_SOURCE "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
    $exe=Join-Path $output ($Name+'.exe')
-   & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" agent/tests/container_recovery_test.cpp /link /OPT:REF | Out-Host
+   & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/container_recovery_test.cpp" /link /OPT:REF | Out-Host
    if($LASTEXITCODE){throw "Container recovery controller compile failed: $Name"}
    return $exe
   }

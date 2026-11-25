@@ -91,7 +91,7 @@ namespace ue_wrap::begin_equipment {bool GiveFromClass(const std::wstring&){std:
 namespace ue_wrap::save_capture {
 void SetWorldGatherHook(void(*)()){}bool InstallGatherWatch(){std::abort();}EventState GameEventState(){std::abort();}
 }
-namespace ue_wrap::save_to_slot_hook {void SetWritten(void(*)(void*,const wchar_t*)) {}}
+namespace ue_wrap::save_to_slot_hook {void SetWritten(void(*)(void*,const wchar_t*)) {} bool AddWritten(void(*)(void*,const wchar_t*)) { return true; }}
 namespace coop::hand_item {void* LocalHandActor(){return &test::liveUnits;}}
 #ifndef PROFILE_JOIN_HARNESS
 namespace coop::prop_synth_key {std::wstring RandomKeyString(){std::abort();}}

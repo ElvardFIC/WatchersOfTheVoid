@@ -5,7 +5,7 @@
 // INVARIANT: a connected CLIENT ticks NO shared-world spawner and rolls NO shared-world spawn RNG;
 // shared-world content arrives ONLY via the host wire (npc_sync / world_actor / the prop mirrors), or
 // it is not shared: a spawner whose product has no mirror yet runs on every peer, each rolling its
-// own. The deer, bp7 and hexahive spawners, measured rolling on a connected client, are such.
+// own, as the bp7 spawner does (measured), and the sus hole's, whose holes are the host's.
 
 // ONE table: each row is a body a client must not run, a spawner's entry function or its tick,
 // refused at the script gate by a watch keyed on the row's class and function names. So a row holds
@@ -17,6 +17,8 @@
 // the loading curtain, in a world the load then discards. Which classes are refused, and which are
 // left running because their anchor is the LOCAL player, is the table in docs/npcs-and-kerfur.md,
 // "Which spawners a client refuses".
+
+#include <cstdint>
 
 namespace coop::net {
 class Session;
@@ -32,16 +34,22 @@ namespace coop::spawn_authority {
 // gate, which it does from its first tick. Any thread (the start runs on the timeline thread).
 //
 // A class is added to the table only once its product has a mirror: refusing a spawner whose output
-// nothing replaces just deletes the content. A spawner that reaches its work through Delay or
-// SetTimerDelegate needs a finer row than a class and a function: the first such family (beehive,
-// mannequin) brings it, and mannequinSpawner also carries K2_DestroyActor reap duty, so it will need
-// a (class, latent-UUID) grain. Discovery of new classes stays with the ini-gated rng_roll_census,
-// not this module.
+// nothing replaces just deletes the content. A spawner that reaches its work through a timer delegate
+// is refused by a row on the delegate's handler, as the cockroach master's timers and the beehive
+// ticker's spawn are. One that waits in a Delay is refused at its tick when its graph has no other root,
+// since every resume is then scheduled from the tick: the mannequin spawner's reap and its spawn are
+// exclusive branches of that one entry. A spawner with a second root would need a finer row than a class
+// and a function, a (class, latent-UUID) grain.
+// Discovery of new classes stays with the ini-gated rng_roll_census, not this module.
 void Install(coop::net::Session* session);
 
 // Whether this process holds a running CLIENT session: the gate of every refusal in the table, and of the
 // other client-only seams that must not bleed into single player or a host. The running flag flips true in
 // the session start and false in the stop, which every disconnect path reaches. Any thread.
 bool IsActiveClientSession();
+
+// How many calls the row tagged `tag` (its entry in the table, e.g. "deerSpawner.ReceiveTick") has refused on this client, 0
+// for an unknown tag. Read-only, for the drills. Game thread.
+uint64_t RefusalCount(const char* tag);
 
 }  // namespace coop::spawn_authority

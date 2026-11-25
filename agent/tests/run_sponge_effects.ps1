@@ -8,7 +8,7 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$Fixture,[bool]$Controller,[string]$SourcePath=''){
   $flags=@('/nologo','/std:c++20','/EHsc','/Gy','/utf-8')
-  if($Controller){$flags+=@('/I','agent/tests/sponge_stubs','/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
+  if($Controller){$flags+=@('/I',(Join-Path $PSScriptRoot 'sponge_stubs'),'/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
   $flags+=@('/I','src/votv-coop/include')
   if($SourcePath){
    $macro=if($Controller){'SPONGE_EFFECT_SOURCE'}else{'SPONGE_WRAPPER_SOURCE'}
@@ -17,7 +17,7 @@ try {
    $flags+="/FI$header"
   }
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "agent/tests/$Fixture.cpp" /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/$Fixture.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Sponge fixture compile failed: $Name"}
   return $exe
  }

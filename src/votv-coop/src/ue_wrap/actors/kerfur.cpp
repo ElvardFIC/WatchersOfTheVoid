@@ -5,6 +5,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/kismet_timer.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -35,6 +36,8 @@ int32_t g_offState     = -2;  // TEnumAsByte<enum_kerfurCommand> "State"
 int32_t g_offSpooky    = -2;  // bool "isSpooky"
 int32_t g_offFace      = -2;  // int32 "faceMaterialIndex"
 int32_t g_offKill      = -2;  // bool "kill" (murderfur-mode guard)
+struct BoolField { int32_t offset = -2; uint8_t mask = 0; };
+BoolField g_animation, g_remoteControl, g_serverValid;
 
 void ResolveKerfurOffsets() {
     void* kc = ResolveKerfurClass();
@@ -117,14 +120,7 @@ void DriveKerfurState(void* actor, uint8_t state, bool spooky) {
 
 void NeutralizeAiTimers(void* actor) {
     if (!IsKerfurActor(actor)) return;
-    static void* sKslCdo  = nullptr;
-    static void* sClearFn = nullptr;
-    if (!sKslCdo) sKslCdo = R::FindClassDefaultObject(L"KismetSystemLibrary");
-    if (sKslCdo && !sClearFn) {
-        if (void* kc = R::FindClass(L"KismetSystemLibrary"))
-            sClearFn = R::FindFunction(kc, L"K2_ClearTimer");
-    }
-    if (!sKslCdo || !sClearFn) {
+    if (!kismet_timer::Resolved()) {
         static bool sWarned = false;
         if (!sWarned) { sWarned = true;
             UE_LOGW("kerfur: K2_ClearTimer unresolved -- mirror AI timers NOT neutralized "
@@ -132,18 +128,9 @@ void NeutralizeAiTimers(void* actor) {
         return;
     }
     // K2_ClearTimer(Object, FunctionName) -- the exact inverse of the BP's K2_SetTimerDelegate
-    // ({self, name}) arm (kerfur BeginPlay @8184/@8714/@24444). FunctionName is an FString
-    // {data, num=len+1, max} (num/max include the null terminator -- the space_renderer pattern).
+    // ({self, name}) arm (kerfur BeginPlay @8184/@8714/@24444).
     static const wchar_t* kTimers[3] = {L"timer_face", L"timer_kerf", L"checkDoor"};
-    for (const wchar_t* fn : kTimers) {
-        ue_wrap::ParamFrame f(sClearFn);
-        if (!f.valid()) continue;
-        f.Set<void*>(L"Object", actor);
-        const int32_t num = static_cast<int32_t>(std::wcslen(fn)) + 1;
-        struct { const wchar_t* data; int32_t n; int32_t m; } fs{fn, num, num};
-        if (!f.SetRaw(L"FunctionName", &fs, sizeof(fs))) continue;
-        ue_wrap::Call(sKslCdo, f);
-    }
+    for (const wchar_t* fn : kTimers) kismet_timer::Clear(actor, fn);
 }
 
 bool ReadKill(void* actor) {
@@ -182,9 +169,6 @@ bool RunActionNameWhile(void* actor,void* player,const wchar_t* name,const std::
     const bool ran=R::CallFunction(actor,fn.Raw(),bytes);return owned()&&ran;
 }
 
-bool IsInsertPlayerRead(void* callerFunction,const uint8_t* callerLocals,const uint8_t* out){
-    return IsInsertPlayerReadWhile(callerFunction,callerLocals,out,{});
-}
 bool IsInsertPlayerReadWhile(void* callerFunction,const uint8_t* callerLocals,const uint8_t* out,const std::function<bool()>& current){
     if(!callerFunction||!callerLocals||!out||(current&&!current()))return false;
     struct Layout{CachedObjRef cls,fn;int32_t offset=-1,size=0;};static Layout cached;
@@ -214,6 +198,10 @@ bool IsInsertPlayerReadWhile(void* callerFunction,const uint8_t* callerLocals,co
     return out==callerLocals+layout.offset;
 }
 
+bool IsInsertPlayerRead(void* callerFunction,const uint8_t* callerLocals,const uint8_t* out){
+    return IsInsertPlayerReadWhile(callerFunction,callerLocals,out,{});
+}
+
 bool ReadHasFloppy(void* actor, bool& has) {
     if (!IsKerfurActor(actor)) return false;
     static int32_t sOff = -2;
@@ -221,6 +209,35 @@ bool ReadHasFloppy(void* actor, bool& has) {
     if (sOff == -2 && !R::FindBoolProperty(ResolveKerfurClass(), L"hasFloppy", sOff, sMask)) sOff = -1;
     if (sOff < 0) return false;
     has = (static_cast<const uint8_t*>(actor)[sOff] & sMask) != 0;
+    return true;
+}
+
+namespace {
+bool ReadKerfurBool(void* actor, const wchar_t* name, BoolField& field, bool& value) {
+    if (!IsKerfurActor(actor)) return false;
+    if (field.offset == -2 && !R::FindBoolProperty(ResolveKerfurClass(), name, field.offset, field.mask))
+        field.offset = -1;
+    if (field.offset < 0) return false;
+    value = (static_cast<const uint8_t*>(actor)[field.offset] & field.mask) != 0;
+    return true;
+}
+}  // namespace
+
+bool ReadAnimation(void* actor, bool& active) {
+    return ReadKerfurBool(actor, L"animation", g_animation, active);
+}
+
+bool ReadRemoteControl(void* actor, bool& active) {
+    return ReadKerfurBool(actor, L"remoteControl", g_remoteControl, active);
+}
+
+bool ReadServerValid(void* actor, bool& active) {
+    if (!IsKerfurActor(actor)) return false;
+    static int32_t offset = -2;
+    if (offset == -2) offset = R::FindPropertyOffset(ResolveKerfurClass(), L"server");
+    if (offset < 0) return false;
+    void* server = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(actor) + offset);
+    active = server && R::IsLive(server);
     return true;
 }
 
@@ -307,5 +324,9 @@ void* ReadTargetActor(void* actor) {
     void* t = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(actor) + sOff);
     return (t && R::IsLive(t)) ? t : nullptr;
 }
+
+
+
+
 
 }  // namespace ue_wrap::kerfur

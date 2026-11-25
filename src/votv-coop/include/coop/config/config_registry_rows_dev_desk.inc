@@ -52,8 +52,10 @@ CFG_STRING(tower_drill, "tower_drill", "dev", "", "VOTVCOOP_TOWER_DRILL", false,
     "which fails as the host's cells do not change (a re-roll that repeats the host's cells is pulled again, three "
     "times at most, then INCONCLUSIVE); radiofuse -- the host blows a fuse of its tower and keeps it whole, the "
     "client pulls that fuse, the host hands it a good one, the client inserts that into the emptied slot (needs "
-    "difficulty 2 or more), and the host's slot must read good; radiofusered -- radiofuse with the gates open, which fails "
-    "naming the host's slot left unchanged. The repair arms want the game rule enableLightsOut on, or the tower "
+    "difficulty 2 or more), and the host's slot must read good; with the row tower_fuse_hand set on both peers "
+    "the host hands none and the client takes a good fuse into its own hold slot, as a player takes one out of the "
+    "inventory, and inserts that; radiofusered -- radiofuse with the gates open, which fails "
+    "naming the host's slot left unchanged; radiofusesametick -- the client pulls the blown fuse, takes a good one into its hand and inserts it in the same tick, which the host must take (the client row hand_announce_off turns the announce off and the arm must FAIL); radiofuseforge -- the client pulls the blown fuse, then sends an insert of that slot with no fuse ever held (a forged request), which the host must refuse (the host row hand_spend_drill turns its judge off and the arm must FAIL). The repair arms want the game rule enableLightsOut on, or the tower "
     "has no puzzle to press (radio then prints lightsout=0). Lines tagged [TOWER-DRILL]; the client's DONE line "
     "ends it.")
 CFG_STRING(desk_ping_drill, "desk_ping_drill", "dev", "", "VOTVCOOP_DESK_PING_DRILL", false,
@@ -92,11 +94,81 @@ CFG_STRING(grid_drill, "grid_drill", "dev", "", "VOTVCOOP_GRID_DRILL", false,
     "solves its puzzle and presses Activate, which the host takes; puzzleflood: from there it sends 40 inputs at "
     "once, which the host must take within its rate for inputs, its rows coalesced. upgrade: from there an "
     "install op with no "
-    "insert behind it is refused, nothing refunded, the client's install is taken, and a refused one is refunded. "
+    "insert behind it is refused, nothing refunded, the client's install is taken, and a refused one is refunded; with "
+    "the row grid_upgrade_hand set on the client, each install uses an upgrade in its own hold slot; upgradedouble: that, then a second install op of the same hold, which the host must refuse; upgradesametick: an upgrade taken into the hand and installed in the same tick, which the host must take. "
     "upgraderepair: the client installs one upgrade, the host breaks the generator, the client solves its puzzle and "
     "presses Activate, and 20 s after the repair both peers must still read the upgrade and its mesh; upgraderepairred "
     "installs nothing and must fail on level 0; upgraderepairlossred has the host take the upgrade off its own "
     "generator after the repair, and both peers' verdicts must fail. "
-    "join, lockout, lockjoin: the blackout at a join, the desk virus's lockout. red, puzzlered, upgradered: the "
-    "controls (the rows applied raw, no puzzle written, installs judged unpaired). Lines tagged [GRID-DRILL]; the "
+    "join, lockout, lockjoin: the blackout at a join, the desk virus's lockout. red, puzzlered: the "
+    "controls (the rows applied raw, no puzzle written). Lines tagged [GRID-DRILL]; the "
     "client's DONE line ends it.")
+CFG_FLAG(tower_fuse_hand, "tower_fuse_hand", "dev", false, "VOTVCOOP_TOWER_FUSE_HAND",
+    "Drill (BOTH peers, tower_drill=radiofuse): the client inserts a fuse taken into its own hold slot, as a player takes "
+    "one out of the inventory, instead of the host's world fuse; the host hands none. The insert waits for the client's "
+    "own hold announce to be queued.")
+CFG_FLAG(grid_upgrade_hand, "grid_upgrade_hand", "dev", false, "VOTVCOOP_GRID_UPGRADE_HAND",
+    "Drill (the client, grid_drill=upgrade and the repair arms): each install uses an upgrade taken into the client's own "
+    "hold slot, as a player takes one out of the inventory, instead of the one the host handed over. The install waits for "
+    "the client's own hold announce to be queued.")
+CFG_ENUM(hand_spend_drill, "hand_spend_drill", "dev", "off", "off|hand_spend_unchecked|hand_spend_no_latch",
+    "VOTVCOOP_HAND_SPEND_DRILL",
+    "Developer red arms (the HOST): the judge of an item a client spends from its hand (coop/player/hand_spend). "
+    "hand_spend_unchecked -- the hand's last held class is not checked, so tower_drill=radiofuseforge and "
+    "grid_drill=upgrade must FAIL on a forged request taken with no item held; hand_spend_no_latch -- the use count of "
+    "a hold is not kept, so grid_drill=upgradedouble must FAIL on the second request of one hold taken.")
+CFG_FLAG(hand_announce_off, "hand_announce_off", "dev", false, "VOTVCOOP_HAND_ANNOUNCE_OFF",
+    "Developer red arm (the CLIENT): the hooks on a fuse tower's and a generator's insert do not announce the held item "
+    "ahead of the claim, as before they existed, so tower_drill=radiofusesametick and grid_drill=upgradesametick (an item "
+    "taken up and inserted in one tick) must FAIL on the host's refusal. The host never reads it.")
+CFG_ENUM(seat_ragdoll_device, "seat_ragdoll_device", "dev", "laptop", "laptop|desk|sat", "VOTVCOOP_SEAT_RAGDOLL_DEVICE",
+    "Drill (BOTH peers, VOTVCOOP_RUN_SEAT_RAGDOLL): the device the acting peer enters before it is knocked down or "
+    "leaves -- the laptop, the desk's coordinates screen or the SAT console.")
+CFG_ENUM(seat_ragdoll_who, "seat_ragdoll_who", "dev", "client", "client|host", "VOTVCOOP_SEAT_RAGDOLL_WHO",
+    "Drill (BOTH peers, VOTVCOOP_RUN_SEAT_RAGDOLL): which peer enters the device and ragdolls; the other watches its "
+    "claim, and the host reads what the actor leaves held.")
+CFG_FLAG(seat_ragdoll_ping, "seat_ragdoll_ping", "dev", false, "VOTVCOOP_SEAT_RAGDOLL_PING",
+    "Drill (BOTH peers, VOTVCOOP_RUN_SEAT_RAGDOLL, the desk): the acting peer starts a ping before it ragdolls, as a "
+    "player who faints mid-ping would; its machine keeps running after.")
+CFG_FLAG(seat_ragdoll_exit, "seat_ragdoll_exit", "dev", false, "VOTVCOOP_SEAT_RAGDOLL_EXIT",
+    "Drill (BOTH peers, VOTVCOOP_RUN_SEAT_RAGDOLL): the acting peer leaves the device by the game's own exit instead "
+    "of a ragdoll. With seat_ragdoll_ping (the host acting) the desk stays the pinger's, so its hold must stay held.")
+CFG_FLAG(occupancy_pinger_down_off, "occupancy_pinger_down_off", "dev", false, "VOTVCOOP_OCCUPANCY_PINGER_DOWN_OFF",
+    "Developer (the host; the seat-ragdoll drill's red): a pinger knocked down keeps the desk claimed for its ping "
+    "until the ping ends, as before the lane, so the drill's faint-mid-ping arm must FAIL.")
+CFG_FLAG(seat_ragdoll_kill, "seat_ragdoll_kill", "dev", false, "VOTVCOOP_SEAT_RAGDOLL_KILL",
+    "Drill (BOTH peers, VOTVCOOP_RUN_SEAT_RAGDOLL): the acting peer dies of a lethal hit (twice its max health through "
+    "the game's own Add Player Damage) instead of ragdolling, so a client that dies mid-ping must free the desk too.")
+CFG_FLAG(desk_short_off, "desk_short_off", "dev", false, "VOTVCOOP_DESK_SHORT_OFF",
+    "Developer red arm of the desk short drill: never set. A short on this peer's desk is not announced: the host "
+    "tells no client, and a client's own call is not cancelled and asks no host (it sparks its desk alone), so the "
+    "other desk stays sound.")
+CFG_FLAG(desk_short_replay_off, "desk_short_replay_off", "dev", false, "VOTVCOOP_DESK_SHORT_REPLAY_OFF",
+    "Developer red arm of the desk short drill: never set. The host does not tell a joiner at its ready edge that "
+    "its desk is shorting, so a rejoined client's desk stays sound.")
+CFG_ENUM(desk_short_drill, "desk_short_drill", "dev", "off", "off|client|host|join", "VOTVCOOP_DESK_SHORT_DRILL",
+    "Drill, the base computer's short circuit; set on BOTH peers, and VOTVCOOP_CAN_DIR on both. client -- the client's "
+    "player walks beside the desk with the director and shorts it as a liquid's hit does; host -- the host's does; each peer must see "
+    "its desk short and both power panels read the same changed mask: the host prints 'rig: VERDICT desk-short "
+    "PASS|FAIL|INVALID' and 'desk-short: DONE on host'. join -- with the rig's --rejoin: the client leaves, the host "
+    "keeps its desk shorting until the client's world is up again, and the rejoined client (second life: "
+    "VOTVCOOP_DESK_SHORT_DRILL_REJOIN=1) must have had its desk shorted by the host at the ready edge: 'rig: "
+    "VERDICT desk-short-join PASS|FAIL|INVALID' and 'desk-short: JOIN DONE on host'. Red arms: desk_short_off on the "
+    "acting peer (client, host), desk_short_replay_off on the host (join). It MUTATES the world (the base goes on "
+    "solar power). Run it on a fresh host world.")
+CFG_FLAG(cap_label_repaint_off, "cap_label_repaint_off", "dev", false, "VOTVCOOP_CAP_LABEL_REPAINT_OFF",
+    "Developer (BOTH peers; the cap-label drill's red): no refiner cap label repaint runs, whether from the wire, a "
+    "join adopt or a module plug or unplug, as before the lane, so the drill must FAIL.")
+CFG_FLAG(cap_label_install_repaint_off, "cap_label_install_repaint_off", "dev", false,
+    "VOTVCOOP_CAP_LABEL_INSTALL_REPAINT_OFF",
+    "Developer (the HOST; the cap-label drill's saved-world red): the desk lane's start apply, the one cap label "
+    "repaint at install, does not run, so a host whose world was loaded from a save keeps its stale label and the "
+    "drill's saved arm must FAIL.")
+CFG_ENUM(cap_label_drill, "cap_label_drill", "dev", "off", "off|fresh|saved", "VOTVCOOP_CAP_LABEL_DRILL",
+    "Drill, the refiner's cap label on two peers; set on BOTH peers, and VOTVCOOP_CAN_DIR on both. fresh -- the host "
+    "prepares the cap at its third level with the Auto Processing module, the client joins, then each peer plugs, "
+    "pulls and presses in turn and both labels must be the actor's: 'rig: VERDICT cap-label PASS|FAIL|INVALID', the "
+    "FAIL at the step that failed. saved -- the host on its own loaded save (no --host-fresh), a client joins: the "
+    "host's label must be its loaded desk's level and module's, and the client's the same after the join; a save "
+    "whose desk holds no Auto Processing module is INVALID. Red arms: cap_label_repaint_off (every repaint, both "
+    "peers), cap_label_install_repaint_off (the host, saved arm).")

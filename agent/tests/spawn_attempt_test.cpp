@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <functional>
 #include <cmath>
+#include "ue_wrap/engine/engine_pawn.h"
+using ue_wrap::engine::PawnInertResult;
+using ue_wrap::engine::MakePawnInert;
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 #define UE_LOGE(...) ((void)0)
 #define UE_LOGW(...) ((void)0)
@@ -31,6 +34,7 @@ namespace world_identity {uint32_t Generation(){return world;}}
 struct CachedObjRef {void* value=nullptr;void Set(void* pointer){value=pointer;}void* Raw()const{return value;}
  void* Get()const{return value && (value==actor?actorLive:typeLive)?value:nullptr;}};
 bool ResolveSpawn(){return resolved;}
+namespace ue_wrap::engine {PawnInertResult MakePawnInert(void*){return PawnInertResult::Made;}}
 FTransform MakeTransform(const FVector&){return {};}
 void* GetWorldContext(){return g_gsCdo;}
 bool Call(void*,ParamFrame& frame){CHECK(observed&&*observed);++calls;auto hook=frame.function==g_beginSpawnFn?onBegin:onFinish;if(hook)hook();return frame.function==g_beginSpawnFn?beginOkay:finishOkay;}

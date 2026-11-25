@@ -306,7 +306,7 @@ bool HostTakeClientRow(coop::net::Session* s, uint32_t eid, void* actor, const S
     }
     g_brought.erase(eid);   // the permission is spent by a row that landed, and only by one
     // Every other client gets it; its author holds it already (MTA sends an accepted change to all but its source,
-    // CGame.cpp:2761-2768).
+    // reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2761-2768).
     HostSendIfChanged(s, eid, actor, /*exceptSlot*/ senderSlot);
     ++g_counts.accepted;
     UE_LOGI("drive_payload_sync: HOST took slot %u's row for the drive it brought, eid=%u ('%ls', size %.0f)", senderSlot,

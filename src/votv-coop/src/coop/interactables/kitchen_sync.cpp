@@ -25,6 +25,7 @@
 #include "ue_wrap/devices/kitchen_machine.h"
 #include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -448,8 +449,12 @@ sg::Verdict OnDoor(const sg::Call& c) {
 sg::Verdict OnMouse(const sg::Call& c) {
     if (!Client() || c.fromOurCode) return sg::Verdict::Run;
     void* parent=K::DoorParent(c.object);
-    if (!parent || !net_pump::IsInAnnouncedWorld(parent) ||
-        K::DoorUser(parent)!=players::Registry::Get().Local()) return sg::Verdict::Run;
+    if (!parent || !net_pump::IsInAnnouncedWorld(parent)) return sg::Verdict::Run;
+    void* local=players::Registry::Get().Local();
+    const bool ownsInput=local && K::DoorUser(parent)==local;
+    const bool grabsCrematorDoor=K::Type(parent)==K::Kind::Cremator && local &&
+        ue_wrap::engine::IsMainPlayerGrabbing(local,c.object);
+    if (!ownsInput && !grabsCrematorDoor) return sg::Verdict::Run;
     static R::ParamOffset mouse{L"mouseXY"};
     const int off=mouse.Of(c.function);
     if (!c.locals || off<0) return sg::Verdict::Cancel;

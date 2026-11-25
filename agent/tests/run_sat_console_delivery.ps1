@@ -7,7 +7,7 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$SourcePath,[string]$Name) {
-  $flags=@('/nologo','/std:c++20','/EHsc','/Gy','/utf-8','/I','agent/tests/sat_console_stubs','/I','src/votv-coop/include')
+  $flags=@('/nologo','/std:c++20','/EHsc','/Gy','/utf-8','/I',(Join-Path $PSScriptRoot 'sat_console_stubs'),'/I','src/votv-coop/include')
   if($SourcePath){
    $includePath=[IO.Path]::GetFullPath($SourcePath).Replace('\','/')
    $overrideHeader=Join-Path $output ($Name+'_source_override.h')
@@ -15,7 +15,7 @@ try {
    $flags += "/FI$overrideHeader"
   }
   $executable=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$executable" agent/tests/sat_console_delivery_test.cpp /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$executable" "$PSScriptRoot/sat_console_delivery_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE -ne 0){throw "Satellite console fixture compile failed: $Name"}
   return $executable
  }

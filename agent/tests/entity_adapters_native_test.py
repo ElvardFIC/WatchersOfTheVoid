@@ -3,13 +3,13 @@ from pathlib import Path
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = checkout.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = checkout.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
 def rows(asset, function):
-    pkg = Package(str(research / 'current-assets' / ('VotV__Content__' + asset + '.uasset')))
+    pkg = Package(str(evidence_root / 'current-assets' / ('VotV__Content__' + asset + '.uasset')))
     return dict(body(pkg, next(e for e in pkg.exports if e['name'] == function)))
 
 add = rows('objects__cockroachMaster', 'addRoach')

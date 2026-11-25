@@ -45,7 +45,15 @@ struct Scalars {
   bool  activeCoords = false;  // active_coords
   bool  activeComp = false;  // active_comp
   bool  coordIsPing = false;  // coord_isPing
+  float remapMin = 0;  // remapValue.X, the signal view's lower bound
+  float remapMax = 0;  // remapValue.Y, its upper bound
+  bool  visualizerMode = false;  // visualizerMode, graph or spectrogram (ApplyVisualizerMode draws it)
 };
+
+// The range the game's own updRemap clamps both remap bounds to. A wire value is clamped to it at the
+// receive edge, so a poll baseline never holds a number the desk will not.
+constexpr float kRemapLimit = 10.0f;
+constexpr float ClampRemap(float v) { return v < -kRemapLimit ? -kRemapLimit : (v > kRemapLimit ? kRemapLimit : v); }
 
 // Resolve the desk class, the singleton instance, every field offset and the refresh
 // UFunctions. A throttled (2 s) lazy retry; idempotent. Game thread.
@@ -76,7 +84,8 @@ enum Painter : uint32_t {
     kPaintPolarityLights = 1u << 6,   // updPolarityLights  -- DL_PolarityDir, active_download, canDL, physMods
     kPaintMaxLevelLights = 1u << 7,   // updMaxLevelLights  -- comp_maxLevel, active_comp, physMods
     kPaintCoordCoords    = 1u << 8,   // updateCoordCoords  -- the coords commit; no scalar
-    kPaintAll            = (1u << 9) - 1u,
+    kPaintRemap          = 1u << 9,   // updRemap           -- remapValue
+    kPaintAll            = (1u << 10) - 1u,
 };
 
 bool ReadScalars(Scalars& out);
@@ -187,7 +196,7 @@ bool ReadDownloadRow(ue_wrap::signal_dynamic::Row& out);
 // The gamemode's deleteActiveSignal, the game's whole un-arm: the desk's "Signal data deleted" reset (its only
 // caller; its init rolls the polarity unless a gate PRE writes one), the renderer's deleteSignalActor, then, when the
 // renderer's signal camera and its trigger are both valid, the trigger's runTrigger(0) and the camera field cleared
-// (mainGamemode.cpp:9633-9670). False when unresolved or the call failed.
+// (CXXHeaderDump/mainGamemode.cpp:9633-9670). False when unresolved or the call failed.
 bool CallDeleteActiveSignal();
 
 // The host-authoritative download-simulation output vector (desk_sim_sync). The download rate
@@ -212,7 +221,7 @@ struct SimOutputs {
 };
 bool ReadSimOutputs(SimOutputs& out);
 // Raw-write the sim outputs. Every field above is painted by the desk widget's own tick, and not
-// one of them is read by any verb in the WriteScalars refresh chain -- measured over all nine (see
+// one of them is read by any verb in the WriteScalars refresh chain -- measured over every verb in it, updRemap included (see
 // the chain's comment in console_desk.cpp). This function used to pulse that chain at about 3 Hz
 // "for the refresh-only display fields"; there were none, and the pulse cost a visible defect, so
 // it is gone rather than conditioned. The write is not a crossing's apply: the needle's crossing
@@ -239,6 +248,30 @@ bool ReadPrecMult(float& out);
 // the caller's (WriteScalars); this adds the sound's volume multiplier, the value over 10
 // clamped to 0.1 through 5. Game thread.
 bool ApplyPlayVolumeEffects(int32_t value);
+
+// Draw the signal view in `spectrogram` mode, as the desk's red button does: setCanvas, which writes
+// visualizerMode, then endCanvas. False if unresolved or the desk's screen widget is not live yet
+// (nothing is written then; the caller retries). Game thread.
+bool ApplyVisualizerMode(bool spectrogram);
+
+// Run the desk's updRemap alone (the SARV text and the visualizer materials from remapValue). False if
+// unresolved or the desk's screen widget is not live yet (nothing runs then; the caller retries).
+// Game thread.
+bool RepaintRemap();
+
+// Repaint the refiner's cap label from comp_maxLevel and the modules: the cap button's tag (the hover's
+// "Cap level [N]", or "Upgrade Auto Processing to use" without the module) and the screen's text_comp_maxlvl
+// ("[N]", or "NaN"). Only the cap button's own body and the desk's upgraded_pcUpgrades write them, so a value
+// written from outside the press, or a module plugged or pulled, leaves them stale; this runs
+// upgraded_pcUpgrades, the game's own repaint, which otherwise re-derives only what the save's upgrades already
+// say. It ends by nulling the local player's lookAtComponent, as the press does, so it runs on a change, never
+// on a clock. False if unresolved or the desk's screen widget is not live yet (nothing runs then; the caller
+// retries). Game thread.
+bool RepaintCapLevel();
+
+// The cap label as this peer shows it: the cap button's first tag and the screen's cap text. False if either
+// is not readable. Diagnostic; game thread.
+bool ReadCapLabel(std::wstring& tag, std::wstring& text);
 
 // The deck-playback replay surface (deck_play_sync): the reflected desk playSignal and
 // stopSound, parameterless. playSignal reads the selected index and gates on active play, a

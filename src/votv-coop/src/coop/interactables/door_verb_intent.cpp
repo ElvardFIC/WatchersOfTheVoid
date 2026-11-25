@@ -516,6 +516,12 @@ void OnCrematorState(const coop::net::KeyedTogglePayload& payload, uint8_t sende
     if (g_pendingCrematorApply.size() < 32) g_pendingCrematorApply.push_back(payload);
 }
 
+void OnCrematorFinished(void* cremator) {
+    bool active = false;
+    if (cremator && ue_wrap::cremator::TryReadLeverActive(cremator, active))
+        PublishCrematorLever(cremator, active);
+}
+
 void QueueCrematorSnapshot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host || peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return;

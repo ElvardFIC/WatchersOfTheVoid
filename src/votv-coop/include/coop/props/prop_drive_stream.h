@@ -83,7 +83,7 @@ bool TryGetPresentationVelocity(void* actor, ue_wrap::FVector& velocity);
 // load-tail re-create, a purge), never applied (its hold given up) or yielded to a hand judges
 // nothing: the correction then stands. Game thread.
 // Divergences from MTA's CanUpdateSync (reference/mtasa-blue/Server/mods/deathmatch/logic/
-// CElement.cpp:1300, its stamp compared at CUnoccupiedVehicleSync.cpp:285 of the same folder):
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1300, its stamp compared at reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:285 of the same folder):
 // 1. gen 0 is a value ("never driven"), not a wildcard: a correction read before any drive must
 //    lose to a later drive END, which a wildcard would accept.
 // 2. The compare is ordered (GenAfter), not equality: a NEWER stamp is accepted, since the later

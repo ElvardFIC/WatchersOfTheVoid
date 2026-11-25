@@ -68,7 +68,7 @@ std::string ShownText(const reg::Row* row) {
 
 // The chat line for a changed notify row: our own label and our own rendering of the value,
 // never the sender's text. Source prints the event's cvar name and value string
-// (clientmode_shared.cpp:1235-1251); we print our label and our own rendering of the held value.
+// (reference/source-sdk-2013/src/game/client/clientmode_shared.cpp:1235-1251); we print our label and our own rendering of the held value.
 // The label and a flag's on/off are looked up in this peer's language; an enum or number stays
 // its token, the word the player also types in /set. The log lines keep ShownText's English.
 void PushAnnouncementLine(const reg::Row* row) {
@@ -169,7 +169,7 @@ void OnSessionStart(bool host) {
 // The session-end seam, a divergence from both precedents. MTA ends a client's copy of the
 // server's settings by OWNERSHIP: they are members of the session object CClientGame
 // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.h:908-909) and go with it when
-// the mod unloads on disconnect (CPacketHandler.cpp:685). Source ends them by a level-end revert
+// the mod unloads on disconnect (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:685). Source ends them by a level-end revert
 // (CGameRules::LevelShutdownPostEntity -> RevertSavedConvars,
 // reference/source-sdk-2013/src/game/shared/gamerules.cpp:659-663).
 // Ours is a process-wide layer, because config's Resolve is process-wide and our one Session

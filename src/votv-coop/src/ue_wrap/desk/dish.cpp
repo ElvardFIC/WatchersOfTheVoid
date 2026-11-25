@@ -3,6 +3,7 @@
 #include "ue_wrap/desk/dish.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/kismet_timer.h"
 #include "ue_wrap/core/field_io.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -27,6 +28,11 @@ int32_t g_offAxisY = -1;        // Adish_C::axis_Y (UBillboardComponent*)
 int32_t g_offAxisZ = -1;        // Adish_C::axis_Z (UBillboardComponent*)
 int32_t g_offMoveCue = -1;      // Adish_C::satellite_move_Cue
 int32_t g_offCue = -1;          // Adish_C::satellite_Cue
+// The slew-sound edges' components, looked up once (a miss stays -1: the edge then plays nothing).
+int32_t g_offMoveStop = -1;     // Adish_C::satellite_moveStop
+int32_t g_offStop = -1;         // Adish_C::satellite_stop
+int32_t g_offTurnoff = -1;      // Adish_C::turnoff (the timeline whose length is the fade)
+bool g_edgeOffsetsTried = false;
 int32_t g_offCalibration = -1;  // Adish_C::calibration (float)
 int32_t g_offTechName = -1;     // Adish_C::techName (FString)
 int32_t g_offHashcode = -1;     // Adish_C::hashcode (FString), outside the L4 set: nothing mirrors it
@@ -38,10 +44,6 @@ void* g_setRelRotFn = nullptr;  // USceneComponent::K2_SetRelativeRotation
 void* g_activateFn = nullptr;   // UActorComponent::Activate(bool bReset)
 void* g_deactivateFn = nullptr; // UActorComponent::Deactivate()
 void* g_isActiveFn = nullptr;   // UActorComponent::IsActive() -> bool
-
-// Tickers: singletons the gamemode's BeginPlay creates.
-void* g_kismetSysCdo = nullptr;
-void* g_clearTimerFn = nullptr;        // KismetSystemLibrary::K2_ClearTimer
 
 std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;
@@ -72,6 +74,15 @@ void ResolvePass() {
     if (g_offAxisZ < 0) g_offAxisZ = R::FindPropertyOffset(dishCls, L"axis_Z");
     if (g_offMoveCue < 0) g_offMoveCue = R::FindPropertyOffset(dishCls, L"satellite_move_Cue");
     if (g_offCue < 0) g_offCue = R::FindPropertyOffset(dishCls, L"satellite_Cue");
+    if (!g_edgeOffsetsTried) {
+        g_edgeOffsetsTried = true;
+        g_offMoveStop = R::FindPropertyOffset(dishCls, L"satellite_moveStop");
+        g_offStop = R::FindPropertyOffset(dishCls, L"satellite_stop");
+        g_offTurnoff = R::FindPropertyOffset(dishCls, L"turnoff");
+        if (g_offMoveStop < 0 || g_offStop < 0 || g_offTurnoff < 0)
+            UE_LOGW("dish: slew-sound edge components unresolved (moveStop=0x%X stop=0x%X turnoff=0x%X)",
+                    g_offMoveStop, g_offStop, g_offTurnoff);
+    }
     if (g_offCalibration < 0) g_offCalibration = R::FindPropertyOffset(dishCls, L"calibration");
     if (g_offTechName < 0) g_offTechName = R::FindPropertyOffset(dishCls, L"techName");
     if (g_offHashcode < 0) g_offHashcode = R::FindPropertyOffset(dishCls, L"hashcode");
@@ -88,15 +99,10 @@ void ResolvePass() {
             if (!g_isActiveFn) g_isActiveFn = R::FindFunction(ac, L"IsActive");
         }
     }
-    if (!g_kismetSysCdo) g_kismetSysCdo = R::FindClassDefaultObject(L"KismetSystemLibrary");
-    if (g_kismetSysCdo && !g_clearTimerFn) {
-        if (void* kc = R::FindClass(L"KismetSystemLibrary"))
-            g_clearTimerFn = R::FindFunction(kc, L"K2_ClearTimer");
-    }
     const bool l4 = g_offActiveDishes >= 0 && g_offAxisY >= 0 && g_offAxisZ >= 0 &&
                     g_offMoveCue >= 0 && g_offCue >= 0 && g_offCalibration >= 0 &&
                     g_offTechName >= 0 && g_offRelRot >= 0 && g_setRelRotFn &&
-                    g_activateFn && g_deactivateFn && g_isActiveFn && g_clearTimerFn;
+                    g_activateFn && g_deactivateFn && g_isActiveFn && kismet_timer::Resolved();
     if (l4 && !g_l4Resolved) {
         g_l4Resolved = true;
         UE_LOGI("dish: L4 surface resolved (axes=0x%X/0x%X cues=0x%X/0x%X activeDishes=0x%X "
@@ -314,16 +320,90 @@ bool DeactivateCues(int32_t index) {
     return ok;
 }
 
-bool ActivateMoveCue(int32_t index) {
-    if (!g_l4Resolved) return false;
-    void* d = DishByIndex(index);
-    if (!d) return false;
-    void* c = ComponentAt(d, g_offMoveCue);
+namespace {
+
+constexpr float kSlewVolume = 1.5f;  // startMove's own
+
+bool ActivateAt(void* d, int32_t off) {
+    void* c = ComponentAt(d, off);
     if (!c || !g_activateFn) return false;
     ue_wrap::ParamFrame f(g_activateFn);
     if (!f.valid()) return false;
-    f.Set<bool>(L"bReset", false);
+    f.Set<bool>(L"bReset", true);
     return ue_wrap::Call(c, f);
+}
+
+void SetVolumeAt(void* d, int32_t off, float volume) {
+    void* c = ComponentAt(d, off);
+    void* fn = c ? R::FindDispatchFunctionCached(R::ClassOf(c), L"SetVolumeMultiplier") : nullptr;
+    if (!fn) return;
+    ue_wrap::ParamFrame f(fn);
+    if (f.valid() && f.Set<float>(L"NewVolumeMultiplier", volume)) ue_wrap::Call(c, f);
+}
+
+}  // namespace
+
+bool StartHum(int32_t index) {
+    if (!g_l4Resolved) return false;
+    void* d = DishByIndex(index);
+    if (!d) return false;
+    SetVolumeAt(d, g_offCue, kSlewVolume);
+    SetVolumeAt(d, g_offMoveCue, kSlewVolume);
+    return ActivateAt(d, g_offCue);
+}
+
+bool SetMotor(int32_t index, bool on) {
+    if (!g_l4Resolved) return false;
+    void* d = DishByIndex(index);
+    if (!d) return false;
+    if (on) return ActivateAt(d, g_offMoveCue);
+    void* c = ComponentAt(d, g_offMoveCue);
+    return c && CallNoArg(c, g_deactivateFn);
+}
+
+bool PlayAxisStop(int32_t index) {
+    if (!g_l4Resolved) return false;
+    void* d = DishByIndex(index);
+    return d && ActivateAt(d, g_offMoveStop);
+}
+
+bool SetFade(int32_t index, float volume) {
+    if (!g_l4Resolved) return false;
+    void* d = DishByIndex(index);
+    if (!d) return false;
+    SetVolumeAt(d, g_offCue, volume);
+    SetVolumeAt(d, g_offMoveCue, volume);
+    return true;
+}
+
+bool PlayStopAndEndHum(int32_t index) {
+    if (!g_l4Resolved) return false;
+    void* d = DishByIndex(index);
+    if (!d) return false;
+    const bool played = ActivateAt(d, g_offStop);
+    void* c = ComponentAt(d, g_offCue);
+    return (c && CallNoArg(c, g_deactivateFn)) && played;
+}
+
+float FadeSeconds(int32_t index) {
+    if (!g_l4Resolved) return 0.f;
+    void* d = DishByIndex(index);
+    void* timeline = d ? ComponentAt(d, g_offTurnoff) : nullptr;
+    void* fn = timeline ? R::FindDispatchFunctionCached(R::ClassOf(timeline), L"GetTimelineLength") : nullptr;
+    if (!fn) return 0.f;
+    ue_wrap::ParamFrame f(fn);
+    float seconds = 0.f;
+    return f.valid() && ue_wrap::Call(timeline, f) && f.GetRaw(L"ReturnValue", &seconds, sizeof(seconds)) ? seconds : 0.f;
+}
+
+void ReadCues(int32_t index, bool& hum, bool& motor) {
+    hum = motor = false;
+    if (!g_l4Resolved) return;
+    void* d = DishByIndex(index);
+    if (!d) return;
+    bool ok = false;
+    hum = CueIsActive(ComponentAt(d, g_offCue), ok) && ok;
+    motor = CueIsActive(ComponentAt(d, g_offMoveCue), ok) && ok;
 }
 
 bool AnyCueActive(int32_t index, bool& ok) {
@@ -461,17 +541,10 @@ void* DisherInstance() {
 }
 
 bool ParkDisher(void* inst) {
-    if (!inst || !g_clearTimerFn || !g_kismetSysCdo) return false;
     // K2_ClearTimer(Object, FunctionName="do") -- the exact inverse of the blueprint's one-shot
     // K2_SetTimerDelegate({self, do}) arm, the same shape space_renderer's KillClientSpawnTimer
     // uses.
-    ue_wrap::ParamFrame f(g_clearTimerFn);
-    if (!f.valid()) return false;
-    f.Set<void*>(L"Object", inst);
-    const wchar_t* fn = L"do";
-    struct { const wchar_t* data; int32_t num; int32_t max; } fs{ fn, 3, 3 };
-    if (!f.SetRaw(L"FunctionName", &fs, sizeof(fs))) return false;
-    return ue_wrap::Call(g_kismetSysCdo, f);
+    return kismet_timer::Clear(inst, L"do");
 }
 
 bool RestoreDisher(void* inst) {

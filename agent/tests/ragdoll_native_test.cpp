@@ -127,8 +127,8 @@ void SetControlRotation(void*,const FRotator& value){test::controlRotation=value
 bool SetActorRotation(void*,const FRotator& value){if(test::armParent==test::At(test::CrouchRoot)){
     test::armRotation.Yaw+=value.Yaw-test::actorYaw;test::armPosition={-test::armPosition.Y,test::armPosition.X,test::armPosition.Z};}
     test::actorYaw=value.Yaw;return true;}
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return nullptr;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){return false;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&,uint8_t,const FVector*){return nullptr;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){return false;}
 bool DestroyActor(void*){return true;}
 bool GetAttachParentActor(void*,void*& parent){parent=test::attached?test::At(test::Body):nullptr;return true;}
 bool ConfigurePlayerRagdollMesh(void*,void*){++test::configurations;if(!test::configuredOK)return false;

@@ -70,6 +70,7 @@ bool SetAudioPlaying(void* object,bool playing,const std::function<bool()>& curr
     auto& audio=test::objects[test::Audio];if(audio.playing!=playing){if(playing)++test::starts;else ++test::stops;audio.playing=playing;}return true;
 }
 }
+namespace ue_wrap::cremator {const std::vector<void*>& Instances(){static const std::vector<void*> rows;return rows;}}
 int main(){
     using namespace test;namespace K=ue_wrap::kitchen_machine;
     for(int i=0;i<Count;++i)objects[i].id=i;objects[Micro].audio=objects[Vendor].audio=At(Audio);objects[Micro].light=At(Light);

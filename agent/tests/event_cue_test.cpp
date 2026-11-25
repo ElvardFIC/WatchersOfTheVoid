@@ -3,6 +3,7 @@
 #include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar>
 #include <limits>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 namespace test {
@@ -22,7 +23,7 @@ bool IsLive(void* p) { return p && static_cast<test::Obj*>(p)->live; }
 bool IsLiveByIndex(void* p,int32_t i) { return p && p == ObjectAt(i) && IsLive(p); }
 void* ClassOf(void* p) { return p; }
 void* FindClassDefaultObject(const wchar_t*) { return &test::obj[2]; }
-void* FindObject(const wchar_t*,const wchar_t*) { return test::assets ? &test::obj[3] : nullptr; }
+void* FindObject(const wchar_t* name,const wchar_t*) { return test::assets ? (!wcscmp(name,L"eff_shootingStar_rain")?&test::obj[3]:&test::obj[6]) : nullptr; }
 void* FindFunction(void*,const wchar_t* name) { return &test::obj[!wcscmp(name,L"runEvent") ? 4 : 5]; }
 int32_t FindParamOffset(void*,const wchar_t*) { return 0; }
 int32_t FunctionFrameSize(void* fn) { return fn == &test::obj[4] ? test::frameSize : 64; }

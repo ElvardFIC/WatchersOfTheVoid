@@ -1,13 +1,13 @@
 """Check report-specific assumptions against the installed 0.9.0n bytecode."""
 from pathlib import Path
 import sys
-research=Path(__file__).resolve().parents[3]/'_research'
-sys.path.insert(0,str(research))
+evidence_root=Path(__file__).resolve().parents[3]/'_research'
+sys.path.insert(0,str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
 def graph(asset,function):
-    path=research/'assets'/('VotV__Content__'+asset+'.uasset')
+    path=evidence_root/'assets'/('VotV__Content__'+asset+'.uasset')
     if not path.exists(): raise SystemExit('UNAVAILABLE: extracted report assets required: '+str(path))
     p=Package(str(path))
     e=next(e for e in p.exports if e['name']==function and p.class_of_export(e)=='Function')

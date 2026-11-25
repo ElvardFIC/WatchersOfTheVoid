@@ -14,7 +14,7 @@ try {
  $classField=[regex]::Match($codec,'(?ms)^bool WriteClassField\(.*?^\}').Value
  if(-not $classField){throw 'Production class restoration helper missing'}
  [IO.File]::WriteAllText((Join-Path $output 'class_field.h'),$classField)
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/stow.obj" "/Fe$output/stow.exe" agent/tests/stow_2157_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/state_2145_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/stow.obj" "/Fe$output/stow.exe" "$PSScriptRoot/stow_2157_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Stow test compile failed'}
  & "$output/stow.exe"
  if($LASTEXITCODE -ne 0){throw 'Stow test failed'}

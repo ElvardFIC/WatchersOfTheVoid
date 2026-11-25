@@ -50,7 +50,7 @@ void RunSelftest();                               // the pure decisions, once pe
 // Left (a waiting put ended with no verdict: its prop or container gone, the prop out of the box or no longer a put) and LatchEvicted (a refusal latch fell out of a full table).
 enum class Tally : uint8_t { TargetGone, BadCommit, GrantUnsent, QueueFullUnready, BadSender, ShortPayload,
                              Malformed, UnknownFamilyUnready, RestoreOwed, WaitExpired, ReservationLapsed, LateDone,
-                             LateDoneLost, PutNoName, PutClassUnresolved, PutNotProp, PutFiltered, PutIntoMailbox,
+                             LateDoneLost, PutNoName, PutClassUnresolved, PutNotProp, PutBadLeaf, PutFiltered, PutIntoMailbox,
                              PutRowRefuses, PutUnknownName, PutDoneLost, OwedLost, TakeArmed, PutOverlapFiled,
                              PutOverlapUnarmed, PutOverlapReach, PutOverlapUnread, PutOverlapHeld, PutOverlapFit,
                              PutOverlapGate, PutOverlapGap, PutOverlapWaitDropped, PutOverlapLeft, PutOverlapLatchEvicted, kCount };
@@ -102,6 +102,7 @@ struct PutInputs {
     bool slowed = false;                      // the sender let a reservation lapse and is slowed
     bool nameOk = true;                       // the record carries names[0][0]
     bool classResolved = true, propClass = true;
+    bool leafOk = true;                       // a floppy disc's record holds values a game disc can (floppy_disc::DiscLeafOk)
     bool filterRead = true, filterHolds = false;
     bool mailboxContainer = false;            // the container is a mailbox and the record a container
     bool rowRead = true, rowRefuses = false;  // the list_props row is readable; a row says not collectable or heavy
@@ -112,7 +113,7 @@ struct PutInputs {
 };
 
 // Order: !worldReady -> Wait; holdsWait -> Wait; reach NoBody -> Wait; container Gone -> Gone; NotReady -> Wait;
-// Unreachable -> Reach; !termsRead -> Wait; locked -> Locked; slowed -> Lapsed; !nameOk, !classResolved, !propClass
+// Unreachable -> Reach; !termsRead -> Wait; locked -> Locked; slowed -> Lapsed; !nameOk, !classResolved, !propClass, !leafOk
 // -> Refused; !filterRead -> Wait; filterHolds -> Refused; mailboxContainer -> Refused; !rowRead -> Wait; rowRefuses
 // -> Refused; !volumeRead -> Wait; !volumeKnown -> Refused (the name is not in the game's table, whatever the
 // container); countAtCap, bytesOver -> NoSpace; unless infinite: currVol + volume > maxVol -> NoSpace; else Grant.
@@ -132,10 +133,15 @@ CommitStep DecideCommit(bool matched, uint8_t committed);
 // carry a name. The rest of the record is the container's own (the fridge flag, the rest of its state).
 bool StoredMatches(const ue_wrap::save_record::SaveRecord& asked, const ue_wrap::save_record::SaveRecord& stored);
 
-// The client's word is bounded where it is stored (MTA, CGame.cpp:2731-2736, 2743-2753): a done's record is no larger than the
-// one asked plus the slack the container's own flag needs, and a put's name is at most kMaxPutNameChars.
+// The client's word is bounded where it is stored (MTA, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2731-2736, 2743-2753): a done's record is no larger than the
+// one asked plus the slack the container's own flag needs, and a put's name is at most
+// prop_record_wire::kMaxPutNameChars (prop_record_wire::PutNameOk).
 bool DoneSizeOk(size_t askedBytes, const ue_wrap::save_record::SaveRecord& committed);
-bool PutNameOk(const ue_wrap::save_record::SaveRecord& r);
+
+// Whether a put's record passes the floppy bound: only a CLIENT's record of a floppy disc is held to what a game disc can hold
+// (floppy_disc::DiscLeafOk against `maxReadWrites`); the host's own capture is not (the host may cheat, bounds apply to
+// clients only), nor is a record of another class. `fromClient` is ReadPutInputs's `slowable`: true for a request's wire record.
+bool FloppyBoundOk(bool fromClient, bool discClass, const ue_wrap::save_record::SaveRecord& record, int32_t maxReadWrites);
 
 // What a put's Wait waits on, for the line that ends the wait: the first term whose read did not come.
 const char* PutWaitCause(const PutInputs& in);

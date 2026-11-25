@@ -7,16 +7,16 @@ Push-Location $root
 try {
  . (Join-Path $root '../_toolchain/env.ps1')
  function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I "$PSScriptRoot/fire_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   $rc=$LASTEXITCODE
   if($negative){if($rc -ne 1){throw "Negative assertion expected1, got $rc for $name"};Write-Host "PASS negative control: $name"}
   elseif($rc -ne 0){throw "Test failed: $name"}
  }
- Compile-AndRun 'controller' 'agent/tests/prop_fire_2137_test.cpp' $false
- Compile-AndRun 'wrapper' 'agent/tests/prop_fire_wrapper_2137_test.cpp' $false
- & $Python agent/tests/blueprint_fire_2137_test.py
+ Compile-AndRun 'controller' (Join-Path $PSScriptRoot 'prop_fire_2137_test.cpp') $false
+ Compile-AndRun 'wrapper' (Join-Path $PSScriptRoot 'prop_fire_wrapper_2137_test.cpp') $false
+ & $Python "$PSScriptRoot/blueprint_fire_2137_test.py"
  if($LASTEXITCODE -ne 0){throw 'Native evidence/integration failed'}
  $cases=@(
  @{Name='host_gate';Suite='prop_fire';File='coop/props/prop_fire_sync.cpp';Before='(!Client()||net_pump::IsInAnnouncedWorld(a))';After='net_pump::IsInAnnouncedWorld(a)'},

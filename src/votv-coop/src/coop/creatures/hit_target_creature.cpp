@@ -46,7 +46,7 @@ void SayPredicted(const wchar_t* function) {
 // Source plays a melee swing's impact effect on both sides and its damage on the server alone
 // (reference/source-sdk-2013/src/game/shared/hl2mp/weapon_hl2mpbasebasebludgeon.cpp:149-172), and withholds the
 // server's copy of the shooter's own sounds from the shooter (reference/source-sdk-2013/src/game/shared/
-// basecombatweapon_shared.cpp:1925-1930). This takes the first half: the swinger's feedback is local, health and
+// reference/source-sdk-2013/src/game/shared/basecombatweapon_shared.cpp:1925-1930). This takes the first half: the swinger's feedback is local, health and
 // death are the host's. The second half, delivering the server's copy to every peer but the swinger, is not taken: the
 // host's own call plays its own feedback, a third client sees none, and a swing the host refuses has already shown its
 // feedback.

@@ -3,6 +3,7 @@
 // coop/player/local_streams.h.
 
 #include "coop/player/local_streams.h"
+#include "coop/props/prop_hold_claim.h"
 #include "ue_wrap/actors/sleep_display.h"
 #include "ue_wrap/desk/device_screen.h"
 #include "coop/items/gravity_motion.h"
@@ -304,7 +305,7 @@ bool CoastSwinger(coop::net::Session& session) {
 void SendHeldRelease(coop::net::Session& session) {
     const bool kerfurTaken = g_lastHeldProp.Alive() &&
         (g_kerfurTakeActor.Get() == g_lastHeldProp.Raw() ||
-         coop::npc_sync::KerfurIsHolding(g_lastHeldProp.Raw()));
+         ::coop::npc_sync::KerfurIsHolding(g_lastHeldProp.Raw()));
     g_kerfurTakeActor.Reset();
     // The release edge (not carrying: the latch closed, or this is a non-trash prop). The
     // stream stops and a PropRelease goes out with the body's current velocity: the BP has
@@ -328,6 +329,10 @@ void SendHeldRelease(coop::net::Session& session) {
         UE_LOGI("[PILE] HOST trash release eid=%u -- PropRelease SUPPRESSED (host-auth flight-stream + "
                 "ToPile convert own the throw end; client drives no clump physics, ToPile clears the drive)",
                 relEid);
+    } else if (coop::prop_hold_claim::IsOwnHoldRefused(g_holdGen)) {
+        // The host kept another hold of this prop: every copy follows that one, and this hold has nothing to let go.
+        UE_LOGI("net: held -> released, hold %u -- the host refused it, no PropRelease",
+                static_cast<unsigned>(g_holdGen));
     } else {
         ue_wrap::prop::VelocityState vel{};
         if (g_lastHeldProp.Alive()) {

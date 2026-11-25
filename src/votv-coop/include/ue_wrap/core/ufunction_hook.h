@@ -97,7 +97,7 @@ using PreNativeCallback = script_gate::Verdict (*)(void* context, void* sourceOb
 // Patch `ufunction`'s native Func with a forwarder that, armed, reads the call's parameters before the
 // original does. A native thunk steps them off the caller's bytecode into its own locals, one expression each
 // through the VM's exec-handler table, so a post forwarder never sees them, and UE4SS's native pre-hook reads
-// the frame's Locals (LuaMod.cpp:128-200), which hold them only on the ProcessEvent path. This one steps them
+// the frame's Locals (reference/RE-UE4SS/UE4SS/src/mod/LuaMod.cpp:128-200), which hold them only on the ProcessEvent path. This one steps them
 // through the same table (script_gate::ExecHandlers) into a frame of its own. Run rewinds the caller's code
 // pointer and forwards, so the original steps them again: the engine's own shape for a native it calls both
 // remotely and locally (UObject::CallFunction). A ProcessEvent call's parameters are read from its frame.

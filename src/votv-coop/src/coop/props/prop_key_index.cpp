@@ -69,7 +69,7 @@ struct Parked {
 // A birth still loading after this long stops holding a miss at Pending: loading is seconds, and one
 // object stuck in it must not keep every miss from being an answer. It stays parked and is still indexed
 // when it finishes; the first one this happens to is named. Source tells its listeners when an entity has
-// finished spawning (entitylist.cpp:1176, OnEntitySpawned); the engine's object notifications here carry
+// finished spawning (reference/source-sdk-2013/src/game/server/entitylist.cpp:1176, OnEntitySpawned); the engine's object notifications here carry
 // no such event, so a birth still loading is polled until it reads as loaded.
 constexpr auto kParkedHoldsPending = std::chrono::seconds(5);
 

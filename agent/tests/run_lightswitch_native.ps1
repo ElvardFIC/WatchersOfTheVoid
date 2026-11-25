@@ -8,7 +8,7 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
  function Compile-Lights($exe,$header=''){
   $extra=@();if($header){$extra+="/FI$header"}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" agent/tests/lightswitch_native_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include @extra "/Fo$exe.obj" "/Fe$exe" "$PSScriptRoot/lightswitch_native_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw 'Lightswitch native fixture compile failed'}
  }
  $exe=Join-Path $output 'native.exe';Compile-Lights $exe

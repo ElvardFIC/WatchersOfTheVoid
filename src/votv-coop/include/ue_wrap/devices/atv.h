@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "ue_wrap/core/reflection.h"  // FName (ModuleByName)
 #include "ue_wrap/core/types.h"  // FVector, FRotator
 
 #include <cstddef>
@@ -62,7 +63,6 @@ std::wstring EnsureOwnSaveKey(void* atv);
 bool WriteSaveKey(void* atv, const std::wstring& key);
 
 // A live ATV in the current world whose save Key is `key`, or null.
-void* FindLiveByKey(const std::wstring& key);
 
 // A live ATV in the current world other than `self` whose save Key is `key`, or null.
 void* FindOtherLiveByKey(const std::wstring& key, void* self);
@@ -130,6 +130,39 @@ void PlayHonk(void* atv);
 // The native tyre eject: getTire then damageWheel, so the wheel prop is born on this machine.
 bool EjectWheel(void* atv, int index);
 
+// The ATV's vitals as the game keeps them: `fuel` and `health` (floats), and the `empty` and `brokenn` marks (bool bits).
+// The writers write the field alone: the game's own `fuelUp` and `toolboxFix` also clear the mark, so a caller that
+// mirrors them clears it itself, and `CallUpdHealth` is the game's repaint of a health written (smoke, the -1 floor).
+// False on null, an unresolved ATV_C or a class without the property (said once at the resolve). Game thread.
+bool  SetFuel(void* atv, float v);
+bool  SetHealth(void* atv, float v);
+bool  GetEmpty(void* atv);
+bool  SetEmpty(void* atv, bool v);
+bool  GetBroken(void* atv);
+bool  SetBroken(void* atv, bool v);
+bool  CallUpdHealth(void* atv);
+
+// The fitted modules: the live `Modules` array, one byte per module VALUE (the game's enum_physicalModules; each is the
+// value `physModToActor` maps to the module's prop class). ReadModules copies at most `cap` into `out` and returns how
+// many the ATV holds (it may exceed `cap`), or -1 when unreadable. WriteModules writes the array into its own buffer when
+// the capacity holds it, else into a new engine buffer with the replaced one freed (save_record::ReplaceByteArray), and then
+// runs the ATV's own `updUpgrades`, which fits or takes off every part to match. ModuleByName maps a module's prop name, the FName
+// `upgradeTake` is called with, to its value through the ATV's own `upgradesNames`, which parallels `Modules`; false when
+// the ATV holds no part of that name. Game thread.
+int   ReadModules(void* atv, uint8_t* out, int cap);
+bool  WriteModules(void* atv, const uint8_t* mods, int count);
+bool  ModuleByName(void* atv, const reflection::FName& name, uint8_t& value);
+
+// The ATV's own horn on this copy: the honk key's press or release event, which also writes `input_alt` and, with the Fly
+// module fitted, Fly's `fly` flag (measured on a copy nobody drives). Both are put back as they were in the same frame, so
+// the replay sounds the horn and leaves the copy's own controls alone. False when the event did not dispatch. Game thread.
+bool  ReplayHorn(void* atv, bool press);
+
+// The ATV's own `checkIfRunout`: it calls `runout` when the tank or the health is down. The guard after fuel or health
+// is lowered from outside the game's own tick. False on null, an unresolved function or a call that did not dispatch.
+// Game thread.
+bool  CheckIfRunout(void* atv);
+
 // The story event's flag: while it is set the ATV's own tick explodes it (health to 0, then `explode`) once its driver
 // has moved. Resolved by name with no fallback; both return false, and touch nothing, on null, an unresolved ATV_C or a
 // class without the property. Game thread.
@@ -157,7 +190,7 @@ enum class SpawnFail : uint8_t {
     None,
     Unresolved,      // the ATV wrapper, the spawn functions or the world context are not available
     NoKey,           // the class name or the key is empty
-    ClassNotFound,   // no class of that name is loaded
+    ClassNotFound,   // no class of that name is loaded or loadable
     NotAnAtv,        // the class does not descend from ATV_C
     NoOffset,        // the class has no key property
     NameNone,        // the key did not convert to a name
@@ -199,5 +232,6 @@ bool DestroyMirror(void* atv);
 // The ATV's own `dismount()`: the seated player is handed back (re-possessed, shown) and `isDriven` clears. False,
 // and nothing done, on a null or dead actor, an unresolved function or a call that did not dispatch. Game thread.
 bool Dismount(void* atv);
+
 
 }  // namespace ue_wrap::atv

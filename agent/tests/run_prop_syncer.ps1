@@ -14,10 +14,10 @@ try {
  if($depth){throw 'EndFromBody source is not balanced'}
  $endSource=$hostSource.Substring($start,$end-$start)
  [IO.File]::WriteAllText((Join-Path $output 'prop_syncer_end.inc'),$endSource)
- $includes=@('/I','agent/tests/prop_syncer_stubs','/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props',"/I$output")
+ $includes=@('/I',(Join-Path $PSScriptRoot 'prop_syncer_stubs'),'/I','src/votv-coop/include','/I','src/votv-coop/src/coop/props',"/I$output")
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c /I src/votv-coop/include "/Fo$output/registry.obj" src/votv-coop/src/coop/config/config_registry.cpp
  if($LASTEXITCODE){throw 'Prop syncer registry compile failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/test.obj" "/Fe$output/test.exe" agent/tests/prop_syncer_client_test.cpp "$output/registry.obj" /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/test.obj" "/Fe$output/test.exe" "$PSScriptRoot/prop_syncer_client_test.cpp" "$output/registry.obj" /link /OPT:REF
  if($LASTEXITCODE){throw 'Prop syncer fixture compile failed'}
  & "$output/test.exe"
  if($LASTEXITCODE){throw 'Prop syncer fixture failed'}
@@ -47,7 +47,7 @@ try {
    $header=Join-Path $output ($case.Name+'.h')
    $macro=if($case.Source -eq 'end'){'PROP_SYNCER_END_SOURCE'}else{'PROP_SYNCER_CLIENT_SOURCE'}
    [IO.File]::WriteAllText($header,('#define '+$macro+' "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/FI$header" "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" agent/tests/prop_syncer_client_test.cpp "$output/registry.obj" /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/FI$header" "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" "$PSScriptRoot/prop_syncer_client_test.cpp" "$output/registry.obj" /link /OPT:REF
    if($LASTEXITCODE){throw "Prop syncer fault compile failed: $($case.Name)"}
    $saved=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& "$output/$($case.Name).exe" 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}

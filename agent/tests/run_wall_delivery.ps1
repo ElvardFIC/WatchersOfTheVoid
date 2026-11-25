@@ -7,10 +7,10 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$SourcePath,[string]$Define){
-  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I','agent/tests/authority_2165_stubs','/I','src/votv-coop/include')
+  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I',(Join-Path $PSScriptRoot 'authority_2165_stubs'),'/I','src/votv-coop/include')
   if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define '+$Define+' "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" agent/tests/wall_delivery_test.cpp /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/wall_delivery_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Wall delivery fixture compile failed: $Name"}
   return $exe
  }

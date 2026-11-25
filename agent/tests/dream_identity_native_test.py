@@ -1,19 +1,19 @@
 """Verify the dream collection contract in the freshly extracted current pak.
 
 This is cooked Blueprint evidence, not a claim of rendered or real-peer testing.
-The decoder and extracted game assets are local research inputs.
+The decoder and extracted game assets are local evidence_root inputs.
 """
 from pathlib import Path
 import hashlib
 import re
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-assets = Path(sys.argv[1]) if len(sys.argv) > 1 else research / 'current-assets'
+assets = Path(sys.argv[1]) if len(sys.argv) > 1 else evidence_root / 'current-assets'
 used = {}
 
 

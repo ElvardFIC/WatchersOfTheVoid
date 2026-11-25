@@ -23,17 +23,18 @@ public:
     // One intent at `nowMs`, a steady clock's milliseconds: true when the bucket holds a token, which it spends.
     bool Take(const IntentBudget& budget, uint64_t nowMs) {
         if (!Valid(budget)) return false;
-        if (!initialized_) {
-            initialized_ = true;
-            tokens_ = budget.burst;
-            lastMs_ = nowMs;
-        } else if (nowMs > lastMs_) {
-            tokens_ = static_cast<float>(std::min<double>(budget.burst,
-                tokens_ + static_cast<double>(budget.perSecond) * (nowMs - lastMs_) / 1000.0));
-            lastMs_ = nowMs;
-        }
-        if (tokens_ > budget.burst) tokens_ = budget.burst;
+        Refill(budget, nowMs);
         if (tokens_ < 1.0f) return false;
+        tokens_ -= 1.0f;
+        return true;
+    }
+
+    // One intent paid into debt: a token is spent even when the bucket holds none, down to `maxDebt` tokens below
+    // zero, which the refills then pay before any Take succeeds. False, nothing spent, past that.
+    bool Charge(const IntentBudget& budget, uint64_t nowMs, float maxDebt) {
+        if (!Valid(budget) || !std::isfinite(maxDebt) || maxDebt < 0.f) return false;
+        Refill(budget, nowMs);
+        if (tokens_ - 1.0f < -maxDebt) return false;
         tokens_ -= 1.0f;
         return true;
     }
@@ -52,6 +53,20 @@ public:
     }
 
 private:
+    void Refill(const IntentBudget& budget, uint64_t nowMs) {
+        if (!Valid(budget)) return;
+        if (!initialized_) {
+            initialized_ = true;
+            tokens_ = budget.burst;
+            lastMs_ = nowMs;
+        } else if (nowMs > lastMs_) {
+            tokens_ = static_cast<float>(std::min<double>(budget.burst,
+                tokens_ + static_cast<double>(budget.perSecond) * (nowMs - lastMs_) / 1000.0));
+            lastMs_ = nowMs;
+        }
+        if (tokens_ > budget.burst) tokens_ = budget.burst;
+    }
+
     static bool Valid(const IntentBudget& budget) {
         return std::isfinite(budget.burst) && std::isfinite(budget.perSecond) &&
             budget.burst >= 0.f && budget.perSecond >= 0.f;

@@ -1,6 +1,6 @@
 // coop/dispatch/event_dispatch.h -- INTERNAL per-domain reliable-message handlers for
 // coop::event_feed::Update's dispatch switch. event_feed.cpp handles the session and handshake
-// kinds inline and chains these eight families from its default case; each family's own switch is
+// kinds inline and chains these nine families from its default case; each family's own switch is
 // where its kinds are declared.
 //
 // Sibling-internal header, the coop/net/session_lanes.h shape: not part of the public coop/ include
@@ -46,15 +46,18 @@ bool HandleStateEvent(net::Session& session,
 // Signal-pipeline family: the sky-signal chain, the laptop with its blobs and floppy box, the dish
 // and its aim, the play deck, the drive slots and their rack, the desk with its input, log, scans
 // and physics mods, the refiner's decode pane, the task board, the meadow store and the
-// saved-signal list.
-bool HandleSignalEvent(const net::Session::ReliableMessage& msg);
+// saved-signal list. The desk's short circuit is here too: DeskShortState is the HOST->CLIENT state, dropped on the
+// host and from any sender but slot 0, and DeskShortRequest a client's cancelled short, checked for role()==Host AND a
+// client sender slot; `session` is for those two checks.
+bool HandleSignalEvent(net::Session& session, const net::Session::ReliableMessage& msg);
 
 // CLIENT->HOST intent and request family: a client asks the host to perform something it alone is
 // authoritative for. Read the case for its gate rather than assuming one. GrabIntent, ThrowIntent,
 // PropDropIntent, ReelEjectIntent, DoorVerbIntent, CameraToggleIntent, LaptopTabReport and KeypadIntent check role()==Host AND a client
-// sender slot; KerfurConvertRequest and KerfurCommand check the role only, mapping an out-of-range
+// sender slot; KerfurConvertRequest checks the role only, mapping an out-of-range
 // slot to the 0xFF sentinel and handing it on; RoachConsumed defers both gates to
-// roach_sync::OnConsumedIntent.
+// roach_sync::OnConsumedIntent. PropPropsIntent (a press of the toolgun's prop-properties tool) and its answer
+// PropPropsState sit beside the remover's pair and hand their bytes to the lane, which checks the role and the format.
 bool HandleIntentEvent(net::Session& session,
                        const net::Session::ReliableMessage& msg);
 
@@ -63,6 +66,30 @@ bool HandleIntentEvent(net::Session& session,
 // HOST->CLIENT answer, dropped on the host and from any sender but slot 0.
 bool HandleContainerActEvent(net::Session& session,
                              const net::Session::ReliableMessage& msg);
+
+// Cremator family: the machine's lever run and its hits. CrematorState is the HOST->CLIENT state and CrematorHit the
+// HOST->OWNER hit on a player, each dropped on the host and from any sender but slot 0; CrematorIntent is a client's
+// handle press, checked for role()==Host AND a client sender slot.
+bool HandleCrematorEvent(net::Session& session,
+                         const net::Session::ReliableMessage& msg);
+// Cargo lift family: the lift's direction and a call-button press. CargoLiftState is the HOST->CLIENT state, dropped on
+// the host and from any sender but slot 0; CargoLiftIntent is a client's press, checked for role()==Host AND a client
+// sender slot.
+bool HandleCargoLiftEvent(net::Session& session,
+                          const net::Session::ReliableMessage& msg);
+
+// Requester-feedback family: what a verb the host ran for a client showed on the host (a hint, a glossary entry, a
+// 2D sound), sent to that client for its own machine to show. RequesterFeedback is the HOST->CLIENT kind, dropped
+// on the host and from any sender but slot 0.
+bool HandleRequesterFeedbackEvent(net::Session& session,
+                                  const net::Session::ReliableMessage& msg);
+
+// Kerfur-command family: a client's radial command for a kerfur and the host's answer to it. KerfurCommand checks
+// role()==Host and the sender slot here and hands the request to the host's lane (its short payload is counted in
+// that lane's tally); KerfurCommandAnswer is the HOST->CLIENT answer, dropped on the host and from any sender but
+// slot 0.
+bool HandleKerfurCommandEvent(net::Session& session,
+                              const net::Session::ReliableMessage& msg);
 
 // Economy family: the delivery order with its queue, the coin gun's sale and collect, the laptop
 // upgrade purchase and the point sack. OrderRequest, CoinGunSell and CoinCollect check the slot here
@@ -77,7 +104,14 @@ bool HandleEconomyEvent(net::Session& session,
 // Driven-prop family: the close of a driven prop's stream (PropDriveEnd), and the prop syncer's claim
 // and answer. PropDriveEnd on the host is a syncing client's End, handed to the claim judge; on a client
 // it is the host's End, applied by the stream's receiver. PropSyncClaim checks role()==Host AND a client
-// sender slot; PropSyncAnswer is the HOST->CLIENT verdict, refused from a client at the host's edge. DevLoadFiller
+// sender slot; PropSyncAnswer is the HOST->CLIENT verdict, refused from a client at the host's edge, and
+// PropHoldRefused the host's refusal of a second hold, to every client; FoodState a world food's condition,
+// host to all, FoodBite a client's bite and FoodRelease the food it let go, client to host, FoodHand the
+// food in a hand, holder to all; AmbientTreeState a walking tree's size and landing and AmbientFixtureState a
+// dirt hole's or beehive branch's place, host to all; SusHoleIntent a client's sus hole for the host to make,
+// dropped on a client; WalkerSeen whether the player a walker hunts has it on screen, client to host, and WalkerState the
+// host's walker's pose and the player it hunts, host to all; PropToolFlags relays a toolgun's final prop flags.
+// DevLoadFiller
 // is the developer filler of the syncer drill's load arm, host to client; DevParityReport is the pile deferral
 // drill's report, client to host; DevContainerParity is the container join drill's.
 bool HandlePropDriveEvent(net::Session& session,

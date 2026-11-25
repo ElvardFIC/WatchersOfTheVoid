@@ -3,6 +3,10 @@
 #include "kerfus_native_test.cpp"
 #include "ue_wrap/actors/kerfur.h"
 #include "ue_wrap/core/sdk_profile.h"
+namespace ue_wrap::reflection {
+void* OuterOf(void*){test::Call("outer");return &test::objects[100];}
+void* FindFunction(void*,const wchar_t*){test::Call("findUber");return test::metadata?&test::objects[200]:nullptr;}
+}
 namespace ue_wrap::kerfur {
 namespace R=ue_wrap::reflection;namespace P=ue_wrap::profile;
 #ifndef OMEGA_VERB_SOURCE

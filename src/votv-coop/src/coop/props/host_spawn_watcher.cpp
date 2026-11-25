@@ -1,11 +1,13 @@
 // coop/props/host_spawn_watcher.cpp -- see coop/props/host_spawn_watcher.h.
 
+#include "coop/player/level_visit.h"
 #include "coop/props/host_spawn_watcher.h"
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "coop/element/element.h"
 #include "coop/element/registry.h"          // EidForActor (drain: tracked/mirror exclusion)
+#include "coop/net/prop_spawn_hook.h"   // the drill seam the spawn record rides
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"          // LocalHandActor (drain: hotbar view-actor exclusion)
@@ -27,6 +29,7 @@
 #include "coop/props/remote_prop_spawn.h"
 #include "coop/session/host_world_settle.h"  // Settled: the host's start-up births are not live edits
 #include "coop/props/join_membership_sweep.h"  // the join claim and sweep
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hot_path_guard.h"  // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
@@ -44,6 +47,7 @@
 #include <cmath>          // asin/atan2 for the FQuat -> FRotator conversion
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace coop::host_spawn_watcher {
@@ -245,6 +249,8 @@ struct PendingFinishedSpawn {
     PendingFinishedSpawn(void* a, bool floorKey, bool coast) : initializeFloorKey(floorKey), coastBirth(coast) { actor.Set(a); }
 };
 std::vector<PendingFinishedSpawn> g_pendingFinished;  // GT-only
+bool g_captureBirths = false;
+std::vector<ue_wrap::CachedObjRef> g_capturedBirths;
 constexpr size_t kMaxPendingFinished = 128;           // runaway backstop (level-load bursts)
 uint64_t g_pendingEpoch = 0;
 bool g_draining = false;
@@ -264,6 +270,7 @@ void OnFinishSpawnFunc(void* /*context*/, void* srcObj, void* result) {
     if (!coop::host_world_settle::Settled() && !s->AnyWorldReadyPeer()) return;
     void* actor = result;
     if (!actor || !R::IsLive(actor)) return;
+    if (g_captureBirths) g_capturedBirths.emplace_back().Set(actor);
     // Wire and display mirror spawns are marked before the finish and never enqueued, since
     // expressing a mirror as a fresh world prop is the dupe.
     if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;
@@ -551,6 +558,40 @@ void DrainPendingSpawns(coop::net::Session* s) {
 }
 
 size_t PendingCapDrops() { return g_capDrops; }
+
+namespace dev {
+void CaptureBirths(bool on) {
+    g_captureBirths = on;
+    if (on) g_capturedBirths.clear();
+}
+
+const std::vector<ue_wrap::CachedObjRef>& CapturedBirths() { return g_capturedBirths; }
+
+namespace {
+std::unordered_set<uint32_t> g_spawnSent, g_spawnRefused;   // GT-only, armed by a drill
+
+void OnPropSpawnSent(uint32_t eid, bool sent) {
+    UE_ASSERT_GAME_THREAD("host_spawn_watcher::OnPropSpawnSent");
+    (sent ? g_spawnSent : g_spawnRefused).insert(eid);
+}
+}  // namespace
+
+void ArmSpawnRecord(bool on) {
+    g_spawnSent.clear();
+    g_spawnRefused.clear();
+    coop::net::prop_spawn_hook::PropSpawnSentHook() = on ? &OnPropSpawnSent : nullptr;
+}
+
+bool StillPending(void* actor) {
+    for (const PendingFinishedSpawn& e : g_pendingFinished)
+        if (e.actor.Get() == actor) return true;
+    return false;
+}
+
+bool SpawnSent(uint32_t eid) { return g_spawnSent.count(eid) != 0; }
+bool SpawnRefused(uint32_t eid) { return g_spawnRefused.count(eid) != 0; }
+}  // namespace dev
+
 
 void OnDisconnect() {
     ++g_pendingEpoch;

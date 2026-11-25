@@ -3,15 +3,15 @@ from pathlib import Path
 import sys
 
 checkout = Path(__file__).resolve().parents[2]
-research = next((p for p in (checkout / "_research", checkout.parent / "_research")
+evidence_root = next((p for p in (checkout / "_research", checkout.parent / "_research")
                  if (p / "kismet_dis.py").is_file()), None)
-if research is None:
+if evidence_root is None:
     raise SystemExit("UNAVAILABLE: local disassembler and extracted lamp/root/ticker assets required")
-sys.path.insert(0, str(research))
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package, Dis, find_script
 
 def body(asset, name):
-    pkg = Package(str(research / f"assets/VotV__Content__objects__{asset}.uasset"))
+    pkg = Package(str(evidence_root / f"assets/VotV__Content__objects__{asset}.uasset"))
     export = next(e for e in pkg.exports if e["name"] == name and pkg.class_of_export(e) == "Function")
     code, _ = find_script(pkg.export_data(export))
     assert code is not None, name

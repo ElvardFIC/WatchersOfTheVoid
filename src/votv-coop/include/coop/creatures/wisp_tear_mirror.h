@@ -39,7 +39,6 @@ void OnWispTear(const coop::net::WispTearPayload& p, uint8_t senderPeerSlot);
 // OnWispTear on the resolved actor, including the host's local delivery.
 // `victimSlot` is logged, not acted on -- the hold is wisp_grab_hold's. Game thread.
 // Returns false if the actor or animation is not ready; receivers retry within the grab window.
-bool PlayTearOnWisp(void* wispActor, uint32_t victimSlot);
 
 // Per-tick: release the grab ride and discharge the armed victim ragdoll death once its deadline
 // elapses. No-op until armed. Game thread (ragdollMode is a UFunction call).
@@ -50,5 +49,6 @@ void OnPeerLeft(uint8_t slot);
 
 // Clear armed state on disconnect.
 void OnDisconnect();
+
 
 }  // namespace coop::wisp_tear_mirror

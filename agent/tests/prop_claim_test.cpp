@@ -47,6 +47,8 @@ std::vector<Adopted>& AdoptedHooks(){return test::adoptedHooks;}
 std::unordered_map<Key,Mirror>& Mirrors(){return test::mirrorHooks;}
 }
 namespace ue_wrap::hook {bool AttachedActors(void*,void*& a,void*& b){a=test::attached;b=nullptr;test::Call("hookAttached");return true;}}
+namespace ue_wrap::prop {std::wstring GetActorSaveKeyString(void*){return {};}}
+namespace ue_wrap::keyed_objects {bool Available(){return false;}void* Resolve(const wchar_t*){return nullptr;}}
 #ifndef OMEGA_COMMAND_FIXTURE
 namespace ue_wrap::engine {bool SetActorSimulatePhysics(void*,bool simulate){if(simulate)++test::thaws;test::Call("npcPhysics");return true;}}
 #endif

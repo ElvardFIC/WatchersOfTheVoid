@@ -1,4 +1,4 @@
-// coop/interactables/interactable_sync.h -- keyed interactable state sync: one engine, ten features, one Channel:
+// coop/interactables/interactable_sync.h -- keyed interactable state sync: one engine, twelve features, one Channel:
 //   - DoorState (9):         base doors     (Adoor_C, open intent, host-authoritative)
 //   - LightState (10):       light switches (Alightswitch_C::use, replayed on receipt)
 //   - ContainerState (11):   container lids (Aprop_swinger_C::Open / Close)
@@ -8,11 +8,11 @@
 //   - LightGroupState (129): light groups   (runTrigger on the root, host-authoritative)
 //   - OvenRepairState (151): the kitchen oven's repair (its fix(), one way)
 //   - CameraActiveState (181), CameraLightState (182): a security camera's two bits (host-authoritative)
+//   - CrematorState, CargoLiftState: the cremator's lever run, the cargo lift's direction (both host-authoritative)
 // Gameplay/network layer (principle 7): the wire protocol, the senders, the receiver apply, the key index, the
 // deferred-apply retry and the connect snapshot; the engine only through ue_wrap. Every channel is sent at the verbs
-// that write its state, on the authority: the host for doors, light groups and cameras, the peer that ran it for
-// the symmetric rest (door_state_verbs, lightgroup_verbs, toggle_verbs). A write no verb makes, a save's load,
-// reaches a joiner in the connect snapshot. The model: docs/devices.md.
+// that write its state, on the authority (the host for doors, light groups, cameras, cremators and the cargo lift, the peer that ran
+// it for the rest); a save's load reaches a joiner in the connect snapshot. The model: docs/devices.md.
 
 #pragma once
 
@@ -38,7 +38,7 @@ void Install(coop::net::Session* session);
 // self-healing index, deferred and retried when the instance has not streamed in yet -- and
 // applies it, updating the poll baseline so the apply never echoes. The host's relay of a client's
 // symmetric edge happens in the session, before this runs.
-void OnReliable(uint8_t kind, const coop::net::KeyedTogglePayload& payload, uint8_t senderPeerSlot);
+void OnReliable(uint16_t kind, const coop::net::KeyedTogglePayload& payload, uint8_t senderPeerSlot);
 
 // The door lane's key for `door`, or "" when the lane does not index it in the current world: the
 // name a door verb intent carries. Game thread.
@@ -62,6 +62,31 @@ std::wstring CameraKey(void* cam);
 
 // The live camera the camera lane indexes under `key` in the current world, or null. Game thread.
 void* ResolveCamera(const std::wstring& key);
+
+// The cremator lane's key for `cremator`, or "" when the lane does not index it in the current world: the name a
+// cremator press intent carries. Game thread.
+std::wstring CrematorKey(void* cremator);
+
+// The live cremator the cremator lane indexes under `key` in the current world, or null. Game thread.
+void* ResolveCremator(const std::wstring& key);
+
+// Host: a cremator's handle just finished (coop/interactables/cremator_state); the cremator lane sends the isActive it
+// left when that changed. Only the host calls it (a client's handle finish looks again at its want instead). Game thread.
+void OnCrematorVerb(void* cremator);
+
+// The cargo lift lane's key for `lift` (its level-export FName), or "" when the lane does not index it: the name a
+// lift press intent carries. Game thread.
+std::wstring CargoLiftKey(void* lift);
+
+// The live cargo lift the lane indexes under `key` in the current world, or null. Game thread.
+void* ResolveCargoLift(const std::wstring& key);
+
+// Host: a cargo lift's press just ran; the lane sends the direction it left when that changed. Game thread.
+void OnCargoLiftVerb(void* lift);
+
+// Host: every indexed lift's direction sent again to `slot` alone, for a press that asked for the direction a lift
+// already has, and for a press the host refused: the sender's copy hears the host's state.
+void ResendCargoLiftsTo(uint8_t slot);
 
 // Whether the door lane's own apply is running on `door` now: a client's copy of a door refuses
 // every doorOpen and doorClose but that one. Game thread.

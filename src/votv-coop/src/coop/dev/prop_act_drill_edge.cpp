@@ -76,7 +76,21 @@ bool HExpired(uint64_t bound) { return NowMs() - g_hsMs > bound; }
 
 void HostFail(const EdgeRow* row, const std::string& why) {
     UE_LOGW("%s host %s FAIL -- %s%s%s", kTag, PhaseName().c_str(), row ? row->act.name : "", row ? ": " : "", why.c_str());
+    HostEnds(End::Fail, std::string(row ? row->act.name : "") + ": " + why);
     g_hs = HStage::Done;
+}
+
+// A bound ran out with no event to decide on: INVALID, never a verdict on the lane. The phase stops as it does on a FAIL.
+void HostInvalid(const EdgeRow* row, const std::string& why) {
+    UE_LOGW("%s host %s INVALID -- %s%s%s", kTag, PhaseName().c_str(), row ? row->act.name : "", row ? ": " : "", why.c_str());
+    HostEnds(End::Invalid, std::string(row ? row->act.name : "") + ": " + why);
+    g_hs = HStage::Done;
+}
+
+// What a client said when its step ended other than ok: its FAIL stays a FAIL, its INVALID stays INVALID.
+void HostReported(const EdgeRow* row, const std::string& who, const std::string& said) {
+    if (said.compare(0, 8, "invalid ") == 0) HostInvalid(row, who + " reported: " + said.substr(8));
+    else HostFail(row, who + " reported: " + said);
 }
 
 EBase TakeBase() {
@@ -125,7 +139,7 @@ bool Announced(const EdgeRow& r, ue_wrap::CachedObjRef& ref, EL::ElementId* eid)
     }
     *eid = EL::Registry::Get().EidForActor(actor);
     if (*eid != EL::kInvalidId) return true;
-    if (HExpired(kAnnounceBoundMs)) HostFail(&r, "the spawned prop was never announced");
+    if (HExpired(kAnnounceBoundMs)) HostInvalid(&r, "the spawned prop was never announced");
     return false;
 }
 
@@ -133,7 +147,7 @@ bool Announced(const EdgeRow& r, ue_wrap::CachedObjRef& ref, EL::ElementId* eid)
 bool ClientFailed(const EdgeRow& r) {
     std::string rest;
     if (!ClientSaid(kSlot, DoneHead(r.act), &rest) || rest == "ok") return false;
-    HostFail(&r, "c1 reported: " + rest);
+    HostReported(&r, "c1", rest);
     return true;
 }
 
@@ -164,9 +178,14 @@ void Act(const EdgeRow& r) {
     if (ClientFailed(r)) return;
     switch (r.kind) {
     case Kind::Before:
-        // The second request waits behind the first's reservation, which holds until the first commit is released.
+        // The second request waits behind the first's reservation, which holds until the first commit is released. A
+        // second answered in its place (the grant was the first answer) is the failing event, decided at once.
+        if (Since(PAH::AnsweredTotal(kSlot), g_base.answered) > 1) {
+            HostFail(&r, "the second request was answered at once instead of waiting on the first's reservation");
+            return;
+        }
         if (PAH::WaitsOf(kSlot, PAH::WaitCause::Reservation) <= g_base.waits) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "the second request never waited on the reservation");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "the second request never waited on the reservation");
             return;
         }
         if (Since(PAH::AnsweredTotal(kSlot), g_base.answered) != 1 ||
@@ -179,7 +198,7 @@ void Act(const EdgeRow& r) {
         return;
     case Kind::Dead:
         if (coop::prop_hold::ReservedEid(kSlot) != static_cast<uint32_t>(g_eid)) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "c1 never reserved the target");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c1 never reserved the target");
             return;
         }
         if (!KillTarget(r)) return;
@@ -187,7 +206,7 @@ void Act(const EdgeRow& r) {
         return;
     case Kind::Gone:
         if (!ClientSaid(kSlot, ClientLine(r, "committed-held"), nullptr)) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "c1 never said its commit was held");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c1 never said its commit was held");
             return;
         }
         if (coop::prop_hold::ReservedEid(kSlot) != static_cast<uint32_t>(g_eid)) {
@@ -311,14 +330,14 @@ void HostStep(coop::net::Session* s) {
     case HStage::Spawn: {
         void* actor = nullptr;
         if (const char* why = SpawnTarget(r.act, 0.f, &actor)) {
-            HostFail(&r, why);
+            if (const char* bad = InvalidText(why)) HostInvalid(&r, bad); else HostFail(&r, why);
             return;
         }
         g_target.Set(actor);
         if (TwoProps(r.kind)) {
             void* second = nullptr;
             if (const char* why = SpawnTarget(r.act, kPairGapCm, &second)) {
-                HostFail(&r, why);
+                if (const char* bad = InvalidText(why)) HostInvalid(&r, bad); else HostFail(&r, why);
                 return;
             }
             g_target2.Set(second);
@@ -337,11 +356,11 @@ void HostStep(coop::net::Session* s) {
     case HStage::AwaitDone: {
         std::string rest;
         if (!ClientSaid(kSlot, DoneHead(r.act), &rest)) {
-            if (HExpired(kDoneBoundMs)) HostFail(&r, "c1 never said it was done");
+            if (HExpired(kDoneBoundMs)) HostInvalid(&r, "c1 never said it was done");
             return;
         }
         if (rest != "ok") {
-            HostFail(&r, "c1 reported: " + rest);
+            HostReported(&r, "c1", rest);
             return;
         }
         HEnter(HStage::Judge);
@@ -351,7 +370,7 @@ void HostStep(coop::net::Session* s) {
         std::string why;
         switch (Judge(r, &why)) {
         case Judged::Wait:
-            if (HExpired(kJudgeBoundMs)) HostFail(&r, "still waiting: " + why);
+            if (HExpired(kJudgeBoundMs)) HostInvalid(&r, "still waiting: " + why);
             return;
         case Judged::Fail:
             HostFail(&r, why);
@@ -371,6 +390,7 @@ void HostStep(coop::net::Session* s) {
                                       std::to_string(sum));
                 return;
             }
+            HostEnds(End::Pass, "all steps held");
             UE_LOGI("%s host edge PASS -- all %u steps held", kTag, static_cast<unsigned>(kEdgeRowCount));
             g_hs = HStage::Done;
             return;

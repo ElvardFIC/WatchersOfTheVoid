@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "ue_wrap/core/class_resolve.h"  // Family, Load (the trash verdict resolves a class name)
 #include "ue_wrap/engine/engine.h"      // FVector
 #include "ue_wrap/core/reflection.h"  // FName
 #include "ue_wrap/actors/prop_flags.h"  // the physics-state flags and their verbs
@@ -43,6 +44,10 @@ bool WalksToBase(void* cls, void* base);
 bool IsKeyedInteractable(void* obj);
 bool IsClassKeyedInteractable(void* cls);
 
+// The family a resolver caller names for a keyed interactable: a class class_resolve loads on a wire name is
+// accepted only when IsClassKeyedInteractable holds for it.
+const class_resolve::Family& PropFamily();
+
 // True only for actorChipPile_C or a subclass, the grabbable pile (not the clump, not
 // trashBitsPile). False for null.
 bool IsChipPile(void* obj);
@@ -60,14 +65,13 @@ bool IsTrashActor(void* obj);
 // The same two tests taken on a CLASS NAME rather than an instance, for a wire payload that
 // names its class before any actor exists: true for the chip-pile and garbage-clump families, a
 // descendant test against the two bases rather than a string match, memoised per name so a spawn
-// burst walks the object array once per distinct class. An unloaded class answers false and is
-// not memoised, nor is a verdict taken while one of the two bases is still unresolved. Game thread.
-// `resolve` governs how an unmemoised name resolves: null = reflection::FindClass (a whole-array
-// walk on a miss). The host resolving a CLIENT's PropSpawn class passes object_index::ClassByName,
-// so an attacker's distinct unknown names cost a lookup each, not a walk each; a client keeps
-// the default, since its index can trail a load. Type is save_record::ClassResolver.
-bool IsTrashClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);
-bool IsClumpClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);
+// burst resolves each distinct class once. An unmemoised name resolves through class_resolve::ResolveClass
+// under `load`: a host judging a CLIENT's class passes LookupOnly (a distinct unknown name costs an index
+// lookup, never a load); anything else loads a class this peer has not loaded, so an unloaded trash class
+// is not judged a plain prop. A class that is not Found answers false and is not memoised, nor is a verdict
+// taken while one of the two bases is still unresolved. Game thread.
+bool IsTrashClassName(const std::wstring& className, class_resolve::Load load);
+bool IsClumpClassName(const std::wstring& className, class_resolve::Load load);
 
 // The two trash base UClasses themselves, from the same cache the tests above use; null until
 // the class is loaded. A caller that needs the class rather than the test -- a hook resolving a
@@ -141,6 +145,10 @@ std::wstring GetPropNameString(void* prop);
 // in a walk over the object array, where the string form costs a render and a std::wstring per
 // prop in the world. Zero ComparisonIndex for null, a non-prop, or an unset row.
 reflection::FName GetPropName(void* prop);
+
+// The Name row alone, written before FinishSpawningActor on a deferred-spawned Aprop_C, whose init pass then resolves it
+// (a hand-item mirror's stamp). False for null, NAME_None or a non-Aprop_C. Game thread.
+bool WritePropName(void* prop, reflection::FName nameRow);
 
 // The pre-Finish identity write on a deferred-spawned Aprop_C mirror: Name (skipped
 // for NAME_None) and the Static, removeWOrespawn, frozen and sleep bools before

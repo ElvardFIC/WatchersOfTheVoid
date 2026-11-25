@@ -4,8 +4,9 @@
 // raises its own copy's level before the op reaches the host, so two players installing at a generator's last free
 // place leave the second one's upgrade spent and its op refused. The host hears every client destroy it applies
 // (coop/props/remote_prop): an upgrade destroyed within reach of a generator's upgrade slot is a spend, recorded
-// against its sender and that generator. An install is taken only against a spend, and a refused one is refunded
-// only against one, so a refund never exceeds an item paid.
+// against its sender and that generator. An upgrade from the inventory is the hold slot's own actor, whose destroy
+// reaches no one: its spend is the hand's (coop/player/hand_spend), judged by the grid lane. An install is taken only
+// against a spend, and a refused one is refunded only against one, so a refund never exceeds an item paid.
 
 #pragma once
 

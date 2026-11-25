@@ -8,11 +8,12 @@
 #pragma once
 
 #include "coop/config/config_registry.h"
-#include "coop/net/session.h"
 
 #include <functional>
 #include <string>
 #include <vector>
+
+namespace coop::net { struct Config; }
 
 namespace coop::config {
 

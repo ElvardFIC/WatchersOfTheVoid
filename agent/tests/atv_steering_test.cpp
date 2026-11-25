@@ -6,6 +6,7 @@
 #include <limits>
 #include "coop/interactables/atv_sync_internal.h"
 #include "coop/interactables/atv_condition_sync.h"
+#include "coop/interactables/atv_host_sync.h"
 #include "coop/net/wire_key_util.h"
 #include <atomic>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
@@ -53,6 +54,11 @@ bool GetRadio(void*){return false;}bool GetHasMap(void*){return false;}uint8_t R
 }
 namespace ue_wrap::engine {bool GetActorRootPhysicsVelocity(void*,FVector& lin,FVector& ang){lin={};ang={};return true;}}
 namespace coop::atv_condition_sync {void FillPayload(void*,net::AtvStatePayload& p){p.tiresValid=1;}}
+namespace coop::atv_host_sync {
+uint32_t CurrentStateSeq(const std::wstring&){return 0;}
+uint32_t AppliedStateSeq(const std::wstring&){return 0;}
+void NoteBlockBuilt(const std::wstring&){}
+}
 namespace ue_wrap::object_index {bool IsSeeded(){return true;}size_t Backlog(){return 0;}}
 namespace coop::atv_sync {
 namespace R=ue_wrap::reflection;
@@ -62,6 +68,7 @@ bool OwnsTick(void*){return test::owned;}
 std::atomic<net::Session*> g_session{nullptr};
 std::unordered_map<std::wstring,AtvEntry> g_atvs;
 std::unordered_map<void*,std::wstring> g_synthForActor;
+uint8_t BlockControlBits(AtvEntry& e,bool){return e.controlBits;}
 bool IsSynthKey(const std::wstring&){return false;}
 bool SendAtvSpawn(const std::wstring&,void*,int slot){return g_session.load()->blocked!=slot;}
 size_t ForEachAnnounceableAtv(void(*fn)(void*,void*,const std::wstring&),void* ctx){for(auto& [key,e]:g_atvs)fn(ctx,e.actor,key);return 0;}
@@ -81,7 +88,7 @@ Resolved Resolve(const Function& row){return test::assets?Resolved(&test::object
 }
 namespace ue_wrap::script_gate {bool WatchName(const facts::Function&,int,PreFn,PostFn post){test::tick=post;return true;}}
 int main(){using namespace test;namespace S=coop::atv_steering_sync;namespace FX=ue_wrap::atv_steering;
-    static_assert(sizeof(coop::net::AtvStatePayload)==152&&offsetof(coop::net::AtvStatePayload,steering)==86);
+    static_assert(sizeof(coop::net::AtvStatePayload)==156&&offsetof(coop::net::AtvStatePayload,steering)==86);
     objects[0].handle=&objects[1];objects[1].rotation.Yaw=-33.25f;
     coop::players::Registry::Get().local=&objects[4];coop::roster_ledger::rows[0].playerNo=1;coop::roster_ledger::rows[1].playerNo=2;
     CHECK(S::Capture(&objects[0])==-3325);fields=false;CHECK(S::Capture(&objects[0])==coop::net::kAtvSteeringUnavailable);fields=true;

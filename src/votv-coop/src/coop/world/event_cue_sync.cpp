@@ -5,7 +5,8 @@
 // runEvent, watched through the script gate: the cue's emitter is spawned synchronously inside that
 // body (an EX_CallMath SpawnEmitterAtLocation, invisible to our ProcessEvent detour), so the watch
 // sees the fire the moment it happens, with its row name. Clients replay the emitter through a
-// reflected SpawnEmitterAtLocation.
+// reflected SpawnEmitterAtLocation. A cue no row announces is taken at its emitter's own birth (the
+// born mode, below).
 
 #include "coop/world/event_cue_sync.h"
 #include "coop/world/world_sound_sync.h"
@@ -14,12 +15,16 @@
 #include "coop/net/session.h"
 #include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
+#include "coop/world/vent_crawler_sync.h"
+#include "coop/world/world_sound_sync.h"
 
+#include "ue_wrap/core/asset_load.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/gc_pin.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -49,19 +54,26 @@ namespace sg = ue_wrap::script_gate;
 std::atomic<coop::net::Session*> g_session{nullptr};
 
 // ---- the cue registry: cosmetic emitter cues -----------------------------------------
-// cueId == index. APPEND-ONLY -- the id is on the wire. starRain is bytecode-verified: the eventer's
-// runEvent('starRain') spawns eff_shootingStar_rain at (0,0,6000) and returns (trigger_eventer @4709),
-// and no other Blueprint spawns that template. A cue is detected by its runEvent row, so a new one
-// needs its row and a location the body fixes; a cue whose position the body computes, or that spawns
-// after a delay, needs the spawned component captured inside the body instead.
+// cueId == index. APPEND-ONLY -- the id is on the wire. A cue has one of two detections.
+// ROW: the eventer's runEvent row spawns the emitter inside its body at a place the body fixes. starRain
+//   is bytecode-verified: runEvent('starRain') spawns eff_shootingStar_rain at (0,0,6000) and returns
+//   (trigger_eventer @4709), and no other Blueprint spawns that template.
+// BORN: a cue whose body computes its place, or that no runEvent row announces. The host takes the
+//   ParticleSystemComponent at its birth (the object index's create listener), reads its template at the
+//   next tick, and sends the component's own world place. stolasHeal: growthArea_C.ReceiveTick spawns
+//   eff_stolasHeal (SpawnEmitterAtLocation, no pooling) at the plant it fertilizes, and no other
+//   Blueprint spawns that template.
 struct CueDef {
     const char* name;             // log label, and the list_events row that fires it
-    const wchar_t* row;           // the runEvent row name
+    const wchar_t* row;           // ROW: the runEvent row name; BORN: nullptr
     const wchar_t* templateName;  // the UParticleSystem object the SpawnEmitter call uses
-    ue_wrap::FVector loc;         // where the body spawns it
+    const wchar_t* assetPath;     // that template's asset, which a client loads when the game has not (the replay needs it)
+    ue_wrap::FVector loc;         // ROW: where the body spawns it; BORN: unused, the component's place is sent
+    bool born;
 };
 constexpr CueDef kCues[] = {
-    { "starRain", L"starRain", L"eff_shootingStar_rain", { 0.f, 0.f, 6000.f } },  // Meteor Shower / Shooting Star
+    { "starRain", L"starRain", L"eff_shootingStar_rain", L"/Game/particles/eff_shootingStar_rain.eff_shootingStar_rain", { 0.f, 0.f, 6000.f }, false },  // Meteor Shower / Shooting Star
+    { "stolasHeal", nullptr, L"eff_stolasHeal", L"/Game/particles/eff_stolasHeal.eff_stolasHeal", { 0.f, 0.f, 0.f }, true },  // the growth area's glow at the plant it fertilizes
 };
 constexpr int kCueCount = static_cast<int>(sizeof(kCues) / sizeof(kCues[0]));
 
@@ -75,6 +87,9 @@ bool g_rowsResolved = false;
 ue_wrap::CachedObjRef g_gameplayStaticsCdo, g_spawnEmitterFn;
 
 std::atomic<unsigned> g_replays{0};  // emitters this peer replayed (ReplayCount)
+std::atomic<unsigned> g_sent{0};     // cues the host broadcast, to every peer or to one (SentCount)
+float g_lastSent[3]   = {};          // the place of the latest of each, written on the game thread
+float g_lastReplay[3] = {};
 
 // The host's watch on runEvent, registered once per process.
 constexpr int kTagEventCue = 0x45564355;  // 'EVCU'
@@ -168,12 +183,14 @@ void OnRunEventPost(const sg::Call& call) {
     R::FName row{};
     std::memcpy(&row, call.locals + g_offEventParam, sizeof(row));
     if (!g_rowsResolved) {
-        for (int i = 0; i < kCueCount; ++i) g_cueRows[i] = ue_wrap::fname_utils::StringToFName(kCues[i].row);
+        for (int i = 0; i < kCueCount; ++i)
+            if (kCues[i].row) g_cueRows[i] = ue_wrap::fname_utils::StringToFName(kCues[i].row);
         g_rowsResolved = true;
     }
     if (epoch != g_epoch || g_world != ue_wrap::world_identity::Generation() ||
         g_serial != coop::net::session_serial::Current() || !As(coop::net::Role::Host) || !source.Alive()) return;
     for (int i = 0; i < kCueCount; ++i) {
+        if (!kCues[i].row) continue;
         if (row.ComparisonIndex != g_cueRows[i].ComparisonIndex || row.Number != g_cueRows[i].Number) continue;
         for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) Queue(slot, i);
         Flush();
@@ -302,7 +319,10 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     struct Ctx { void* tmpls[kCueCount]; std::vector<std::pair<ue_wrap::CachedObjRef, int>> found; };
     Ctx ctx{};
     bool anyLoaded = false;
-    for (int i = 0; i < kCueCount; ++i) anyLoaded |= (ctx.tmpls[i] = CueTemplate(i)) != nullptr;
+    for (int i = 0; i < kCueCount; ++i) {
+        ctx.tmpls[i] = CueTemplate(i);
+        anyLoaded |= ctx.tmpls[i] != nullptr;
+    }
     if (!anyLoaded) return;  // no cue asset loaded -> no live cue possible
     void* pscCls = ue_wrap::object_index::ClassByName(L"ParticleSystemComponent");
     if (!pscCls) return;
@@ -332,5 +352,9 @@ void OnDisconnect() {
 }
 
 unsigned ReplayCount() { return g_replays.load(std::memory_order_relaxed); }
+unsigned SentCount() { return g_sent.load(std::memory_order_relaxed); }
+
+void LastReplayAt(float (&xyz)[3]) { for (int i = 0; i < 3; ++i) xyz[i] = g_lastReplay[i]; }
+void LastSentAt(float (&xyz)[3]) { for (int i = 0; i < 3; ++i) xyz[i] = g_lastSent[i]; }
 
 }  // namespace coop::event_cue_sync

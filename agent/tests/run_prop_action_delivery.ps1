@@ -7,17 +7,17 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$SourcePath){
-  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs','/I','src/votv-coop/include')
+  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'),'/I','src/votv-coop/include')
   if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define PROP_ACTION_SOURCE "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" agent/tests/prop_action_delivery_test.cpp /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/prop_action_delivery_test.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Prop action delivery compile failed: $Name"}
   return $exe
  }
  $exe=Build-Fixture 'delivery' ''
  & $exe
  if($LASTEXITCODE){throw 'Prop action delivery regression failed'}
- & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') agent/tests/mre_native_test.py
+ & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') "$PSScriptRoot/mre_native_test.py"
  if($LASTEXITCODE){throw 'Cooked MRE contract failed'}
  if($FaultControls){
   $controller=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/props/prop_action_sync.cpp'))

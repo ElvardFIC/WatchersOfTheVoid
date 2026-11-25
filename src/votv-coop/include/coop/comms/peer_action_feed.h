@@ -44,6 +44,9 @@ enum class Action : uint8_t {
     OrderCommitFailed,
     OrderRefused,
     PlacementRefused,
+    SavedGame,
+    SaveMaybeNotTaken,
+    SaveBlockedByEvent,
     kCount
 };
 

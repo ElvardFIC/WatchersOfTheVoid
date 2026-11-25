@@ -33,8 +33,12 @@ foreach($mirrorGuard in @('NpcMirrors().Snapshot','IsMirror()','LiveActor() == a
         throw "Gun-stealer authority is missing mirror identity guard: $mirrorGuard"
     }
 }
+& cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c "/I$checkout/src/votv-coop/include" "/Fo$output/config_registry.obj" "$checkout/src/votv-coop/src/coop/config/config_registry.cpp"
+if($LASTEXITCODE -ne 0){throw 'NPC config registry compile failed'}
+& cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$checkout/src/votv-coop/include" /c "/Fo$output/config_registry_log.obj" "$PSScriptRoot/config_registry_log_stub.cpp"
+if($LASTEXITCODE -ne 0){throw 'NPC config registry log stub compile failed'}
 & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$PSScriptRoot/npc_pose_stubs" "/I$checkout/src/votv-coop/include" `
-    "/Fo$output/npc_orientation.obj" "/Fe$output/npc_orientation.exe" "$PSScriptRoot/npc_orientation_test.cpp" /link /OPT:REF
+    "/Fo$output/npc_orientation.obj" "/Fe$output/npc_orientation.exe" "$PSScriptRoot/npc_orientation_test.cpp" "$output/config_registry.obj" "$output/config_registry_log.obj" /link /OPT:REF
 if($LASTEXITCODE -ne 0){throw 'NPC orientation regression compile failed'}
 & "$output/npc_orientation.exe"
 if($LASTEXITCODE -ne 0){throw 'NPC orientation regression failed'}

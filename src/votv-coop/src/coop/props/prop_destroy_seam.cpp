@@ -17,6 +17,7 @@
 #include "coop/element/prop.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/interactables/woodchipper_sync.h"  // NoteDestroyed
 #include "coop/player/hand_item.h"  // IsLocalHandViewActor
 #include "coop/props/prop_drop_intent.h"
 #include "coop/items/coingun_sync.h"
@@ -95,6 +96,16 @@ ue_wrap::script_gate::Verdict OnK2DestroyPre(void* context, void* /*srcObj*/, co
     return Verdict::Run;
 }
 
+DestroyWindow ClientDestroyWindow() {
+    auto* s = LoadSession();
+    if (!s || s->role() != coop::net::Role::Client) return DestroyWindow::None;
+    // Both flags are relaxed atomics any thread may flip: each is read once, so the answer names one window.
+    if (coop::world_load_episode::InEpisode()) return DestroyWindow::Episode;
+    return coop::world_load_episode::InReconcileWindow() ? DestroyWindow::Reconcile : DestroyWindow::None;
+}
+
+bool ClientDestroyWindowOpen() { return ClientDestroyWindow() != DestroyWindow::None; }
+
 void DestroySeamBody(void* self, HandView handView) {
     auto* s = LoadSession();
     if (!self || !s) return;
@@ -112,6 +123,7 @@ void DestroySeamBody(void* self, HandView handView) {
     coop::dev::spawn_match_probe::NoteDestroy(self, static_cast<uint32_t>(destroyEid));
     PT::UnmarkProcessedInit(self);
     PT::UnmarkKnownKeyedProp(self);
+    coop::woodchipper_sync::NoteDestroyed(self);   // the host's chipper table loses a chipper that left the world
     if (!s->connected()) return;
     if (coop::prop_echo_suppress::IsIncomingDestroy(self)) {
         UE_LOGI("grab_hook[destroy-seam]: actor %p was wire-received destroy -- skip rebroadcast",
@@ -151,10 +163,9 @@ void DestroySeamBody(void* self, HandView handView) {
     // window, of any kind: a junk broadcast costs more than a suppressed destroy, which the
     // bracket re-expresses. A keyed suppression in the reconcile window alone warns with a rate
     // latch, since it is the trace if a player's genuine destroy vanished.
-    const bool inLoadEpisode = coop::world_load_episode::InEpisode();  // read once
-    if (s->role() == coop::net::Role::Client &&
-        (inLoadEpisode || coop::world_load_episode::InReconcileWindow())) {
-        const bool newSegment = !inLoadEpisode;
+    const DestroyWindow window = ClientDestroyWindow();
+    if (window != DestroyWindow::None) {
+        const bool newSegment = window == DestroyWindow::Reconcile;
         if (newSegment && !keyless) {
             static uint32_t sWarned = 0;
             ++sWarned;

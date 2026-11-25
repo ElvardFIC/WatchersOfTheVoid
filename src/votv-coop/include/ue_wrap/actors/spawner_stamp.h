@@ -6,7 +6,7 @@
 // is known only while the loaded class still declares the function its guarded path runs in.
 // Precedent: Source creates an entity, sets the key values its creator would, then spawns it
 // (reference/source-sdk-2013/src/game/server/ai_concommands.cpp:404-415, the map loader the same,
-// mapentities.cpp:574-581); MTA builds an entity from its add packet with the creation-time properties set
+// reference/source-sdk-2013/src/game/server/mapentities.cpp:574-581); MTA builds an entity from its add packet with the creation-time properties set
 // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:3871, the ped). A constant of the
 // spawner's bytecode is written from this table and not carried (a per-spawn value would be carried, MTA's
 // way). Engine-wrapper layer (principle 7): no network and no coop state; the caller decides what a failed stamp

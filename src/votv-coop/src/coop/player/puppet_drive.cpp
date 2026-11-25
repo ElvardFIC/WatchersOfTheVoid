@@ -9,7 +9,10 @@
 #include "coop/dev/perf_probe.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/nightmare_roll.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/puppet_events.h"
+#include "coop/player/puppet_hide.h"
 #include "coop/player/remote_player.h"
 #include "coop/session/player_handshake.h"
 
@@ -46,8 +49,8 @@ bool DestroySlot(int slot) {
     // The destroy comes first, so the puppet is still registered through its end of play and the
     // end-overlaps it reports as it dies: the identity consumers that classify by IsPuppet (e.g. the
     // damage and ignite cancels, the travel refusal) must still know the dying body. MTA ends a ped's
-    // contacts and clears its pool mapping before deleting it (CClientPed.cpp:3814-3819,
-    // CPoolsSA.cpp:481), and unlinks the player first (CClientPlayer.cpp:110, a destructor-order
+    // contacts and clears its pool mapping before deleting it (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPed.cpp:3814-3819,
+    // reference/mtasa-blue/Client/game_sa/CPoolsSA.cpp:481), and unlinks the player first (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPlayer.cpp:110, a destructor-order
     // artefact); that GTA's ped delete runs no script, so nothing calls back, is an unmeasured
     // reading of MTA's source. DestroyActor runs the body's Blueprint end-play and end-overlap
     // code into hooks that classify by IsPuppet, so the reverse order is deliberate.
@@ -58,6 +61,7 @@ bool DestroySlot(int slot) {
     // Unconditional: Destroy also ends a hurt flash on a puppet whose body already went (its pins released) and
     // tears down a stale body's ragdoll and effect actors; on a slot with no body at all it returns after the flash.
     g_puppets[slot].Destroy();
+    coop::puppet_events::ForgetSlot(static_cast<uint8_t>(slot));  // the next puppet's first pose has no "from" again
     // UnregisterPuppet drops the Player Element from players::Registry, on every path: a puppet never
     // spawned -- the peer disconnected after Join but before any PoseSnapshot -- leaves
     // g_puppets[slot].valid() false while playerBySlot_[slot] may still hold a mirror Element
@@ -144,6 +148,9 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
                 // on arrival.
                 g_puppets[slot].SetNickname(
                     coop::player_handshake::NicknameForSlot(slot));
+                // A copy whose player is in a nightmare, or in a visited map, is hidden as it is born.
+                coop::puppet_hide::OnPuppetSpawned(static_cast<uint8_t>(slot));
+                coop::nightmare_roll::OnPuppetSpawned(slot);
                 // Join announcement at the APPEARANCE seam: the puppet just spawned, which
                 // is the moment a player actually sees the peer -- announcing on world-ready
                 // instead runs seconds ahead of the puppet in the measured live flow.
@@ -162,6 +169,10 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
             // motion. The per-frame advance happens in Tick() below.
             if (isNew) {
                 g_puppets[slot].SetTargetPose(remote);
+                // After the pose reached the puppet: its life edge, then the pose listeners.
+                // A client's puppets exist only after its own world-ready; the host asks each slot's own.
+                coop::puppet_events::Announce(static_cast<uint8_t>(slot), remote,
+                                              session.role() == coop::net::Role::Client || session.IsSlotWorldReady(slot));
                 ++sPoseFresh[slot];  // pose-diag: a fresh target this second
             }
         }

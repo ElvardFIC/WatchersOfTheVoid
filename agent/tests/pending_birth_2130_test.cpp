@@ -144,9 +144,14 @@ namespace coop::server_upgrade_sync {bool HostShouldReapUpgradeBirth(uint8_t){st
 namespace coop::drive_payload_sync {void NoteClientBrought(void*,uint8_t){}}
 namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return &test::actor;}void* FindFunction(void*,const wchar_t*){return &test::actor;}}
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return &test::actor;}}
+namespace ue_wrap::class_resolve {
+const Family& AnyFamily(){static const Family family{L"test",nullptr,0,nullptr};return family;}
+Resolved ResolveClass(const wchar_t* name,const Family&,Load){void* cls=ue_wrap::object_index::ClassByName(name);return {cls?ClassState::Found:ClassState::Absent,cls};}
+}
+namespace ue_wrap::prop {const class_resolve::Family& PropFamily(){static const class_resolve::Family family{L"test",nullptr,0,nullptr};return family;}}
 namespace ue_wrap::engine {
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){++test::begins;test::Callback(test::duringBegin);return &test::actor;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){test::condition={290.f,1.f,5};test::finished=true;test::Callback(test::duringFinish);return test::finishOK;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&,uint8_t,const FVector*){++test::begins;test::Callback(test::duringBegin);return &test::actor;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){test::condition={290.f,1.f,5};test::finished=true;test::Callback(test::duringFinish);return test::finishOK;}
 bool DestroyActor(void*){++test::destroys;return true;}
 bool SetActorScale3D(void*,const FVector&){return test::scaleOK;}
 }

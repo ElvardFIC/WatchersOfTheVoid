@@ -2,7 +2,7 @@
 // (an elected throw, a claimed push, a held pose) enters a shared world container's box on the host. The host's copy is
 // kinematic there, so the container's own putObjectIn_overlap refuses it at its first gate; this PRE on that function judges
 // the put instead. No client message asks for it: the client's copy of the call is cancelled (container_act_put). MTA tests
-// the position its server applied (CObjectSync.cpp:220, CUnoccupiedVehicleSync.cpp:456); here the engine's overlap step of
+// the position its server applied (reference/mtasa-blue/Server/mods/deathmatch/logic/CObjectSync.cpp:220, reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:456); here the engine's overlap step of
 // the parked copy, which moves every frame, IS that test at our apply. Source's BumpWeapon is the server's own touch.
 //
 // The judge's order is container_overlap_pure.h's Decide: armed; reach of a held or claimed driver (an elected throw has

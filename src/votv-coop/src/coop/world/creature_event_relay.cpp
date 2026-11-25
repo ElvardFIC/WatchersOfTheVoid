@@ -86,10 +86,10 @@ struct PerViewerClass {
     R::FName       fname;
 };
 PerViewerClass g_perViewer[] = {
-    { L"killerwisp_C" },     // rendered = player 0 within 5000 and not avoidPlayer (killerwisp.cpp:225-267)
+    { L"killerwisp_C" },     // rendered = player 0 within 5000 and not avoidPlayer (CXXHeaderDump/killerwisp.cpp:225-267)
     { L"fossilhound_C" },    // rendered = camera 0 within 10000 (the Blueprint listing of fossilhound_C, lines 252-281)
-    { L"antibreather_C" },   // rendered = camera 0 within 10000 (antibreather.cpp:944-952)
-    { L"eg_C" },             // rendered = WasRecentlyRendered(0.5) (eg.cpp:124-136)
+    { L"antibreather_C" },   // rendered = camera 0 within 10000 (CXXHeaderDump/antibreather.cpp:944-952)
+    { L"eg_C" },             // rendered = WasRecentlyRendered(0.5) (CXXHeaderDump/eg.cpp:124-136)
 };
 bool g_perViewerResolved = false;
 
@@ -256,6 +256,15 @@ void OnDisconnect() {
     detail::HostOnDisconnect();
     detail::ClientOnDisconnect();
     g_session.store(nullptr, std::memory_order_release);
+}
+
+bool RetractEntryOf(void* actor) {
+    UE_ASSERT_GAME_THREAD("creature_event_relay::RetractEntryOf");
+    AE::Senders senders{};
+    if (!actor || !detail::Ready() || !AE::ReadSenders(senders)) return false;
+    for (int32_t i = 0; i < senders.num; ++i)
+        if (senders.data[i] == actor) return detail::Call(false, actor);
+    return false;
 }
 
 int TargetFor(EL::ElementId eid) { return detail::ClientTargetFor(eid); }

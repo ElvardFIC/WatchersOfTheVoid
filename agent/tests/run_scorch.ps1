@@ -7,8 +7,8 @@ Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
     foreach($test in @('scorch_spill','scorch_spill_wrapper','explosion_blast_2140')){
-        $includes=if($test -eq 'scorch_spill'){@('/I','agent/tests/grime_stubs','/I','agent/tests/placed_save_stubs')}else{@()}
-        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "agent/tests/${test}_test.cpp" /link /OPT:REF
+        $includes=if($test -eq 'scorch_spill'){@('/I',(Join-Path $PSScriptRoot 'grime_stubs'),'/I',(Join-Path $PSScriptRoot 'placed_save_stubs'))}else{@()}
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$PSScriptRoot/${test}_test.cpp" /link /OPT:REF
         if($LASTEXITCODE -ne 0){throw "Scorch compile failed: $test"}
         & "$output/$test.exe"
         if($LASTEXITCODE -ne 0){throw "Scorch test failed: $test"}

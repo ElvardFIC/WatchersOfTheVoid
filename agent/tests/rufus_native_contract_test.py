@@ -2,12 +2,12 @@
 from pathlib import Path
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-assets = Path(sys.argv[1]) if len(sys.argv) > 1 else research / 'current-assets'
+assets = Path(sys.argv[1]) if len(sys.argv) > 1 else evidence_root / 'current-assets'
 def package(name):
     return Package(str(assets / ('VotV__Content__' + name + '.uasset')))
 def graph(p, name):

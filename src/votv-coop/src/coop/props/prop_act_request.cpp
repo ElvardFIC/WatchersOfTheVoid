@@ -3,6 +3,8 @@
 #include "coop/props/prop_act_request.h"
 
 #include "coop/comms/chat_feed.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/element.h"
 #include "coop/element/registry.h"
 #include "coop/net/net_clock.h"
@@ -10,7 +12,9 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_hold.h"
+#include "coop/props/prop_sound.h"
 #include "coop/props/remote_prop.h"
+#include "coop/props/snack_act.h"
 #include "coop/session/net_pump.h"
 
 #include "l10n/l10n.h"
@@ -48,7 +52,7 @@ using coop::net::ReliableKind;
 
 // A reply that has not come in this long closes the record: an honest wait ends in milliseconds, so the bound covers
 // only a transport that refused the reply. MTA's client has no timer: it refuses a new entry until the server's word
-// arrives (CClientPed.cpp:6558, cleared at CPacketHandler.cpp:1796).
+// arrives (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPed.cpp:6558, cleared at reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:1796).
 constexpr uint64_t kReplyWaitMs = 10000;
 
 coop::net::Session* g_session = nullptr;
@@ -87,6 +91,7 @@ uint32_t g_lateGrantsAborted = 0;
 ue_wrap::CachedObjRef g_destroyInReplay;   // destroyed inside the next replay, after its verb
 bool g_holdCommits = false;                // a commit is queued, not sent, until ReleaseHeldCommits
 bool g_holdReplay = false;                 // a grant parks its replay
+void (*g_beforeVerb)(void* target) = nullptr;   // called on the target right before the replay's verb
 uint32_t g_refused[coop::net::kPropActReasons] = {};   // replies taken as refused, per reason
 uint32_t g_hostCancels = 0;                // the host's own calls cancelled for a reservation
 
@@ -168,11 +173,17 @@ void QueueCommit(const coop::net::PropActCommitPayload& c) {
     DrainCommits();
 }
 
-void SendCommit(uint8_t committed) {
-    QueueCommit(coop::net::PropActCommitPayload{g_rec.id, committed, 0, g_rec.eid});
-    UE_LOGI("prop_act: commit id %u eid %u -> %s", static_cast<unsigned>(g_rec.id), static_cast<unsigned>(g_rec.eid),
-            committed ? "committed" : "aborted");
+void SendCommit(uint8_t committed, uint8_t flags = 0) {
+    QueueCommit(coop::net::PropActCommitPayload{g_rec.id, committed, flags, g_rec.eid});
+    UE_LOGI("prop_act: commit id %u eid %u -> %s flags %u", static_cast<unsigned>(g_rec.id),
+            static_cast<unsigned>(g_rec.eid), committed == 0 ? "aborted" : committed == 1 ? "committed" : "applied",
+            static_cast<unsigned>(flags));
 }
+
+// A granted unpack (an MRE, a first aid kit): the host rolls the contents on its own copy and they reach this peer as
+// its spawns, so this copy is only removed. Opening it here too would roll a second, client-only set. Replay plays the
+// opening (the MRE's, for both) once the destroy has happened.
+bool UnpackOnHost(void* target) { return E::DestroyActor(target); }
 
 // The record's verb, as the player's press runs it, on the target. False when the verb could not run at all (a
 // function that does not resolve, a player or target that is not live), as distinct from a verb that ran and bailed.
@@ -186,9 +197,11 @@ bool RunVerb(void* target, void* local) {
         bool collected = false;
         return E::CallMainPlayerHoldObject(local, target, collected);
     }
+    case kUnpack:
+        return UnpackOnHost(target);
     case kFood:
-    case kMre:
     case kPills:
+    case kSnack:
         return PU::CallActionOptionIndex(target, local, g_rec.hitComponent.Get(), g_rec.hitLocation, g_rec.action,
                                          g_rec.lookAt.Get());
     case kSoap: {
@@ -215,19 +228,38 @@ void Replay() {
     void* const local = coop::players::Registry::Get().Local();
     bool destroyed = false;
     bool ran = false;
+    ue_wrap::FVector unpackAt{};   // an unpack's place, read while it stands: its opening is heard there after the destroy
+    const bool hearsUnpack = g_rec.row == kUnpack && E::TryGetActorLocation(target, unpackAt);
+    const bool snack = g_rec.row == kSnack;
+    coop::snack_act::CopyState before, after;   // a snack's copy around the replay, read inside the latch
     {
         Latched scope(target);
+        const coop::snack_act::WrapperRefusal refusal(snack ? target : nullptr);
+        if (snack) before = coop::snack_act::ReadCopy(target);
+        if (g_beforeVerb) g_beforeVerb(target);   // a drill's state that must hold at the verb itself
         ran = RunVerb(target, local);
         // A drill's second destroy, inside the latch: it is not the target, so the seam treats it as any destroy.
         if (void* const extra = g_destroyInReplay.Get()) E::DestroyActor(extra);
         g_destroyInReplay.Reset();
         destroyed = g_latch.destroyed;
+        if (snack && !destroyed) after = coop::snack_act::ReadCopy(target);
+    }
+    // A snack's commit says what the replay did to its copy: it ended, or the eater ran and what changed. A copy the
+    // replay left unread is aborted, and the host then publishes its own state to put this copy back.
+    if (snack) {
+        const coop::snack_act::CommitWords w = coop::snack_act::CommitFor(ran, destroyed, before, after);
+        if (destroyed) coop::remote_prop::UnregisterPropMirror(g_rec.eid);
+        else if (!ran) UE_LOGW("prop_act: the replay of row %u could not run -- aborted", static_cast<unsigned>(g_rec.row));
+        SendCommit(w.committed, w.flags);
+        Close();
+        return;
     }
     // The destroy decides, not the verb's return: a verb that destroyed its target and then failed still commits, since
     // this copy is gone and its key parked.
     if (destroyed) {
         SendCommit(1);
         coop::remote_prop::UnregisterPropMirror(g_rec.eid);
+        if (hearsUnpack) coop::prop_sound::PlayMreOpenAt(local, unpackAt);
     } else {
         if (!ran) UE_LOGW("prop_act: the replay of row %u could not run -- aborted", static_cast<unsigned>(g_rec.row));
         SendCommit(0);
@@ -258,10 +290,16 @@ UE_FACT_FN(kRowFood,   "prop_act", L"prop_food_C",       L"actionOptionIndex",  
 UE_FACT_FN(kRowMre,    "prop_act", L"prop_food_mre_C",   L"actionOptionIndex",   Declared);
 UE_FACT_FN(kRowPills,  "prop_act", L"prop_sleeppills_C", L"actionOptionIndex",   Declared);
 UE_FACT_FN(kRowSoap,   "prop_act", L"prop_food_soap_C",  L"playerUsedOn",        Declared);
+// The snack family: prop_snack_C's body is the candy, chips, milk, sushi and soda's; the beer's own body (the wine
+// inherits it) calls the parent's first.
+UE_FACT_FN(kRowSnack,  "prop_act", L"prop_snack_C",      L"actionOptionIndex",   Declared);
+UE_FACT_FN(kRowBeer,   "prop_act", L"prop_snack_beer_C", L"actionOptionIndex",   Declared);
+UE_FACT_FN(kRowKit,    "prop_act", L"prop_medkit_pack_C", L"actionOptionIndex",  Declared);
 constexpr int kTagPocket = 0x50414331, kTagHold = 0x50414332, kTagFood = 0x50414333,
-              kTagMre = 0x50414334, kTagPills = 0x50414335, kTagSoap = 0x50414336;   // "PAC1".."PAC6"
+              kTagMre = 0x50414334, kTagPills = 0x50414335, kTagSoap = 0x50414336,
+              kTagSnack = 0x50414337, kTagBeer = 0x50414338, kTagKit = 0x50414339;   // "PAC1".."PAC9"
 
-// The action index of eating, opening a food and taking pills.
+// The action index of eating, opening a food or a first aid kit, and taking pills.
 constexpr uint8_t kEatAction = 4;
 
 // Is this call the replay running now? The gate cannot tell a reflected call of ours from a drill's, so the latch does.
@@ -288,7 +326,7 @@ struct ActionParams {
     R::ParamOffset action{L"action"};
     R::ParamOffset lookAt{L"lookAtComponent"};
 };
-ActionParams g_foodParams, g_mreParams, g_pillsParams;
+ActionParams g_foodParams, g_mreParams, g_pillsParams, g_snackParams, g_beerParams, g_kitParams;
 
 struct SoapParams {
     R::ParamOffset holdObject{L"holdObject"};
@@ -320,7 +358,12 @@ bool FoodDestroys(const sg::Call& c) {
     return !notEdible && uses <= 1;
 }
 bool MreDestroys(const sg::Call& c) { return IsEat(g_mreParams, c); }
+bool KitDestroys(const sg::Call& c) { return IsEat(g_kitParams, c); }
 bool PillsDestroys(const sg::Call& c) { return IsEat(g_pillsParams, c); }
+// A snack is asked on every eat: a sip, an open and the last use all change the shared copy, whatever the client's copy
+// predicts.
+bool SnackAsks(const sg::Call& c) { return IsEat(g_snackParams, c); }
+bool BeerAsks(const sg::Call& c) { return IsEat(g_beerParams, c); }
 
 // The soap's last use on a dry sponge in the hand: the body returns unless the hand holds a sponge with no soap.
 bool SoapDestroys(const sg::Call& c) {
@@ -375,7 +418,7 @@ struct HitParam {
     ue_wrap::CachedObjRef sizeFn;
     int32_t size = -1;
 };
-HitParam g_foodHit, g_mreHit, g_pillsHit, g_soapHit;
+HitParam g_foodHit, g_mreHit, g_pillsHit, g_soapHit, g_snackHit, g_beerHit, g_kitHit;
 
 // The hit of a use, as the replay writes it back: only its component and place matter.
 void CaptureHit(const sg::Call& c, HitParam& param, Pending& p) {
@@ -485,8 +528,35 @@ sg::Verdict PreAction(const sg::Call& c, uint8_t row, ActionParams& params, HitP
 }
 
 sg::Verdict PreFood(const sg::Call& c) { return PreAction(c, kFood, g_foodParams, g_foodHit, &FoodDestroys); }
-sg::Verdict PreMre(const sg::Call& c) { return PreAction(c, kMre, g_mreParams, g_mreHit, &MreDestroys); }
+sg::Verdict PreMre(const sg::Call& c) { return PreAction(c, kUnpack, g_mreParams, g_mreHit, &MreDestroys); }
+sg::Verdict PreKit(const sg::Call& c) { return PreAction(c, kUnpack, g_kitParams, g_kitHit, &KitDestroys); }
 sg::Verdict PrePills(const sg::Call& c) { return PreAction(c, kPills, g_pillsParams, g_pillsHit, &PillsDestroys); }
+// What a dead snack watch costs: the use runs on the client's copy alone, asked of nobody, and the copies diverge.
+constexpr const char* kSnackDead = "a client's use of a world snack runs on its own copy only, unasked, and the copies diverge";
+
+// Dev red arm (never set): the snack family runs native, so a client's use is not asked of the host.
+bool SnacksOff() {
+    static const bool off = coop::config::ResolveFlag(coop::config_registry::rows::d2a_snacks_off);
+    return off;
+}
+sg::Verdict PreSnack(const sg::Call& c) {
+    return SnacksOff() ? sg::Verdict::Run : PreAction(c, kSnack, g_snackParams, g_snackHit, &SnackAsks);
+}
+sg::Verdict PreBeer(const sg::Call& c) {
+    return SnacksOff() ? sg::Verdict::Run : PreAction(c, kSnack, g_beerParams, g_beerHit, &BeerAsks);
+}
+
+// The host's own eat, sip or open of a world snack changes what every peer shows: the body ran, so the snack is marked
+// for publication (a call the pre cancelled for a reservation never reaches here). The parent's body and the beer's both
+// report a beer's call, and the one drain publishes once.
+void PostSnackUse(const sg::Call& c, ActionParams& params) {
+    coop::net::Session* const s = LinkedSession();
+    uint8_t action = 0;
+    if (!s || s->role() != coop::net::Role::Host || !ReadParam(params.action, c, action) || action != kEatAction) return;
+    coop::snack_act::NoteHostUse(c.object);
+}
+void PostSnack(const sg::Call& c) { PostSnackUse(c, g_snackParams); }
+void PostBeer(const sg::Call& c) { PostSnackUse(c, g_beerParams); }
 
 // The replay passes the hand it finds then, not the one captured here: only the hit and the hand item's name travel.
 sg::Verdict PreSoap(const sg::Call& c) {
@@ -516,6 +586,8 @@ struct Watch {
     sg::PreFn pre;
     const char* verb;   // the word for the line a dead watch prints
     WatchState state;
+    sg::PostFn post = nullptr;   // after the body ran, when the watch has one
+    const char* dead = nullptr;  // what a dead watch costs, when it is not the raw destroy the take and use rows name
 };
 Watch g_watches[] = {
     {kRowPocket, kTagPocket, &PrePocket, "take", WatchState::Pending},
@@ -524,6 +596,9 @@ Watch g_watches[] = {
     {kRowMre,    kTagMre,    &PreMre,    "use",  WatchState::Pending},
     {kRowPills,  kTagPills,  &PrePills,  "use",  WatchState::Pending},
     {kRowSoap,   kTagSoap,   &PreSoap,   "use",  WatchState::Pending},
+    {kRowSnack,  kTagSnack,  &PreSnack,  "use",  WatchState::Pending, &PostSnack, kSnackDead},
+    {kRowBeer,   kTagBeer,   &PreBeer,   "use",  WatchState::Pending, &PostBeer,  kSnackDead},
+    {kRowKit,    kTagKit,    &PreKit,    "use",  WatchState::Pending},
 };
 bool g_watchesSettled = false;
 
@@ -543,8 +618,11 @@ void SettleWatches() {
             UE_LOGI("prop_act: watch %ls.%ls live", w.row.Class(), w.row.Name());
         } else if (w.state == WatchState::Refused || sg::NameWatchSettled(w.row, w.tag)) {
             w.state = WatchState::Settled;
-            UE_LOGE("prop_act: watch %ls.%ls DEAD -- a client's %s of a shared prop reaches the host as a raw destroy",
-                    w.row.Class(), w.row.Name(), w.verb);
+            if (w.dead)
+                UE_LOGE("prop_act: watch %ls.%ls DEAD -- %s", w.row.Class(), w.row.Name(), w.dead);
+            else
+                UE_LOGE("prop_act: watch %ls.%ls DEAD -- a client's %s of a shared prop reaches the host as a raw destroy",
+                        w.row.Class(), w.row.Name(), w.verb);
         } else {
             open = true;
         }
@@ -598,7 +676,7 @@ void Install(coop::net::Session* session) {
     // The gate refuses a watch it cannot keep for the process; a refused one is said dead at the settle.
     for (Watch& w : g_watches) {
         if (w.state != WatchState::Pending) continue;
-        w.state = sg::WatchName(w.row, w.tag, w.pre, nullptr) ? WatchState::Registered : WatchState::Refused;
+        w.state = sg::WatchName(w.row, w.tag, w.pre, w.post) ? WatchState::Registered : WatchState::Refused;
     }
 }
 
@@ -672,6 +750,7 @@ void OnDisconnect() {
     g_destroyInReplay.Reset();
     g_holdCommits = false;
     g_holdReplay = false;
+    g_beforeVerb = nullptr;
     std::fill(std::begin(g_refused), std::end(g_refused), 0u);
     g_hostCancels = 0;
     for (size_t i = 0; i < kLineCount; ++i) g_shown[i] = false;
@@ -685,6 +764,7 @@ uint16_t PendingId() { return g_rec.open ? g_rec.id : 0; }
 void HoldCommits(bool on) { g_holdCommits = on; }
 void ReleaseHeldCommits() { DrainCommits(true); }
 void HoldReplayUntilGone(bool on) { g_holdReplay = on; }
+void SetBeforeVerb(void (*fn)(void* target)) { g_beforeVerb = fn; }
 uint32_t RefusedCount(coop::net::PropActReason reason) {
     const size_t i = static_cast<size_t>(reason);
     return i < coop::net::kPropActReasons ? g_refused[i] : 0u;

@@ -26,5 +26,5 @@ bool ApplyAudio(void* actor,const State& state,const std::function<bool()>& curr
 bool Apply(View& view,void* actor,const State& state,const std::function<bool()>& current);
 void Clear(View& view);
 bool PlayStartCue();
-void* ZeroGravityOwner(void* component);
+void* PhysicsToyOwner(void* component);
 }

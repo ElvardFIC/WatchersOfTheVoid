@@ -2,27 +2,31 @@
 // (Adrone_C) Phase 1 body pose sync. Host-authoritative singleton transform stream: the host reads
 // the live drone transform and streams it, throttled, while it moves or its state changes; the client
 // suppresses the drone's
-// own ReceiveTick (so it is purely a mirror) and drives the streamed transform kinematically with a
-// LerpWindow interp.
+// own ReceiveTick (so it is purely a mirror) and drives the streamed transform kinematically, played
+// back behind the host's clock, between the two poses that bracket that moment (see AdvanceInterp).
 //
-// Singleton (no key) -> the sky_sync host-auth push shape (host streams; client applies) + the
-// atv_sync LerpWindow interp. No index (one drone).
+// Singleton (no key) -> the sky_sync host-auth push shape (host streams; client applies). No index
+// (one drone).
 
 #include "coop/interactables/drone_sync.h"
 
-#include "coop/element/lerp_window.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/devices/drone.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/types.h"  // FVector, FRotator, NormalizeAxis
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 
 namespace coop::drone_sync {
 namespace {
@@ -36,20 +40,51 @@ constexpr uint64_t kSendIntervalMs = 50;   // ~20 Hz at most, while the drone mo
 // go: a glide streams until it is this close to where it rests, and a parked drone sends nothing.
 constexpr float    kMoveEpsCm  = 1.0f;
 constexpr float    kTurnEpsDeg = 0.5f;
-constexpr int      kInterpWindowMs = 75;   // matches the NPC/ATV pose interp window
+// The client shows the drone where the host's was a little while ago, between the two poses either side of
+// that moment, each placed at the host's own send time, so the copy keeps the host's speed however the poses
+// arrive. How long ago follows the link: the lateness that 95 of the last 100 poses kept within, plus a margin,
+// between kMinDelayMs and kMaxDelayMs, and it changes by at most a tenth of the time passing, so playback only
+// runs a little fast or slow. Past the newest pose the copy goes on along its last motion for up to
+// kExtrapMs, then holds.
+constexpr double   kMinDelayMs = 80.0;
+constexpr double   kMaxDelayMs = 400.0;
+constexpr double   kDelayMarginMs = 15.0;
+constexpr double   kExtrapMs = 120.0;
+constexpr size_t   kLateRing = 100;
+// A pose that follows a quiet stretch longer than this (a parked drone sends nothing) starts from the pose
+// before it, held until one send period before it: the copy rests where it rested, then moves.
+constexpr double   kQuietGapMs = 150.0;
+constexpr size_t   kPoseCap = 16;
+// Refused freezes in a row (one per tick) before the refusal is said.
+constexpr uint32_t kSuppressWarnAfter = 60;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
 // The single drone mirror's receiver-side interp state (game thread only).
 struct DroneMirror {
-    coop::LerpWindow window;
-    FVector curPos{}, tgtPos{}, errPos{};
-    float   curPitch = 0.f, tgtPitch = 0.f, errPitch = 0.f;
-    float   curYaw   = 0.f, tgtYaw   = 0.f, errYaw   = 0.f;
-    float   curRoll  = 0.f, tgtRoll  = 0.f, errRoll  = 0.f;
+    struct Pose {
+        double   hostMs;   // unwrapped host send time
+        FVector  loc;
+        FRotator rot;
+    };
+    std::deque<Pose> poses;  // oldest first
+    double   offsetMs = 0.0;     // local clock minus host clock, as the least-delayed pose shows it
+    double   offsetAtMs = 0.0;   // local time the offset was last taken or relaxed
+    double   delayMs = kMinDelayMs;  // how far behind the host's clock the copy plays
+    double   wantDelayMs = kMinDelayMs;  // what delayMs follows: TargetDelay, taken when the lateness ring changes
+    double   late[kLateRing] = {};   // how far behind the newest pose playback would have needed to be
+    size_t   lateN = 0;
+    double   arrivedAtMs = 0.0;  // local time the newest pose arrived
+    uint32_t playTicks = 0;      // frames played while poses were arriving
+    uint32_t starvedTicks = 0;   // of them, frames past the newest pose and its extrapolation: the copy held
+    uint32_t lastHostMs = 0;     // the newest pose's raw stamp, to unwrap the next
+    double   hostBaseMs = 0.0;   // the unwrapped time of lastHostMs
+    FVector  curPos{};
+    FRotator curRot{};
     bool    hasPose    = false;
     bool    dirty      = false;
-    bool    suppressed = false;   // we disabled the client drone's flight tick
+    ue_wrap::CachedObjRef suppressed;   // the drone whose flight tick and body we took out; a successor is frozen afresh
+    uint32_t suppressRefused = 0;       // freezes the engine refused since the last one that took
     uint8_t lastStateBits = 0;    // last applied FX bits (dust / canTakeOff) -- edge detection
     bool    haveStateBits = false;
     int8_t  hostActive = -1;      // the host's last word on Active: 1, 0, or -1 before any
@@ -77,6 +112,10 @@ bool     g_installLogged  = false;  // latch the install log (Install is the per
 uint64_t NowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+double NowMsF() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 // The host's drone as one check reads it, from memory.
@@ -117,48 +156,122 @@ void FillPayload(void* drone, const HostRead& r, bool adopt, coop::net::DroneSta
     }
 }
 
+float LerpAngle(float a, float b, float t) { return a + ue_wrap::NormalizeAxis(b - a) * t; }
+
+// The delay 95 of the last poses' lateness kept within, plus the margin.
+double TargetDelay(const DroneMirror& e) {
+    // Drill red (drone_playback_delay_red_ms, off at 0): a delay that ignores the link, so the drill's fake lag and
+    // jitter run the playback past the newest pose and its verdict must be FAIL.
+    static const long kRedDelayMs = coop::config::ResolveInt(coop::config_registry::rows::drone_playback_delay_red_ms);
+    if (kRedDelayMs > 0) return static_cast<double>(kRedDelayMs);
+    const size_t n = std::min(e.lateN, kLateRing);
+    if (n < 10) return kMinDelayMs;
+    double v[kLateRing];
+    std::copy(e.late, e.late + n, v);
+    std::nth_element(v, v + (n * 95) / 100, v + n);
+    return std::clamp(v[(n * 95) / 100] + kDelayMarginMs, kMinDelayMs, kMaxDelayMs);
+}
+
+// The pose the copy shows now: delayMs behind the host's clock, between the poses either side.
 void AdvanceInterp(DroneMirror& e) {
-    bool arrived = false;
-    const float dA = e.window.Advance(NowMs(), &arrived);
-    if (dA > 0.f) {
-        e.curPos.X += e.errPos.X * dA;
-        e.curPos.Y += e.errPos.Y * dA;
-        e.curPos.Z += e.errPos.Z * dA;
-        e.curPitch += e.errPitch * dA;
-        e.curYaw   += e.errYaw   * dA;
-        e.curRoll  += e.errRoll  * dA;
-        e.dirty = true;
+    if (e.poses.empty()) return;
+    const double now = NowMsF();
+    const double dt = now - e.offsetAtMs;
+    // The offset may only grow slowly (a millisecond a second), so a run of late poses cannot drag playback
+    // later at once, while a lasting rise in the delay is followed.
+    e.offsetMs += dt * 0.001;
+    e.offsetAtMs = now;
+    const double want = e.wantDelayMs;   // the ring changes only when a pose arrives: nothing is sorted for a parked drone
+    e.delayMs += std::clamp(want - e.delayMs, -0.1 * dt, 0.1 * dt);
+    const double at = now - e.offsetMs - e.delayMs;
+    while (e.poses.size() > 2 && e.poses[1].hostMs <= at) e.poses.pop_front();
+    FVector loc;
+    FRotator rot;
+    const DroneMirror::Pose& a = e.poses.front();
+    if (e.poses.size() == 1 || at <= a.hostMs) {
+        loc = a.loc;
+        rot = a.rot;  // one pose, or before the oldest: hold it
+    } else {
+        const DroneMirror::Pose& b = e.poses[1];
+        const double span = b.hostMs - a.hostMs;
+        // Between the two, or past the newest along their motion for up to kExtrapMs.
+        const double tt = span > 0.0 ? std::min((at - a.hostMs) / span, 1.0 + kExtrapMs / span) : 1.0;
+        if (now - e.arrivedAtMs < 500.0) {
+            ++e.playTicks;
+            if (at > b.hostMs + kExtrapMs) ++e.starvedTicks;
+        }
+        const float t = static_cast<float>(std::max(tt, 0.0));
+        loc = {a.loc.X + (b.loc.X - a.loc.X) * t, a.loc.Y + (b.loc.Y - a.loc.Y) * t, a.loc.Z + (b.loc.Z - a.loc.Z) * t};
+        rot = {LerpAngle(a.rot.Pitch, b.rot.Pitch, t), LerpAngle(a.rot.Yaw, b.rot.Yaw, t), LerpAngle(a.rot.Roll, b.rot.Roll, t)};
     }
-    if (arrived) {
-        e.curPos = e.tgtPos;
-        e.curPitch = e.tgtPitch; e.curYaw = e.tgtYaw; e.curRoll = e.tgtRoll;
+    if (loc.X != e.curPos.X || loc.Y != e.curPos.Y || loc.Z != e.curPos.Z || rot.Pitch != e.curRot.Pitch ||
+        rot.Yaw != e.curRot.Yaw || rot.Roll != e.curRot.Roll) {
+        e.curPos = loc;
+        e.curRot = rot;
         e.dirty = true;
     }
 }
 
 void SetTarget(DroneMirror& e, const coop::net::DroneStatePayload& p, bool snap) {
+    const double now = NowMsF();
+    // DroneStatePayload carries no sender clock; use its reliable-lane arrival time as the
+    // interpolation timeline rather than reading a field that is not on the wire.
+    const uint32_t stamp = static_cast<uint32_t>(now);
+    const FVector loc{p.x, p.y, p.z};
+    const FRotator rot{p.pitch, p.yaw, p.roll};
     if (!e.hasPose || snap) {
-        e.curPos = { p.x, p.y, p.z }; e.tgtPos = e.curPos; e.errPos = {};
-        e.curPitch = e.tgtPitch = p.pitch; e.errPitch = 0.f;
-        e.curYaw   = e.tgtYaw   = p.yaw;   e.errYaw   = 0.f;
-        e.curRoll  = e.tgtRoll  = p.roll;  e.errRoll  = 0.f;
-        e.window.Close();
-        e.hasPose = true; e.dirty = true;
+        e.poses.clear();
+        e.hostBaseMs = now;
+        e.lastHostMs = stamp;
+        e.offsetMs = 0.0;
+        e.offsetAtMs = now;
+        e.poses.push_back({e.hostBaseMs, loc, rot});
+        e.curPos = loc;
+        e.curRot = rot;
+        e.hasPose = true;
+        e.dirty = true;
+        e.wantDelayMs = TargetDelay(e);
         return;
     }
-    AdvanceInterp(e);  // advance-before-rebase (interp-starvation fix)
-    e.tgtPos = { p.x, p.y, p.z };
-    e.errPos = { e.tgtPos.X - e.curPos.X, e.tgtPos.Y - e.curPos.Y, e.tgtPos.Z - e.curPos.Z };
-    e.tgtPitch = p.pitch; e.errPitch = ue_wrap::NormalizeAxis(p.pitch - e.curPitch);
-    e.tgtYaw   = p.yaw;   e.errYaw   = ue_wrap::NormalizeAxis(p.yaw   - e.curYaw);
-    e.tgtRoll  = p.roll;  e.errRoll  = ue_wrap::NormalizeAxis(p.roll  - e.curRoll);
-    e.window.Open(NowMs(), kInterpWindowMs);
-    e.dirty = true;
+    // Unwrap the stamp against the newest; one older than the newest (it cannot be, on one reliable lane) is dropped.
+    const double step = now - e.hostBaseMs;
+    if (step <= 0.0) return;
+    const double hostMs = now;
+    e.lastHostMs = stamp;
+    e.hostBaseMs = hostMs;
+    const double off = now - hostMs;
+    if (off < e.offsetMs) e.offsetMs = off;
+    // How late the newest pose before this one was by now, which is how far behind playback had to be not to
+    // run past it: a sample of the link's lateness, unless the host was quiet between the two.
+    if (!e.poses.empty() && hostMs - e.poses.back().hostMs <= kQuietGapMs)
+        e.late[e.lateN++ % kLateRing] = std::max(0.0, now - e.offsetMs - e.poses.back().hostMs);
+    e.wantDelayMs = TargetDelay(e);
+    if (!e.poses.empty() && hostMs - e.poses.back().hostMs > kQuietGapMs) {
+        DroneMirror::Pose rest = e.poses.back();
+        rest.hostMs = hostMs - static_cast<double>(kSendIntervalMs);
+        e.poses.push_back(rest);
+    }
+    e.poses.push_back({hostMs, loc, rot});
+    e.arrivedAtMs = now;
+    while (e.poses.size() > kPoseCap) e.poses.pop_front();
+}
+
+// The flight tick and the body of THIS drone are out of the way: asked whenever the drone is not the one already taken
+// out, so a drone reborn in the session is frozen too, and again while the engine has refused (said once a streak).
+void EnsureSuppressed(void* drone) {
+    if (g_m.suppressed.Is(drone)) return;
+    if (D::SuppressTick(drone)) {
+        g_m.suppressed.Set(drone);
+        g_m.suppressRefused = 0;
+        return;
+    }
+    if (++g_m.suppressRefused == kSuppressWarnAfter)
+        UE_LOGW("drone: the mirror's freeze was refused %u times running -- asked again each tick", kSuppressWarnAfter);
 }
 
 void ApplyMirror(void* drone, DroneMirror& e) {
     if (!e.dirty) return;
-    D::DriveMirror(drone, e.curPos, FRotator{ e.curPitch, e.curYaw, e.curRoll });
+    D::DriveMirror(drone, e.curPos, e.curRot);
     e.dirty = false;
 }
 
@@ -179,7 +292,7 @@ namespace {
 // state. Game thread.
 void ApplyState(void* drone, const coop::net::DroneStatePayload& payload) {
     D::ApplyRotorPitch(drone, payload.rotorPitch);
-    if (!g_m.suppressed) { D::SuppressTick(drone); g_m.suppressed = true; }
+    EnsureSuppressed(drone);
     SetTarget(g_m, payload, /*snap*/ payload.adopt != 0);
     // FX mirror: the suppressed tick kills the rotor-dust particle and the delivery alarm cue, so
     // replay them off the synced state the host packs in FillPayload -- the dust as a per-packet
@@ -310,10 +423,10 @@ void Tick() {
         g_sentBits = r.bits;  // the bits as read: FillPayload drops the dust bit when its anchor is unread
         g_sentRotorPitch = r.rotorPitch;
     } else {
-        // CLIENT: the drone is ALWAYS a mirror -- suppress its own flight tick once, take a word that
-        // waited for the drone to resolve, then drive the interp toward the last streamed pose (no-op
-        // when frozen at target between packets).
-        if (!g_m.suppressed) { D::SuppressTick(drone); g_m.suppressed = true; }
+        // CLIENT: the drone is ALWAYS a mirror -- take its flight tick and body out (per drone), take a word that
+        // waited for the drone to resolve, then play the streamed poses back (no write while the
+        // pose shown does not change).
+        EnsureSuppressed(drone);
         if (g_m.hasPending) {
             g_m.hasPending = false;
             ApplyState(drone, g_m.pending);
@@ -324,10 +437,13 @@ void Tick() {
 
 int HostActive() { return g_m.hostActive; }
 
+MirrorStats Stats() { return {g_m.playTicks, g_m.starvedTicks, g_m.delayMs}; }
+
 void OnDisconnect() {
-    if (g_m.suppressed) {
-        if (void* drone = D::Find()) D::RestoreTick(drone);  // restore single-player flight
-    }
+    if (g_m.playTicks)
+        UE_LOGI("drone: session end -- the mirror played %u frames from arriving poses, %u of them past the newest (held); "
+                "playback delay %.0f ms", g_m.playTicks, g_m.starvedTicks, g_m.delayMs);
+    if (void* drone = g_m.suppressed.Get()) D::RestoreTick(drone);  // restore single-player flight
     g_m = DroneMirror{};
     g_nextCheckMs = g_lastSendMs = 0;
     g_session.store(nullptr, std::memory_order_release);

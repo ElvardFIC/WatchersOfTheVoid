@@ -18,11 +18,14 @@ pieces = ['''#include "coop/props/container_act_host.h"
 #include "coop/props/container_record_edit.h"
 #include "coop/props/container_slice_wire.h"
 #include "coop/props/container_truth.h"
+#include "coop/props/prop_record_wire.h"
+#include "ue_wrap/actors/floppy_disc.h"
 #include "ue_wrap/actors/container_inventory.h"
 #include <algorithm>
 #include <cwchar>
 #include <cstring>
 ''']
+pieces[0] += '\nnamespace prw = coop::props::prop_record_wire;\n'
 for filename, owner in [
     ('container_act_host.cpp','container_act_host'),
     ('container_act_host_put.cpp','container_act_host'),
@@ -43,4 +46,6 @@ source = (root/'coop/props/container_truth.cpp').read_text(encoding='utf-8-sig')
 pieces += ['namespace coop::props::container_truth {',block(source,'RefusalOnce::Say RefusalOnce::Note('),block(source,'bool TruthDue('),block(source,'bool SlotTruthDue('),'}']
 source = (root/'coop/props/container_record_edit.cpp').read_text(encoding='utf-8-sig')
 pieces += ['namespace coop::props::container_record_edit::internal { namespace SR=ue_wrap::save_record; namespace ci=ue_wrap::container_inventory;',block(source,'void NeuterIfNested('),'}']
+source = (root/'ue_wrap/actors/floppy_disc.cpp').read_text(encoding='utf-8-sig')
+pieces += ['namespace ue_wrap::floppy_disc {',block(source,'bool DiscLeafOk('),'}']
 Path(sys.argv[1]).write_text('\n'.join(pieces),encoding='utf-8')

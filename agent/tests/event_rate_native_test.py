@@ -4,12 +4,12 @@ import hashlib
 import re
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-path = research / 'assets/VotV__Content__objects__tickers__ticker_eyers.uasset'
+path = evidence_root / 'assets/VotV__Content__objects__tickers__ticker_eyers.uasset'
 p = Package(str(path))
 graph = next(e for e in p.exports if e['name'] == 'ExecuteUbergraph_ticker_eyers')
 rows = dict(body(p, graph))
@@ -27,7 +27,7 @@ print('uasset SHA256', hashlib.sha256(path.read_bytes()).hexdigest())
 print('uexp SHA256', hashlib.sha256(path.with_suffix('.uexp').read_bytes()).hexdigest())
 
 def graph(asset, function):
-    package = Package(str(research / 'assets' / f'VotV__Content__objects__{asset}.uasset'))
+    package = Package(str(evidence_root / 'assets' / f'VotV__Content__objects__{asset}.uasset'))
     export = next(e for e in package.exports
                   if e['name'] == function and package.class_of_export(e) == 'Function')
     result = dict(body(package, export))
@@ -91,7 +91,7 @@ assert not any('Inst(isActive) =' in row or 'Spawn' in row or 'QuitGame' in row
                for row in phases)
 print('PASS existing native flickerer: 30-60 s eligible roll, generator probability and separate lamp/ambient phase delays')
 for asset in (flicker_asset, root_asset):
-    asset_path = research / 'assets' / f'VotV__Content__objects__{asset}.uasset'
+    asset_path = evidence_root / 'assets' / f'VotV__Content__objects__{asset}.uasset'
     for suffix in ('.uasset', '.uexp'):
         item = asset_path.with_suffix(suffix)
         print(item.name, 'SHA256', hashlib.sha256(item.read_bytes()).hexdigest())

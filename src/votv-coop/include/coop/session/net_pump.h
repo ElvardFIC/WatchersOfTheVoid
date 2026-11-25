@@ -57,7 +57,7 @@ void TearDownSession(coop::net::Session& session, const char* why);
 
 // True when the session is stopped and its last stop has not yet been torn down. A start RunAndWaits
 // TearDownSession when this is true before it begins, as MTA's Start unloads a mod still loaded
-// (CModManager.cpp:134-135), so no session starts over an owed end. Reads the count with acquire.
+// (reference/mtasa-blue/Client/core/CModManager.cpp:134-135), so no session starts over an owed end. Reads the count with acquire.
 bool EndOwed(const coop::net::Session& session);
 
 // True while this session is already travelling to the main menu (the one-shot

@@ -1,8 +1,13 @@
 #pragma once
 #include "ue_wrap/core/cached_obj_ref.h"
+#include <array>
 #include <cstddef>
 #include <functional>
 namespace ue_wrap::dingus_music {
+inline constexpr std::array<const wchar_t*,6> kDingusVariantClasses{
+    L"prop_dingus_C",L"prop_dingus1_C",L"prop_dingus2_C",
+    L"prop_dingus3_C",L"prop_dingus4ugly_C",L"prop_dingus5erie_C"
+};
 struct State { bool playing=false,used=false; float volume=0,pitch=1,elapsed=0;uint32_t episode=0; };
 struct Clock {CachedObjRef audio,sound;float duration=0,pitch=1;};
 struct Playback {CachedObjRef audio,sound;uint32_t episode=0;uint64_t revision=0;};

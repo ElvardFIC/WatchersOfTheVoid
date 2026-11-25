@@ -28,7 +28,7 @@ using coop::net::kStatRows;
 enum class Op : uint8_t { SetStat = 0, AddEffect = 1, RemoveEffect = 2 };
 
 // 0-3 travel; Left and Malformed are the host's own (a disconnect; an answer that failed its checks).
-// MTA drops a packet it cannot read (reference/mtasa-blue/ CPacketTranslator.cpp:252); here the
+// MTA drops a packet it cannot read (reference/mtasa-blue/ reference/mtasa-blue/Server/mods/deathmatch/logic/CPacketTranslator.cpp:252); here the
 // waiting caller is answered Malformed instead, so an admin's order never waits silently.
 enum class Result : uint8_t { Applied = 0, Refused = 1, NotFound = 2, NotReady = 3, Left = 4, Malformed = 5 };
 

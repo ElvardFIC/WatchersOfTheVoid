@@ -6,9 +6,9 @@ Push-Location $root
 try {
     if (-not (Get-Command cl -ErrorAction SilentlyContinue)) { . (Join-Path $root '../_toolchain/env.ps1') }
     foreach ($test in @('hand_fire_2138_test', 'canned_hand_2175_test', 'canned_wrapper_2175_test')) {
-        & cl /nologo /std:c++20 /EHsc /utf-8 /Gy /I agent/tests/hand_stubs `
-            /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$test.obj" `
-            "/Fe$output/$test.exe" "agent/tests/$test.cpp" /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /utf-8 /Gy /I "$PSScriptRoot/hand_stubs" `
+            /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$test.obj" `
+            "/Fe$output/$test.exe" "$PSScriptRoot/$test.cpp" /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "$test compile failed" }
         & "$output/$test.exe"
         if ($LASTEXITCODE -ne 0) { throw "$test failed" }

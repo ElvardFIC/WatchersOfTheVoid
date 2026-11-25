@@ -430,13 +430,6 @@ bool SetSizeBoxWidth(void* sizeBox, float width) {
     return Call(sizeBox, f);
 }
 
-bool SetSizeBoxMaxWidth(void* sizeBox, float width) {
-    void* fn = Resolve(g_sbMaxWidth);
-    if (!sizeBox || !fn) return false;
-    ParamFrame f(fn);
-    f.Set<float>(L"InMaxDesiredWidth", width);
-    return Call(sizeBox, f);
-}
 
 bool SetScaleBoxFit(void* scaleBox, uint8_t stretch, uint8_t direction) {
     void* fnStretch = Resolve(g_scStretch);
@@ -590,5 +583,7 @@ bool SetRenderTranslation(void* widget, const FVector2D& translation) {
     f.Set<FVector2D>(L"Translation", translation);
     return Call(widget, f);
 }
+
+
 
 }  // namespace ue_wrap::umg

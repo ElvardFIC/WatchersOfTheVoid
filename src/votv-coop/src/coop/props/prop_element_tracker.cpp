@@ -49,6 +49,9 @@ inline coop::net::Session* LoadSession() {
     return g_session_ptr.load(std::memory_order_acquire);
 }
 
+// ---- the host-birth subscribers (the header's thread contract) ----
+std::atomic<HostPropExpressedFn> g_hostSubscribers[kMaxHostPropSubscribers];
+
 // ---- the processed-Init dedupe set ----
 // It holds the actors this peer has expressed a birth for, or must not express one for, added at
 // those seams and removed by the destroy seam; the cap is a backstop, and on overflow inserts stop but
@@ -334,7 +337,22 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     TrackKeyForActor_(actor, enrollKey, internalIdx);
     // A data drive's row travels with its enrolment (drive_payload_sync): the host's, and a client's own.
     coop::drive_payload_sync::OnEnrolled(actor, static_cast<uint32_t>(eid));
+    if (isHost) {
+        for (auto& slot : g_hostSubscribers) {
+            if (HostPropExpressedFn fn = slot.load(std::memory_order_acquire)) fn(actor, eid);
+        }
+    }
     return enrollKey;
+}
+
+bool SubscribeHostPropExpressed(HostPropExpressedFn fn) {
+    if (!fn) return false;
+    for (auto& slot : g_hostSubscribers) {
+        HostPropExpressedFn held = nullptr;
+        if (slot.compare_exchange_strong(held, fn, std::memory_order_acq_rel)) return true;
+        if (held == fn) return true;
+    }
+    return false;
 }
 
 coop::element::ElementId GetPropElementIdForActor(void* actor) {
@@ -377,9 +395,9 @@ static uint32_t g_captureMintDeclined = 0;
 static uint32_t g_captureLocUnread    = 0;
 static bool CaptureDeclineSaid_(uint32_t& n) { return ++n == 1 || n % 100 == 0; }
 
-// MTA divergence: its server mints an element's id at creation (CElement.cpp:39) and the entity add
-// only carries it (CEntityAddPacket.cpp:103), and content the client already holds is addressed by
-// model, position and radius (CBuildingRemovalSA.cpp:28-75). The joiner's natives are that kind of
+// MTA divergence: its server mints an element's id at creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39) and the entity add
+// only carries it (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:103), and content the client already holds is addressed by
+// model, position and radius (reference/mtasa-blue/Client/game_sa/CBuildingRemovalSA.cpp:28-75). The joiner's natives are that kind of
 // content, so ours is keyed by the pose its save holds, and this walk is the only place the key is
 // written.
 //

@@ -129,7 +129,7 @@ Verdict History::Blocked(const Key& key, uint64_t nowMs) {
     }
     Expire(*b, nowMs);
     v.count = b->count;
-    // MTA's own check is `>` (CConnectHistory.cpp:53), which admits one event more than its
+    // MTA's own check is `>` (reference/mtasa-blue/Server/mods/deathmatch/logic/CConnectHistory.cpp:53), which admits one event more than its
     // constant names; the count here means what it says, so the fifth connection under a cap
     // of four is the refused one.
     if (b->count >= policy_.max) {

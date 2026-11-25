@@ -50,7 +50,7 @@ constexpr float    kStillCm         = 50.f;    // the client stood through the h
 constexpr float    kClientAwayCm    = 800.f;   // the client at its pile: 10 m flat from the host, less its arrival
 constexpr uint64_t kFollowWindowMs  = 45000;   // from the client's arrival
 constexpr uint64_t kStateWindowMs   = 15000;   // the host's state after a press
-// While possessed its arrival check pins energy here (p_kerfus.cpp:619): the possess, seen in the game's own
+// While possessed its arrival check pins energy here (CXXHeaderDump/p_kerfus.cpp:619): the possess, seen in the game's own
 // state. A Kerfus possessed while it sits 1 m from its player stalls there -- its wheel drive is scaled by
 // its distance to that player, zero at 100 uu (:355-372) -- so the client walks back to let it leave.
 constexpr float    kPinnedEnergy    = 66.61f;

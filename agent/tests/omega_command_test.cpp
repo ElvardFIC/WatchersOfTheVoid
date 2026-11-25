@@ -6,6 +6,18 @@
 #endif
 #include OMEGA_COMMAND_SOURCE
 #include "../../src/votv-coop/src/coop/net/refusal_tally.cpp"
+namespace coop::kerfur_command_wire {bool Send(net::Session*,const Request&){return true;}Feed OnChunk(const net::BlobChunkPayload&,uint8_t,Request&,const char**){return Feed::Malformed;}void Sweep(){}}
+namespace coop::kerfur_command_answer {uint32_t NextRequestId(){return 1;}void HoldSent(uint32_t,std::optional<kerfur_disc_carry::Pledge>){}void ShowLocal(uint8_t){}void SendRefused(net::Session*,uint8_t,uint32_t,uint8_t){}void SendWaits(net::Session*,uint8_t,uint32_t){}void SendConsumed(net::Session*,uint8_t,uint32_t){}void TickOwed(net::Session*){}}
+namespace coop::kerfur_disc_carry {
+std::optional<Capture> CaptureHeld(){return std::nullopt;}
+TailVerdict JudgeTail(const ue_wrap::save_record::SaveRecord&,uint8_t,uint64_t,const char**){return TailVerdict::Malformed;}
+Gate ReadGate(void*){return Gate::Busy;}
+HandScope::HandScope(uint8_t,const ue_wrap::save_record::SaveRecord&){}
+HandScope::~HandScope(){}
+bool HandScope::Consumed()const{return false;}
+void HandScope::Close(){}
+}
+namespace coop::requester_feedback {bool Ready(){return true;}bool Refused(){return false;}}
 namespace test {
 namespace O=coop::kerfur_command;using C=O::Command;
 bool jobReadable=true,verbAvailable=true,verbResult=true,kill=false,hasFloppy=false,consumeMirror=false;

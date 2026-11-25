@@ -313,3 +313,41 @@ Direct connection reaches the host's configured admission limit independently.
 
 Offline tests and the Release build are recorded separately in TESTLOG.
 They do not establish rendered host/client acceptance or 32 simultaneous players.
+
+# Main and fork refresh — 15 November 2026
+
+The requested primary-source integration is upstream `bb54bd7b5`, merged as
+`16fa501a8` with parents `17fbab814` and `bb54bd7b5`. The merge used the local
+side for conflicting hunks and retained the local Kerfur radial-input adapter
+and header where upstream had removed them. The working edits present before
+the merge were restored; `event_dispatch.h` and `event_dispatch_prop_drive.cpp`
+combine their local PropToolFlags comments with upstream's newer event list.
+This is history/source integration only; no build, regression or game check was
+run for this refresh, and no release identity was changed.
+
+`origin/main` (`c17427ae5`) was already an ancestor of the pre-merge `main`.
+The refreshed fork inventory came from the 71 repositories in
+`build/fork-review-20261108/forks.json`: 70 current default branches fetched to
+`refs/remotes/refresh-1115/`; only `Marlore/temp-mail-generator` was unavailable.
+Forty-five of the 70 heads contain commits beyond the refreshed upstream main;
+85 distinct fork-only commits dated after 8 November were identified. The
+largest current candidate is Ghezra `0c5edaacb`, 153 commits beyond upstream,
+with broad new lanes for items, media, entities, travel, containers and plants.
+These overlap existing transaction and lifetime owners, so they were reviewed
+as candidates instead of copied wholesale.
+
+Selected fork adaptation: kdp80's Cremator hatch fix, from its 9–10 November
+door series. `kitchen_machine::DoorParent` now checks the exact live Cremator
+hatch after the ordinary parent lookup, and the client mouse route accepts the
+local grab of that hatch. No kdp80 workbench-rest substring or tick-cadence
+change was imported. BitRoit's latest seven-commit WatchersOfTheVoid branch and
+Dev-prizrakk's four upstream-based commits overlap open source owners or need
+separate review; none was copied in this pass.
+
+Mod-fork disposition: AquaFishhh `MultivoidKindaPlus/main` at `56c8290f6` is
+already an ancestor of the merged source. The separate `multivoid-plus`
+snapshot `5bb981680` is based on b2142; every source/header path it adds is
+present in the 2164 source tree. Its three missing lift fixtures are historical
+2134 coverage, so the old runners, Plus package metadata and branding were not
+overlaid on the current development target. ElvardFIC `WatchersOfTheVoid/main`
+at `c17427ae5` was already integrated before the upstream merge.

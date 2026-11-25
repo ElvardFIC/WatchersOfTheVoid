@@ -63,12 +63,7 @@ bool InvokeMainPlayerIgnite(void* player, float fuel) {
     return Call(player, f);
 }
 
-bool InvokeMainPlayerExtinguishFire(void* player) {
-    void* fn = VerbOf(player, L"extinguishFire");
-    if (!fn) return false;
-    ParamFrame f(fn);  // no params
-    if (!f.valid()) return false;
-    return Call(player, f);
-}
+
+
 
 }  // namespace ue_wrap::engine

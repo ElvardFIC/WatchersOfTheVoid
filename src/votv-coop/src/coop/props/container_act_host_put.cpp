@@ -10,12 +10,16 @@
 #include "coop/net/net_clock.h"
 #include "coop/net/session.h"
 #include "coop/props/container_act_wire.h"
+#include "coop/props/prop_record_wire.h"
 #include "coop/props/container_contents_sync.h"
 #include "coop/props/container_record_edit.h"
 #include "coop/props/container_slice_wire.h"
 
 #include "ue_wrap/actors/container_inventory.h"
+#include "ue_wrap/actors/floppy_disc.h"
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/prop_gather.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 
@@ -29,6 +33,7 @@ namespace {
 namespace cas = coop::props::container_act_state;
 namespace cre = coop::props::container_record_edit;
 namespace caw = coop::props::container_act_wire;
+namespace prw = coop::props::prop_record_wire;
 namespace cr  = coop::props::container_reach;
 namespace csw = coop::props::container_slice_wire;
 namespace ci  = ue_wrap::container_inventory;
@@ -65,7 +70,7 @@ cre::EditResult ReadFit(uint32_t eid, const SR::SaveRecord& rec, size_t flagByte
     }
     if (r != cre::EditResult::Done) return r;
     countAtCap = recs.size() >= csw::kMaxRecords;
-    bytesOver = csw::SliceBytes(recs) + caw::RecordBytes(rec) + flagBytes >
+    bytesOver = csw::SliceBytes(recs) + prw::RecordBytes(rec) + flagBytes >
                 coop::blob_chunks::MaxBlobBytes();
     return cre::EditResult::Done;
 }
@@ -91,12 +96,19 @@ void ReadPutInputs(uint8_t slot, uint32_t eid, const SR::SaveRecord& record, boo
     p.slowed = slowable && !g_noLapse && cas::Live().Slowed(slot, coop::net::NowMs());   // the red: container_act_no_lapse
     if (p.locked || p.slowed) return;
     std::wstring name;
-    p.nameOk = internal::PutNameOk(record);
+    p.nameOk = prw::PutNameOk(record);
     if (!p.nameOk || !SR::RecordName(record, name)) return;
-    void* const cls = ue_wrap::object_index::ClassByName(record.className.c_str());
+    void* const cls = ue_wrap::class_resolve::ResolveClass(record.className.c_str(), ue_wrap::prop::PropFamily(),
+                                                         ue_wrap::class_resolve::Load::LookupOnly).cls;
     p.classResolved = cls != nullptr;
     p.propClass = SR::IsPropClass(cls);
     if (!p.classResolved || !p.propClass) return;
+    // A client's floppy disc has leaf values that are its word, as a carried disc's are: held to what a game disc can
+    // hold. `slowable` is false for the host's own capture, which is not bounded (internal::FloppyBoundOk).
+    int32_t maxReadWrites = 0;
+    const bool disc = ue_wrap::floppy_disc::IsDiscClass(cls) && ue_wrap::floppy_disc::ReadDefaultReadWrites(maxReadWrites);
+    p.leafOk = internal::FloppyBoundOk(slowable, disc, record, maxReadWrites);
+    if (!p.leafOk) return;
     p.filterRead = ci::FilterHolds(ci::InventoryOf(actor), cls, p.filterHolds);
     if (!p.filterRead || p.filterHolds) return;
     p.mailboxContainer = t.ownerIsMailbox && ci::IsContainerRecord(record);
@@ -122,7 +134,7 @@ void ReadPutInputs(uint8_t slot, uint32_t eid, const SR::SaveRecord& record, boo
 }
 
 // A put's grant: room is reserved for the asked record and nothing is written. MTA reserves the seat at the request and
-// confirms it later (CGame.cpp:3152-3153, 3373-3417); the confirm here is the commit, which carries the record.
+// confirms it later (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3152-3153, 3373-3417); the confirm here is the commit, which carries the record.
 std::optional<coop::net::Served> GrantPut(uint8_t slot, const caw::Request& q) {
     cas::Hold h;
     h.kind = cas::HoldKind::Reservation;
@@ -167,7 +179,7 @@ namespace {
 
 enum class DoneCheck : uint8_t { Insert, NoRoom, Gone, NotReady };
 // What a done (timely or late) finds on the live container, after its size was bounded by the asked one (MTA bounds a
-// client-set value at the store, CGame.cpp:2731-2736, 2743-2753): the caps and the filter are read again, since the
+// client-set value at the store, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2731-2736, 2743-2753): the caps and the filter are read again, since the
 // host's own writers are not stopped by a reservation. The record is the one the container stored, so its fridge flag
 // is already counted. Volume overfill is accepted: the client's own fit ran the game's whole test. A container whose
 // slice is not ready cannot be read: NotReady, and the insert waits on the owed path.
@@ -183,7 +195,8 @@ DoneCheck CheckPutDone(uint32_t eid, const SR::SaveRecord& committed, bool other
         why = "the container is not ready";
         return DoneCheck::NotReady;
     }
-    void* const cls = ue_wrap::object_index::ClassByName(committed.className.c_str());
+    void* const cls = ue_wrap::class_resolve::ResolveClass(committed.className.c_str(), ue_wrap::prop::PropFamily(),
+                                                         ue_wrap::class_resolve::Load::LookupOnly).cls;
     bool filtered = false;
     const bool filterRead = cls && ci::FilterHolds(ci::InventoryOf(coop::element::LivePropActor(eid)), cls, filtered);
     if (otherHolds) why = "another hold stands on it";
@@ -227,7 +240,7 @@ void PlaceTimelyDone(cas::Hold h, const caw::Commit& c) {
 }
 
 // A commit whose hold is gone: the deadline released a reservation and left its tombstone, so an honest client's late
-// answer ends here (no precedent in MTA, which ignores a confirm that finds no reservation, CGame.cpp:3376; here the
+// answer ends here (no precedent in MTA, which ignores a confirm that finds no reservation, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3376; here the
 // replay already moved the item out of the client's inventory). True when the commit was a tombstone's, consumed
 // whatever came of it; false when it has none, so it is a bad commit. A late done is inserted like a timely one,
 // unless the container has since filled past a cap, taken a hold or filtered the class: then it is named and lost.
@@ -311,6 +324,7 @@ Verdict DecidePut(const PutInputs& in, Tally* refusal) {
     if (!in.nameOk) { why = Tally::PutNoName; return Verdict::Refused; }
     if (!in.classResolved) { why = Tally::PutClassUnresolved; return Verdict::Refused; }
     if (!in.propClass) { why = Tally::PutNotProp; return Verdict::Refused; }
+    if (!in.leafOk) { why = Tally::PutBadLeaf; return Verdict::Refused; }
     if (!in.filterRead) return Verdict::Wait;
     if (in.filterHolds) { why = Tally::PutFiltered; return Verdict::Refused; }
     if (in.mailboxContainer) { why = Tally::PutIntoMailbox; return Verdict::Refused; }
@@ -329,13 +343,12 @@ bool StoredMatches(const SR::SaveRecord& asked, const SR::SaveRecord& stored) {
            SR::RecordName(stored, storedName) && askedName == storedName;
 }
 
-bool DoneSizeOk(size_t askedBytes, const SR::SaveRecord& committed) {
-    return caw::RecordBytes(committed) <= askedBytes + caw::kPutStoredSlack;
+bool FloppyBoundOk(bool fromClient, bool discClass, const SR::SaveRecord& record, int32_t maxReadWrites) {
+    return !fromClient || !discClass || ue_wrap::floppy_disc::DiscLeafOk(record, maxReadWrites, nullptr);
 }
 
-bool PutNameOk(const SR::SaveRecord& r) {
-    std::wstring name;
-    return SR::RecordName(r, name) && name.size() <= caw::kMaxPutNameChars;
+bool DoneSizeOk(size_t askedBytes, const SR::SaveRecord& committed) {
+    return prw::RecordBytes(committed) <= askedBytes + caw::kPutStoredSlack;
 }
 
 const char* PutWaitCause(const PutInputs& in) {

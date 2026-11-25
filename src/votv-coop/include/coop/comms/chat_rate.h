@@ -1,7 +1,7 @@
 // coop/comms/chat_rate.h -- how fast a client may speak, judged on the host: Source's chat flood guard as it ships.
 // A line passes when 0.66 s have gone since its sender last talked and a two-tier token bucket allows it. Every
 // attempt spends from the bucket, a line that passed starts the interval, and a refused line is dropped for good, with
-// no answer (reference/source-sdk-2013/src/game/server/player.cpp:8771-8818, client.cpp:843-862). MTA's server has no
+// no answer (reference/source-sdk-2013/src/game/server/player.cpp:8771-8818, reference/source-sdk-2013/src/game/server/client.cpp:843-862). MTA's server has no
 // chat rate, only a length cap (reference/mtasa-blue/Server/mods/deathmatch/Config.h:34) and a mute, both in its say
 // (reference/mtasa-blue/Server/mods/deathmatch/logic/CConsoleCommands.cpp:356-369), so Source is the precedent. One
 // state per slot, cleared with the occupant. The host's own lines are not counted: bounds apply to clients, where
@@ -13,7 +13,7 @@
 
 namespace coop::chat_rate {
 
-// One slot's budget; a value-initialised one is Source's fresh player (player.cpp:613-616).
+// One slot's budget; a value-initialised one is Source's fresh player (reference/source-sdk-2013/src/game/server/player.cpp:613-616).
 struct TalkBudget {
     uint64_t lastAttemptMs = 0;  // 0 = never: the first attempt's elapsed is the whole clock, a full tier 1
     uint64_t lastTalkMs = 0;     // 0 = never talked

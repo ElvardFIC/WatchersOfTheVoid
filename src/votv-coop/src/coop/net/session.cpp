@@ -7,6 +7,7 @@
 
 #include "coop/net/session.h"
 
+#include "coop/net/prop_spawn_hook.h"  // the drill seam on SendPropSpawn
 #include "coop/net/net_clock.h"  // NowMs, the net layer's one steady clock
 
 #include "coop/dev/wire_census.h"
@@ -126,6 +127,7 @@ bool Session::SendReliableToSlot(int peerSlot, ReliableKind kind, const void* pa
     const SendOutcome rc = backlog_.SendOrQueue(peerSlot, static_cast<int>(LaneForKind(kind)),
                                                hConn, wire, total, admission_);
     if (rc == SendOutcome::Streamed) rateControl_.NoteReliableQueued(peerSlot, total);
+    if (rc != SendOutcome::Dropped) net_stats::AddReliableSent(static_cast<uint16_t>(kind));
     return rc != SendOutcome::Dropped;
 }
 
@@ -256,6 +258,7 @@ bool Session::SendReliable(ReliableKind kind, const void* payload, int len, int 
         if (rc == SendOutcome::Streamed) rateControl_.NoteReliableQueued(i, total);
         if (rc != SendOutcome::Dropped) anySuccess = true;
     }
+    if (anySuccess) net_stats::AddReliableSent(static_cast<uint16_t>(kind));
     return anySuccess;
 }
 
@@ -333,7 +336,9 @@ bool Session::SendPropRelease(const PropReleasePayload& payload) {
 }
 
 bool Session::SendPropSpawn(const PropSpawnPayload& payload) {
-    return SendReliable(ReliableKind::PropSpawn, &payload, sizeof(payload));
+    const bool sent = SendReliable(ReliableKind::PropSpawn, &payload, sizeof(payload));
+    if (const prop_spawn_hook::PropSpawnSentFn hook = prop_spawn_hook::PropSpawnSentHook()) hook(payload.elementId, sent);
+    return sent;
 }
 
 bool Session::SendPropDestroy(const PropDestroyPayload& payload) {

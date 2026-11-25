@@ -7,7 +7,7 @@ Push-Location $root
 try {
     . (Join-Path $root '../_toolchain/env.ps1')
     function Compile-AndRun([string]$name,[string]$source,[string]$stub,[bool]$negative) {
-        & cl /nologo /std:c++20 /EHsc /Gy "/I$PSScriptRoot" /I "agent/tests/$stub" /I src\votv-coop\include "/I$root/src/votv-coop/src/coop/props" "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /Gy "/I$PSScriptRoot" /I "$PSScriptRoot/$stub" /I src\votv-coop\include "/I$root/src/votv-coop/src/coop/props" "/Fo$output/$name.obj" "/Fe$output/$name.exe" $source /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $name" }
         & "$output/$name.exe"
         $rc=$LASTEXITCODE
@@ -16,10 +16,10 @@ try {
             Write-Host "PASS: negative control rejected: $name"
         } elseif ($rc -ne 0) { throw "Test failed: $name" }
     }
-    Compile-AndRun 'key' 'agent/tests/floor_key_2132_test.cpp' 'floor_stubs' $false
-    Compile-AndRun 'client' 'agent/tests/floor_client_2132_test.cpp' 'item_record_stubs' $false
-    Compile-AndRun 'host' 'agent/tests/floor_host_2132_test.cpp' 'floor_stubs' $false
-    & $Python agent/tests/blueprint_floor_2132_probe.py
+    Compile-AndRun 'key' (Join-Path $PSScriptRoot 'floor_key_2132_test.cpp') 'floor_stubs' $false
+    Compile-AndRun 'client' (Join-Path $PSScriptRoot 'floor_client_2132_test.cpp') 'item_record_stubs' $false
+    Compile-AndRun 'host' (Join-Path $PSScriptRoot 'floor_host_2132_test.cpp') 'floor_stubs' $false
+    & $Python "$PSScriptRoot/blueprint_floor_2132_probe.py"
     if ($LASTEXITCODE -ne 0) { throw 'Native evidence failed' }
     $cases=@(
         @{Name='key_no_lineage';Suite='key';File='ue_wrap/actors/floor_bed.cpp';Before='!IsFloorBed(actor) ||';After=''},

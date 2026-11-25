@@ -5,8 +5,11 @@
 
 #pragma once
 
+#include "ue_wrap/core/reflection.h"   // FName
+
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ue_wrap::votv_lib {
 
@@ -27,9 +30,28 @@ namespace ue_wrap::votv_lib {
 bool CharacterStep(void* character, float volume);
 
 // Dispatch lib_C::addGloss(name, level, worldContext): the signal glossary of the machine's own profile gains
-// `name` at `level`, or raises it (lib.cpp:4143-4175, its save_main through getMainSave). False until lib_C
+// `name` at `level`, or raises it (CXXHeaderDump/lib.cpp:4143-4175, its save_main through getMainSave). False until lib_C
 // resolves, or when the name does not convert. Game thread (ProcessEvent).
 bool AddGloss(const std::wstring& name, int32_t level, void* worldContext);
 
+// Dispatch lib_C::addHint(text, type, false, worldContext): the hint widget on the machine's own HUD, its sound and
+// icon picked by `type` (enum_notifyType) in ui_hint's begin; the machine's own enablePopups setting decides whether
+// it shows (CXXHeaderDump/lib.cpp:1616). False until lib_C resolves, or when the text cannot be minted. Game thread.
+bool AddHint(const std::wstring& text, uint8_t type, void* worldContext);
+
+// What lib_C::Prop To Object(name) answers: the class a prop name spawns as (null for a plain prop), whether it is a
+// food, the row's `parseNameToObject` (the spawned actor's name is then stamped and its init() run, as the snack's
+// script does) and the food row's bytes (a Fstruct_food, written to a spawned food's `foodData`). The lookup in
+// list_props and list_food is the game's own, so what a snack's last use spawns is read from it.
+struct PropObject {
+    void* objectClass = nullptr;
+    bool isFood = false;
+    bool parseNameToObject = false;
+    std::vector<uint8_t> foodData;
+};
+
+// Dispatch lib_C::Prop To Object(prop, worldContext). False until lib_C resolves, or when the call fails. A name the
+// game does not know is answered by the game as a food with default data and no class. Game thread (ProcessEvent).
+bool PropToObject(ue_wrap::reflection::FName prop, void* worldContext, PropObject& out);
 
 }  // namespace ue_wrap::votv_lib

@@ -41,7 +41,7 @@ uint32_t Generation(){return test::world;}
 void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
 void* WorldOf(void*){return CurrentWorld();}
 }
-namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return test::classes;}}
+namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return test::classes;}void* ClassByName(const wchar_t*){return nullptr;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace coop::net::session_serial {uint32_t Current(){return test::serial;}uint32_t Next(){return ++test::serial;}}
 namespace coop::roster_ledger {void RegisterPerSlotClear(PerSlotClearFn,void*) {}}

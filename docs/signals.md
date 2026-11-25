@@ -60,6 +60,20 @@ first-wins claim table, a client claims optimistically and force-exits if the ho
 another slot holds the device, and a second peer's press is denied with the game's own denied
 sound (`coop/interactables/device_occupancy`). The claim engages only on the screen edge; the
 desk's physical buttons never set it, which is why the input lane below is claim-free.
+While a peer's ping runs, the host keeps the desk claimed for that peer after it leaves, so no
+other aim moves the dots its machine is consuming. A pinger knocked down (a faint, a KO, a death)
+holds it no longer: its ragdoll left the desk as any exit does, and the next player can sit while the
+machine runs on `[?]` (`harness/autotest/autotest_seat_ragdoll.cpp`: the host faints mid-ping, or a client faints or
+is killed, and the desk's hold reads free once the host's reconcile has run twice after it saw the knock-down; before
+the change the next player was force-exited until the ping ended, 13 s; an exit mid-ping keeps the desk to the ping
+run's end, and a faint without a ping frees any device). Its red, `dev.occupancy_pinger_down_off` on the host, disables
+the whole latch, so it proves the combined route and not the client-death record alone. The knock-down is read at the
+host's 250 ms reconcile, which stays a poll because the ping attribution it runs on is itself polled off the desk
+machine's flag; the host's stand-up has no watchable announcement. A client's death rides the pose stream's life edge
+(`coop/player/puppet_events`), recorded by `device_occupancy` and read there `[?]`. A peer dead when its puppet appears
+raises that edge from its first pose once its world is ready; a pose before that is held as unknown. What such a pose
+carries is logged once per slot and not yet read: the sender sends full health until its save resolves, and `[?]` that it
+never sends zero. The edge's truth table is a selftest on pinned poses.
 
 ### The desk: inputs, the simulation, the cursor, the sounds
 
@@ -69,6 +83,36 @@ field-granular delta (`coop/interactables/desk_input_sync`); receivers apply it 
 field's native side-effect path and prime their own poll baseline for that field, so nothing
 echoes. The cooldown charge is detected as an upward jump, and the same jump classifies the
 quick-scan, whose accepted-branch effects the mirrors replay.
+
+The signal view's settings ride the same poll: the two bounds of `remapValue` and `visualizerMode`, graph or
+spectrogram, the red button the spectrogram module unlocks. A bound repaints through the game's `updRemap`, and
+the mode through `setCanvas` and `endCanvas`, the pair the button's own body runs; a joiner adopts all three with
+the desk scalars `[V]` (`harness/autotest/autotest_desk_view.cpp`: set before a join and changed from each peer,
+read the same on both after every step; the verbs by reflection, the buttons' own routes into them `[RD]`, and
+the drawn image not compared).
+
+The refiner's cap label is the cap button's tag (its hover, `Cap level [N]`, or the line asking for the Auto
+Processing module) and the screen's cap text (`[N]`, or `NaN` without the module). The game writes it only from
+the cap press and the desk's `upgraded_pcUpgrades`, so a cap level from the wire, a join adopt, or any module plug
+or unplug, the peer's own included, left it showing an old level. Each of those now runs `upgraded_pcUpgrades`
+(`ue_wrap/desk/console_desk` `RepaintCapLevel`), whose other writes re-derive only what the save's upgrades say;
+it is owed while the screen widget is not assigned, and the desk's own `ReceiveBeginPlay` (the one write of that
+field) runs it `[?]`, read from the Blueprint, not yet run; a repaint that still cannot run stays owed and runs at the
+desk's next watched event (a local cap press, another cap label repaint), all watched by
+`coop/interactables/desk_input_sync`. The label itself `[V]` (`harness/autotest/autotest_cap_label.cpp`: the join,
+then each peer plugging and pulling the module and pressing the cap with and without it, the tag and text read the
+same on both peers after every step, read once when the actor's level and module arrive; the first check that fails
+says `FAIL` and no later step runs). A desk loaded from a save is restored by the gamemode's load (the desk's
+`setData`, which writes the cap level and the modules back and repaints no label), and on a host that runs before the
+lanes install, so no watch of the host can see it; the lane's start apply is the answer, as for every lane: at the
+first tick with the desk resolved after a session starts, and again after the host's last client leaves, `desk_input_sync` repaints the label (`desk_input: the cap label
+repainted at install`). The drill's `saved` arm `[?]` runs the host on the rig's own save with a client joining, and
+both peers' labels must be the host's loaded level and module. The reds: `dev.cap_label_repaint_off` drops every
+repaint, `dev.cap_label_install_repaint_off` (the host, `saved` arm) only the start apply; which of them FAIL is read
+from the rig runs, not stated here `[?]`. The join's adopt has no red of its own: a cap change the host makes after its world is taken reaches the joiner live, and the
+live apply repaints the label, so a joiner without the adopt's repaint would still show the right label there. The
+repaint owed at the desk's BeginPlay (a state that reaches the desk before its screen widget exists) has no red
+either: no run has made it owed `[?]`.
 
 The download simulation runs on the host only (`coop/interactables/desk_sim_sync`): the host
 rolls both random terms and streams the output vector (decoded, the needle, the rate, the
@@ -94,6 +138,24 @@ the fail tone, the cursor and ping loops) are forwarded at the native audio seam
 play and activate calls, as effect events (`coop/interactables/desk_snd_fx`); the two loops are
 state and are re-sent to a joiner from the components' ground truth.
 
+A liquid on the desk shorts it: a thrown liquid's projectile (`grimeProjectile_C`) that strikes it and a sponge
+bucket's pour that overlaps it call the desk's own `shortCircuit`, which sparks for about ten seconds and then puts
+the base on solar power. Both ran on the peer whose liquid it was alone, so the host's power and every other desk
+went on as before. A script-gate watch on the desk's own `shortCircuit` sees every call of it, the liquid
+Blueprints' and ours, and reads the flag `shortCircuiting` before and after the body: a short that began on the
+host goes to every client; a client's call is cancelled at the gate and asked of the host, which checks the sender's
+world, that it is alive, that it stands within the desk lanes' reach (400 uu, which the authority pads with the pose's
+lag and the desk's bounds) and its budget (a burst of two, one per five seconds), and runs its own desk's
+`shortCircuit`. A client that hears the host's short runs its copy's, so a client's desk sparks only by the host's
+word, and a desk already shorting is left alone, as the event's own guard leaves it. A refused ask is answered to its
+sender alone with the host's state (`on` 0, or 1 when the host's desk already shorts), and an ask nothing answers is
+dropped after ten seconds; a state that finds no desk on a client is held until the desk resolves
+(`coop/interactables/desk_short_sync`) `[?]` (`harness/autotest/autotest_desk_short.cpp` walks the client beside the
+desk with the director and shorts from there; the rewritten drill has not run yet). A joiner whose world is
+up while the host's desk shorts is told at its ready edge and its desk shorts from the start, so its power-down comes
+up to ten seconds after the host's `[?]` (the `join` arm of the same drill: the rejoined client must have had its
+desk shorted by the host; its red is `desk_short_replay_off`).
+
 ### Signals, the catch, the dishes
 
 The sky-signal set is rolled on the host only; a client kills its own roller timer, keeps its widget
@@ -105,7 +167,10 @@ two writes to the download machine) is replayed on every client
 (`coop/interactables/signal_catch_sync`); the host's unprimed change edge is the authority, because
 a claim-gated detector lost a live catch to the hold's own release. The dish theater is host-only:
 the client's dish simulation is parked, and the host's dishes slew natively and it streams the poses
-of all twenty-four; the download machine's arm and reset are the host's too: its desk's
+of all twenty-four, and a client plays a slew's sounds from that stream, since its own body does
+not run: the hum from the slew's order (the stream's moving flag rises with the host's, before its
+random wait) and the motor once the dish moves, the clunk and motor off when an axis stops, and at the end the fade and
+the last one-shot (`coop/interactables/dish_sync`); the download machine's arm and reset are the host's too: its desk's
 `formDownload` and its gamemode's `deleteActiveSignal` each reach every client, which runs the same
 verb once, whole, with the host's decoded and polarity written into it, and refuses its own
 (`coop/interactables/download_arm_sync`), so the object renderer's `begin` and the signal camera's
@@ -128,8 +193,9 @@ the only deactivate is stop, so an organic activate is "someone started playback
 stop (`coop/interactables/deck_play_sync`). A client's press on the desk's save family -- SAVE and
 DELETE, the deck's drive button and send, the refiner's upload, start and stop -- is refused on its
 machine and sent to the host, which replays it with the presser's puppet when what the button acts
-on matches its own desk; the glossary entry, profile stat and sounds it makes go back to the presser
-(`coop/interactables/desk_verb_intent`, `coop/interactables/desk_verb_effects`). The refiner has one
+on matches its own desk; the profile stat it makes goes back to the presser, and its hints, glossary entry
+and sounds go back as `RequesterFeedback`
+(`coop/interactables/desk_verb_intent`, `coop/requester_feedback`). The refiner has one
 simulator, the host's machine: a client's own `comp_start`, its join's restore of a saved decode
 included, is refused, and a decode a client's start began is that client's, its completion gloss and
 processed signal sent to it. The host streams the refiner's state while decoding, on its edges and on
@@ -204,6 +270,12 @@ the transferred save, once, so a level bought mid-session diverges silently. The
 around it by streaming the derived frequency and polarity data, but the struct itself, and the
 purchase as an intent the host validates against the shared research points, are designed and
 not built. The ATV's physical modules are on [vehicles.md](vehicles.md).
+A module row is not a level of the panel's arithmetic: a client's press of one is cancelled at the script-body gate
+and goes to the host as an intent, and the host presses its own copy of the row, whose body charges the balance
+(`coop/interactables/upgrade_sync`). The row numbered 27 writes the triangle level at its 400 credits; ten indices
+(12-19, 22 and 23) have no store, as the row's getLevel and setLevel switches select a temporary of the button's own for
+them, so a press charges its price and holds no level, as in single player (the switch read; row 23's 30 credits
+measured). Nine of the ten have a row on the laptop's panel, since no widget carries 12 (the panel's widget tree).
 
 ## Who owns what
 
@@ -213,6 +285,7 @@ not built. The ATV's physical modules are on [vehicles.md](vehicles.md).
 | desk input scalars | the last presser | polled deltas, relayed except to the originator |
 | the download simulation, the needle, the rate | the host | a streamed output vector; the client overwrites its own |
 | the ping | the presser's machine; its verdict the host | 10 Hz visual progress snapshots relayed by the host; observers keep the run flag clear |
+| the desk's short circuit | the host | its edge to every client; a client's short is cancelled and asked of the host |
 | the cursor | whoever moves it | a sixty-hertz stream |
 | the desk's sounds | the presser | effect events at the audio seam |
 | the sky-signal set, the catch, the dishes | the host | roller, the host's event, parked client sim |
@@ -241,7 +314,9 @@ not built. The ATV's physical modules are on [vehicles.md](vehicles.md).
 | `DishArm`, `DishSnapshot`, `DishCalib`, `DishPose` (stream) | the host; the host to a joiner; the host, to all, to an intent's author and to a joiner; the host | the download's arm and reset, with the host's decoded and polarity; every dish's pose for a joiner; the changed dishes' precision, the live dishes an intent named (to all once the host performed any of it, to its author alone when it performed none), and every dish's for a joiner; dish poses |
 | `DishCalibIntent` | a client to the host | the dishes whose precision the client's player just set with the toolgun's calibration tool or the uncalibrator |
 | `SavedSignalAppend`, `SavedSignalDelete`, `MeadowAppend`, `MeadowDelete`, `MeadowOrder` | any peer, relayed; order from the host | list rows by content hash; the database's order |
-| `DeskVerb` | a client to the host; the host to that client | a desk press with what its button acts on as the client saw it; the verdict, the gloss and sounds the press makes, and the gloss and profile stat of a decode its start began |
+| `DeskVerb` | a client to the host; the host to that client | a desk press with what its button acts on as the client saw it; the verdict, and the profile stat of a decode its start began |
+| `RequesterFeedback` | the host to the requester | the hint, glossary entry or 2D sound a verb the host ran for that client showed on the host, for its own machine to show (the desk's press today) |
+| `KerfurCommandAnswer` | the host to the requester | the host's refusal of a kerfur command, with the reason as an enum, or its wait for a body of the sender; the client words it itself |
 | `PlayDeckEvent`, `CompState`, `CompData` | the presser; the host | playback edges; the refiner's state, its completions and its loaded signal |
 | `DriveSlotState` | any peer to the host; the host to every other client, a line it accepted; the host to the source, answering a line it refused | a slot's occupant, inserted or ejected |
 | `RackState`, `PhysModsState`, `FloppyBoxState` | any peer to the host; the host canonical | rack operations and arrays; the module set; the crate stack |
@@ -263,7 +338,7 @@ row that differs from its class default (a row that arrives before its drive wai
 the join), the rack, the module set, the reel slots, the laptop's power, its slot (before its file buffer) and the crate
 arrive as canonical rows from the host, and so do the refiner's state and loaded signal, while the
 joiner's own restore of a saved decode is refused; the desk's two loops are re-sent from component
-truth.
+truth; a short circuit under way on the host's desk is sent again, and the joiner's desk shorts from the start.
 A joiner never sees a running ping's stage visuals, only its outcome. A SAT console typist that leaves
 mid-command while another client keeps the session leaves the command running on the host and, back,
 is bound to its terminal and its busy state as its world is ready; the last client's leave ends the
@@ -303,3 +378,4 @@ arrive with the save and never again.
 | the engine wrappers | `ue_wrap/desk/` (the dish, the console, the coordinate panel, the refiner pane, the drive chain, the tape caddy, the modules, the saved signals, the database, the audio, the SAT console) |
 | the join seeds | `coop/session/join_seed` |
 | tests and instruments | `coop/dev/drive_selftest`, `coop/dev/drive_drill`, `coop/dev/download_drill`, `coop/dev/desk_diag`, `coop/dev/sat_console_drill`, `coop/dev/calib_drill`, `coop/dev/desk_ping_drill`, `harness/autotest/autotest_seeddrill.cpp`, `harness/autotest/autotest_driveslot.cpp` (a drive taken out on one peer is out and carried on the other) |
+| the desk's short circuit | `coop/interactables/desk_short_sync`, `ue_wrap/desk/desk_short` |

@@ -18,6 +18,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -32,7 +33,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2220;  // optional EmoteWheel owner state; retained fork IDs
+inline constexpr uint16_t kProtocolVersion = 2223;  // merged upstream wire layouts; disjoint reliable-kind IDs
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -125,6 +126,10 @@ enum class MsgType : uint8_t {
     // does not apply. The host relays it to every other ready slot. VoiceFramePayload.
     VoiceFrame = 64,
 };
+
+// The value space of ReliableKind that a per-kind table sizes for: every kind is below it (reliablekind_gate holds
+// it), and a received kind at or past it is counted nowhere.
+inline constexpr size_t kReliableKindSpace = 1024;
 
 // Payload kinds carried inside a Reliable message. A retired value is never reused: 16, 17, 21,
 // 22, 24, 26, 29, 71 and 138 stay unassigned; 32 and 128 are reserved.
@@ -412,8 +417,9 @@ enum class ReliableKind : uint16_t {
     PlayerInventoryBlob = 69,
 
     // Client to host: a kerfur radial-menu verb for this kerfur. The host runs it; Follow follows
-    // the requesting player's puppet, which the Blueprint cannot do for a remote player.
-    // KerfurCommandPayload.
+    // the requesting player's puppet, which the Blueprint cannot do for a remote player. A chunked blob
+    // (coop::kerfur_command_wire): a KerfurCommandPayload head, and for a get_reports with a floppy disc in the
+    // client's hand, that disc's record. Never relayed.
     KerfurCommand = 70,
 
     // Retired optimistic ATV release; kept reserved. The host now judges AtvSeat/AtvTakeover.
@@ -433,6 +439,7 @@ enum class ReliableKind : uint16_t {
     KerfurConvert = 74,
 
     // Host to all: a cosmetic emitter cue (a starfall) at this position; clients spawn the emitter.
+    // Id 102 is a vent crawl's start (coop/world/vent_crawler_sync).
     // EventCuePayload.
     EventCue = 75,
 
@@ -678,6 +685,18 @@ enum class ReliableKind : uint16_t {
     // relayed: a client's record reaches other peers only after the host has taken it.
     PropSaveDataIntent = 131,
 
+    // A prop's nametag, named by the prop's key (coop/props/prop_nametag). A chunked blob on the Default lane, so it
+    // is ordered with the hand state and the spawn it follows. op 1 (CLIENT->HOST): this client's player used a nametag
+    // item on the prop, which the client refused there; the request carries the tag the item reads. The host judges it
+    // (a prop of that key here within the sender's reach, a nametag in the sender's hand, the tag well formed, the sender
+    // within its budget), applies the tag and publishes it. op 2 (HOST->ALL): the prop of that key carries this tag now,
+    // and `author` names the slot whose item it was: every client applies it, and the author's held item is spent. op 3
+    // (HOST->the requester): its request was refused, with a reason, the item stays, and the client may use it again; a
+    // client asks once until op 2 for it or op 3 arrives. Never relayed. Late join: a joiner's save carries the tags that
+    // stood at its cut, and its connect replay sends it, alone, an op 2 for each prop whose tag this session published,
+    // ahead of the snapshot's props: a copy the save loaded takes it, a prop the snapshot births waits for it by key.
+    PropNametag = 269,
+
     // A disc-holding device's slot, addressed by the device's index in its own kind's list. Host
     // to all with the canonical set; a peer to the host with the outcome of a slot its own game
     // changed, which the host validates and answers with that canonical. Chunked blob; on
@@ -711,6 +730,17 @@ enum class ReliableKind : uint16_t {
     // lane so the answer cannot overtake the commit.
     HookAnchored = 136,
 
+    // An anchored hook taken off the world, named by its save key (coop/items/hook_retrieve). op 0
+    // (CLIENT->HOST): this client's player used its copy of the hook, the game's own pickup, which the
+    // client refused there. The host judges it (a hook of that key standing here, an end within the
+    // sender's reach), destroys its hook without a drop and answers. op 1 (HOST->ALL): the hook of that
+    // key is gone on the host -- a client's pickup it granted, or the host player's own -- and every
+    // client takes its copy away; `taker`, when it names a client, replays the pickup on that client's
+    // copy, so the item lands in that player's inventory and nowhere else. A refused op 0 is answered
+    // with op 2 (HOST->that client): the copy stays and the player may use it again; a client asks once
+    // per hook until op 1 or op 2 for it arrives. Never relayed; not pre-world. Late join: the save carries
+    // the hooks that stand; an op 1 is not sent to a slot before its world-ready, so the connect replay
+    // sends that slot, alone, an op 1 for each hook its save held that the host has taken since.
     // Host to all: the driven prop at eid has come to rest, or a hand took it -- its final pose and
     // velocity, and the claim generation its stream carried. A receiver hands the prop its physics
     // back and drops every later-arriving pose of that generation. PropDriveEndPayload.
@@ -794,15 +824,17 @@ enum class ReliableKind : uint16_t {
     // UpgradeLevelsPayload.
     UpgradeLevels = 146,
 
-    // Client to host: buy or sell one level of the laptop panel row this index names. A client's
-    // press was entirely client-local -- it debited the CLIENT's own balance and raised the
-    // CLIENT's own level, so the group paid nothing and the host's next balance broadcast handed
-    // the money back, which made a client's upgrades free for everyone but the host. The client
-    // refuses its own body at the script-body gate and asks here instead, so it never debits
-    // itself and a refusal needs no correction. Trust: the index must be one of the fifteen LEVEL
-    // rows, and the host re-derives the price and the bounds from its own table and its own level
-    // -- nothing about the purchase is taken from the sender. A sender's presses run no faster
-    // than a bounded rate from a bounded queue. The host charges and writes, then republishes
+    // Client to host: buy or sell one row of the laptop panel. A client's press was entirely
+    // client-local -- it debited the CLIENT's own balance and raised the CLIENT's own level, so the
+    // group paid nothing and the host's next balance broadcast handed the money back, which made a
+    // client's upgrades free for everyone but the host. The client refuses its own body at the
+    // script-body gate and asks here instead, so it never debits itself. Trust, by `dir`: 0 and 1
+    // name one of the fifteen LEVEL rows, and the host re-derives the price and the bounds from its
+    // own table and its own level; 2 and 3 name a MODULE row, and the host presses its own row of
+    // that index, so the game's body decides the price and the bounds, and a module row the host's
+    // panel does not own is refused with the host's balance and levels sent back to the sender.
+    // Nothing about a purchase is taken from the sender. A sender's presses run no faster than a
+    // bounded rate from a bounded queue. The host charges and writes, then republishes
     // UpgradeLevels; the money moves on the balance lane that already polls it.
     // Late join: nothing to replay, since a purchase the host has not run changed nothing.
     // UpgradeIntentPayload.
@@ -907,8 +939,8 @@ enum class ReliableKind : uint16_t {
     // refiner's upload, start and stop. Client to host: a press the client's gate refused, with what the
     // button acts on as the client saw it; the host finds each on its own desk, within the sender's reach,
     // and replays the press with the sender's puppet as the player, its writes reaching every peer on their
-    // own lanes. Host to that client alone: the verdict; the glossary entry and the sounds the press makes,
-    // for the presser's machine to make; the glossary entry and the profile stat of a decode its start began.
+    // own lanes. Host to that client alone: the verdict; the profile stat of a decode its start began (the
+    // press's own glossary entry and sounds ride RequesterFeedback).
     // Never relayed; a sender's presses run at a bounded rate from a bounded queue. Late join: nothing to
     // replay. DeskVerbPayload.
     DeskVerb = 160,
@@ -1112,8 +1144,46 @@ enum class ReliableKind : uint16_t {
     // Owner -> host validation -> world-ready peers, no blind relay. Current
     // animation variant/phase and music clocks; absent assets are optional.
     EmoteState = 267,
+    // Any peer, relayed by the host: a toolgun tool changed a keyed prop's static, frozen or sleep flags.
+    // Receivers apply the final live state unless their local player is holding the prop.
+    PropToolFlags = 268,
+    // Retained upstream lanes use fresh IDs where upstream numbers collide with fork kinds.
+    AmbientTreeState = 270,
+    UfoEvent = 271,
+    WorldSaved = 272,
+    SpillPour = 273,
+    DeskShortRequest = 274,
+    CargoLiftState = 275,
+    WalkerState = 276,
+    RoombaState = 277,
+    PlantState = 278,
+    KerfurCommandAnswer = 279,
+    WoodchipperState = 280,
+    CrematorIntent = 281,
+    CrematorState = 282,
+    RoombaIntent = 283,
+    AmbientFixtureState = 284,
+    WoodchipperIntent = 285,
+    CordLinkState = 286,
+    SpillPourIntent = 287,
+    VentCrawlState = 288,
+    SusHoleIntent = 289,
+    PropPropsState = 290,
+    CargoLiftIntent = 292,
+    DeskShortState = 293,
+    PropPropsIntent = 294,
+    OrbEvent = 295,
+    SpillState = 296,
+    SpillIntent = 297,
+    AtvRequest = 298,
+    PlantEdit = 299,
+    RequesterFeedback = 300,
+    AtvHostState = 301,
+    CrematorHit = 302,
+    PropHoldRefused = 303,
+    WalkerSeen = 305,
 };
-inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::EmoteState) + 1;
+inline constexpr size_t kReliableKindCount = static_cast<size_t>(ReliableKind::WalkerSeen) + 1;
 
 #pragma pack(push, 1)
 
@@ -1311,7 +1381,9 @@ struct PosePacket {
 };
 static_assert(sizeof(PosePacket) == 52, "PosePacket must be 52 bytes");
 
-// A reliable message: the standard header (type Reliable) + ReliableHeader + the payload.
+// A reliable message: the standard header (type Reliable) + ReliableHeader + the payload. `kind` took the first of
+// the three pad bytes that followed it when it was one byte; the builder zeroes the header, so a kind below 256 is
+// the same bytes in either layout.
 struct ReliableHeader {
     uint16_t kind;     // ReliableKind
     uint8_t  _pad[2];
@@ -1319,6 +1391,8 @@ struct ReliableHeader {
     uint16_t _pad2;
 };
 static_assert(sizeof(ReliableHeader) == 8, "ReliableHeader must be 8 bytes");
+static_assert(offsetof(ReliableHeader, kind) == 0 && offsetof(ReliableHeader, payloadLen) == 4,
+              "ReliableHeader's kind and length stay where the one-byte kind had them");
 
 // A short string carrier: a prop key, a portable identity, a quantized position. len 0 means not
 // set; bytes beyond len are zero on the wire so equality compares work.
@@ -1570,7 +1644,7 @@ static_assert(sizeof(PropPoseSnapshot) == 64, "PropPoseSnapshot must be 64 bytes
 // syncer's clock when the row was sent: ms since that syncer's row opened (a thrown prop's client syncer counts from
 // its throw, a host row from its opening). The host relays a client row's value unchanged and writes its own on a host
 // row, so one field has one meaning: the syncer's clock. MTA's syncer packet carries velocity under a time context
-// too, but the context is an epoch, not a clock (CUnoccupiedVehicleSync.cpp:263-340, CElement.cpp:1281-1305). The held
+// too, but the context is an epoch, not a clock (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:263-340, reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:1281-1305). The held
 // PropPose stream is not a drive row and stays 64 B.
 struct PropDriveRow : PropPoseSnapshot {
     float    vel[3];
@@ -1779,9 +1853,9 @@ static_assert(sizeof(VoiceStatePayload) == 4, "VoiceStatePayload must be 4 bytes
 
 // A wall-attach component's stick or unstick (PropStickState): the prop by key (eid as fallback)
 // and which field the Blueprint set (bit 0 frozen, bit 1 static), or 0 for an unstick. A stick
-// carries the commit-time transform the receiver pre-poses to before replaying the component's own
-// forceStick; an unstick carries the prop's transform and velocity once the unsticking peer's body
-// freed it, which a pry's kick is part of, and the receiver lets its copy go from there.
+// carries the commit-time transform and exact support actor/component; the receiver attaches to
+// that component rather than repeating a local trace. An unstick carries the prop's transform and
+// velocity once the unsticking peer's body freed it, which a pry's kick is part of.
 struct PropStickStatePayload {
     WireKey  key;
     uint32_t elementId;
@@ -1792,8 +1866,27 @@ struct PropStickStatePayload {
     float rotPitch, rotYaw, rotRoll;
     float linVelX, linVelY, linVelZ;  // cm/s, an unstick's; zero on a stick
     float angVelX, angVelY, angVelZ;  // deg/s, an unstick's; zero on a stick
+    struct {
+        uint32_t elementId;                 // support actor element id, or 0 for a named world actor
+        WireClassName className;            // support actor class
+        WireKey actorName;                  // required when elementId is 0
+        WireKey componentName;              // exact component on the support actor
+    } support;
 };
-static_assert(sizeof(PropStickStatePayload) == 88, "PropStickStatePayload must be 88 bytes");
+static_assert(sizeof(PropStickStatePayload) == 220, "PropStickStatePayload must be 220 bytes");
+static_assert(sizeof(PropStickStatePayload) <= 256 - 20 - 8,
+              "PropStickStatePayload must fit in one reliable datagram");
+
+// A toolgun tool changed a keyed prop's live physics flags. The kLiveState bit distinguishes these
+// values from birth defaults; only static, frozen and sleep are carried.
+struct PropToolFlagsPayload {
+    WireKey key;
+    uint8_t physFlags;
+    uint8_t _pad[3];
+};
+static_assert(sizeof(PropToolFlagsPayload) == 36, "PropToolFlagsPayload must be 36 bytes");
+static_assert(sizeof(PropToolFlagsPayload) <= 256 - 20 - 8,
+              "PropToolFlagsPayload must fit in one reliable datagram");
 
 // A kerfur conversion request (KerfurConvertRequest): the element id of the form whose verb the
 // client's gate refused (a character when toProp is 1, a prop when 0). The host resolves it,
@@ -1822,15 +1915,50 @@ static_assert(sizeof(KerfurConvertBroadcastPayload) == 104, "KerfurConvertBroadc
 static_assert(sizeof(KerfurConvertBroadcastPayload) <= 256 - 20 - 8,
               "KerfurConvertBroadcastPayload must fit in one reliable datagram");
 
-// A kerfur menu command (KerfurCommand), client to host. The host takes the requester from the
-// sender slot; a self-declared slot would be spoofable.
+// A kerfur menu command (KerfurCommand), client to host: the head of a chunked blob (coop::kerfur_command_wire). The
+// host takes the requester from the sender slot; a self-declared slot would be spoofable. `requestId` is the client's
+// own count of its commands, from 1, which the host echoes in its answer (KerfurCommandAnswer) so the client knows
+// which command it answers; it is also the blob's sequence. `flags` bit 0 says a record follows the head, `[u16 n][n
+// bytes]` in coop/props/prop_record_wire's form: the held disc of a get_reports, and of no other command.
 struct KerfurCommandPayload {
     uint32_t elementId;  // host Npc eid of the target kerfur
+    uint32_t requestId;  // sender's request number and blob sequence
     uint8_t  command;    // follow, idle, patrol, fix_servers, get_reports, fix_transformers,
                         // take_object, pat, equipment
-    uint8_t  _pad[3];    // zeroed
+    uint8_t  flags;      // bit 0: a held-disc record follows
+    uint8_t  _pad[2];    // zeroed
 };
-static_assert(sizeof(KerfurCommandPayload) == 8, "KerfurCommandPayload must be 8 bytes");
+static_assert(sizeof(KerfurCommandPayload) == 12, "KerfurCommandPayload must be 12 bytes");
+
+// KerfurCommandAnswer's results and the reasons of a refusal (coop/creatures/kerfur_command_answer).
+namespace kerfur_command_answer {
+inline constexpr uint8_t kResultRefused = 0;  // the host judged the command and refused it: `reason` says why
+inline constexpr uint8_t kResultWaits = 1;    // the host has no body for the sender yet, or its seams are settling
+inline constexpr uint8_t kResultConsumedHeld = 2;  // get_reports took the disc the command carried: the client destroys its own
+
+// Why the host refused a command it understood. The client words each itself; malformed or flooding requests are
+// dropped and counted by the host and never answered, so they have no reason here.
+enum class KerfurRefusal : uint8_t {
+    Busy = 0,         // the kerfur is on a job (states 3 to 5), or the host cannot serve it for the sender
+    Stale = 1,        // the element is gone or not live
+    KillMode = 2,     // the kerfur is murderous
+    QueueFull = 3,    // the sender's queue is full: said once a streak
+    NotKerfur = 4,    // the element is not an Omega
+    Unavailable = 5,  // the host cannot run it: its seams are refused or the verb did not run; or an untracked Omega
+    TooFar = 6,       // the sender's body is out of reach of the kerfur
+};
+inline constexpr uint8_t kRefusalMax = static_cast<uint8_t>(KerfurRefusal::TooFar);
+}  // namespace kerfur_command_answer
+
+// The host's answer to one KerfurCommand (KerfurCommandAnswer): `requestId` echoes the command's, `result` is
+// kerfur_command_answer::kResult*, `reason` a KerfurRefusal for a refusal and 0 otherwise.
+struct KerfurCommandAnswerPayload {
+    uint32_t requestId;
+    uint8_t  result;
+    uint8_t  reason;
+    uint8_t  _pad[2];  // zeroed
+};
+static_assert(sizeof(KerfurCommandAnswerPayload) == 8, "KerfurCommandAnswerPayload must be 8 bytes");
 
 // A Kerfus's live state (KerfusState), host to all: the plain kerfur by its host-range prop eid, the
 // two flags a client shows and its energy (unclamped above 100 while it charges, as the game keeps it).
@@ -1860,9 +1988,8 @@ static_assert(sizeof(KerfusIntentPayload) == 8, "KerfusIntentPayload must be 8 b
 namespace desk_verb {
 inline constexpr uint8_t kOpPress = 0;    // client to host: a press
 inline constexpr uint8_t kOpVerdict = 1;  // host to the presser: what became of it
-inline constexpr uint8_t kOpGloss = 2;    // host to the presser: lib_C::addGloss(text, level) for its own profile
-inline constexpr uint8_t kOpSound = 3;    // host to the presser: PlaySound2D of the sound SoundName names
 inline constexpr uint8_t kOpStat = 4;     // host to the presser: add `level` to its own profile's stat named `text`
+                                          // (ops 2 and 3 were the press's gloss and sound: now RequesterFeedback)
 inline constexpr uint8_t kSave = 0, kDelete = 1, kDeckDrive = 2, kDeckSend = 3, kUpload = 4;
 inline constexpr uint8_t kCompStart = 5, kCompStop = 6, kButtons = 7;  // the refiner's start and stop
 inline constexpr uint8_t kRan = 0;          // the host ran the press
@@ -1879,25 +2006,50 @@ struct DeskVerbPayload {
     uint8_t  op;             // desk_verb::kOp*
     uint8_t  button;         // desk_verb::kSave..kCompStop
     uint8_t  verdict;        // op 1: desk_verb::kRan..kUnavailable
-    uint8_t  textLen;        // ops 2-4: chars in text
-    uint32_t seq;            // op 0: the presser's press count; echoed by ops 1-4
+    uint8_t  textLen;        // op 4: chars in text
+    uint32_t seq;            // op 0: the presser's press count; echoed by ops 1 and 4
     uint32_t driveEid;       // op 0, deck drive, upload and refiner start: the slot's drive, 0 for none
-    int32_t  level;          // op 2: addGloss's level; op 4: the stat's delta
+    int32_t  level;          // op 4: the stat's delta
     uint64_t driveRow;       // op 0, deck drive and upload: the drive's row hash
     uint64_t selectedRow;    // op 0, deck drive and send: the deck's selected row hash
     uint64_t compRow;        // op 0, upload: the refiner's row hash; start and stop: its decode's (the row less its
                              //   level, id and isCopy, which a completion rewrites)
     float    signal[4];      // op 0, save and delete: the caught signal's x, y, z and frequency
-    float    volume;         // op 3
-    float    pitch;          // op 3
-    float    startTime;      // op 3
     uint8_t  signalArmed;    // op 0, save and delete: a signal is caught (its object name is not None)
-    uint8_t  uiSound;        // op 3: bIsUISound
-    uint8_t  _pad[2];        // zeroed
-    char     text[desk_verb::kTextCap];  // ops 2-4: the gloss name, the sound's SoundName or the stat's name; ASCII
+    uint8_t  _pad[3];        // zeroed
+    char     text[desk_verb::kTextCap];  // op 4: the stat's name; ASCII
 };
-static_assert(sizeof(DeskVerbPayload) == 192, "DeskVerbPayload must be 192 bytes");
+static_assert(sizeof(DeskVerbPayload) == 180, "DeskVerbPayload must be 180 bytes");
 static_assert(sizeof(DeskVerbPayload) <= 228, "DeskVerbPayload must fit the inline reliable buffer");
+
+// RequesterFeedback's ops (coop/requester_feedback).
+namespace requester_feedback {
+inline constexpr uint8_t kOpHint = 0;     // lib_C::addHint(text, hintType)
+inline constexpr uint8_t kOpGloss = 1;    // lib_C::addGloss(text, glossLevel)
+inline constexpr uint8_t kOpSound2D = 2;  // PlaySound2D of the sound whose full name is text
+inline constexpr size_t  kTextCap = 200;
+inline constexpr size_t  kHintTextMax = 160;  // a hint's UTF-8 bytes, cut at a code-point boundary
+inline constexpr uint8_t kHintTypeMax = 2;    // the largest enum_notifyType the game's own callers pass
+}  // namespace requester_feedback
+
+// What a verb the host ran for a client showed on the host, for that client's machine to show (RequesterFeedback).
+// `seq` echoes the request that caused it (0 when the verb has none); `text` is UTF-8 of textLen bytes: the hint's
+// text, the gloss's name or the sound's full name (`Class /Pkg.Leaf`).
+struct RequesterFeedbackPayload {
+    uint32_t seq;
+    uint8_t  op;         // requester_feedback::kOp*
+    uint8_t  hintType;   // op 0: addHint's type (enum_notifyType)
+    uint8_t  glossLevel; // op 1: addGloss's level
+    uint8_t  textLen;
+    float    volume;     // op 2
+    float    pitch;      // op 2
+    float    startTime;  // op 2
+    uint8_t  uiSound;    // op 2: bIsUISound
+    uint8_t  _pad[3];    // zeroed
+    char     text[requester_feedback::kTextCap];
+};
+static_assert(sizeof(RequesterFeedbackPayload) == 224, "RequesterFeedbackPayload must be 224 bytes");
+static_assert(sizeof(RequesterFeedbackPayload) <= 256 - 20 - 8, "RequesterFeedbackPayload must fit one reliable datagram");
 
 // A release (PropRelease): the prop by key, and for a keyless trash entity the eid and its
 // generation; its world transform and its inherited linear and angular velocity at the release edge.
@@ -2019,6 +2171,186 @@ static_assert(sizeof(PropSyncAnswerPayload) == 12, "PropSyncAnswerPayload must b
 static_assert(sizeof(PropSyncAnswerPayload) <= 256 - 20 - 8,
               "PropSyncAnswerPayload must fit in one reliable datagram");
 
+// What became of the host's save (WorldSaved). Wire-visible: the values are stable; 0 is never sent.
+enum class WorldSaveOutcome : uint8_t {
+    Saved = 1,          // the world was gathered and written
+    EventRunning = 2,   // an event was running: the game refused the save, or wrote the slot without the world
+    Unknown = 3,        // the slot was written, but whether an event was running could not be read
+};
+
+// The host saved the world or tried to (WorldSaved): the host's count of its save attempts this session, for the
+// logs, and what became of this one.
+struct WorldSavedPayload {
+    uint32_t saveNumber;   // 4 -- 1 for the session's first attempt
+    uint8_t  outcome;      // 1 -- a WorldSaveOutcome
+    uint8_t  _pad[3];      // 3 -- zero
+};
+static_assert(sizeof(WorldSavedPayload) == 8, "WorldSavedPayload must be 8 bytes");
+static_assert(sizeof(WorldSavedPayload) <= 256 - 20 - 8,
+              "WorldSavedPayload must fit in one reliable datagram");
+// The host's refusal of a hold (PropHoldRefused): the prop by key, the refused hold by its holder's slot and the
+// generation that holder minted at the grab, and the slot whose hold keeps the prop.
+struct PropHoldRefusedPayload {
+    WireKey  key;         // 32 -- the prop's Key, as the refused hold streamed it
+    uint16_t holdGen;     // 2  -- the refused hold; never 0
+    uint8_t  slot;        // 1  -- the refused holder, 1..kMaxPeers-1
+    uint8_t  holder;      // 1  -- the slot whose hold keeps the prop, 0..kMaxPeers-1
+};
+static_assert(sizeof(PropHoldRefusedPayload) == 36, "PropHoldRefusedPayload must be 36 bytes");
+static_assert(sizeof(PropHoldRefusedPayload) <= 256 - 20 - 8,
+              "PropHoldRefusedPayload must fit in one reliable datagram");
+// The food in the sender's hand (FoodHand).
+struct FoodHandPayload {
+    float   temperature;  // 4  -- kelvin
+    float   ripeness;     // 4
+    int32_t uses;         // 4
+};
+static_assert(sizeof(FoodHandPayload) == 12, "FoodHandPayload must be 12 bytes");
+namespace plant_edit {
+inline constexpr uint8_t kGrow = 1, kFertilizer = 2, kWater = 4, kFruitGrow = 8, kDryness = 16, kAmount = 32, kRow = 64;
+}  // namespace plant_edit
+
+// A plant (PlantState, PlantEdit).
+struct PlantStatePayload {
+    WireKey       key;               // 32 -- its save key
+    WireClassName cls;               // 64
+    WireKey       row;               // 32 -- its list_farmPlants row
+    WireKey       attachParent;      // 32 -- the pot it stands in, or empty
+    float         x, y, z;           // 12
+    float         pitch, yaw, roll;  // 12
+    float         grow;              // 4
+    float         fertilizer;        // 4
+    float         water;             // 4
+    float         fruitGrow;         // 4
+    float         dryness;           // 4 -- below zero: dead
+    int32_t       amount;            // 4 -- a ripe bush's berries
+    uint8_t       alive;             // 1 -- 0: it ended, and only `key` counts
+    uint8_t       hideDirt;          // 1
+    uint8_t       editMask;          // 1 -- PlantEdit: which values this player changed (plant_edit)
+    uint8_t       _pad;              // 1 -- zero
+};
+static_assert(sizeof(PlantStatePayload) == 212, "PlantStatePayload must be 212 bytes");
+static_assert(sizeof(PlantStatePayload) <= 256 - 20 - 8,
+              "PlantStatePayload must fit one reliable datagram");
+
+// A walking tree's size and landing (AmbientTreeState).
+struct AmbientTreeStatePayload {
+    uint32_t treeEid;  // 4 -- the tree's NPC element
+    float    scale;    // 4 -- its mesh's
+    uint8_t  landed;   // 1
+    uint8_t  _pad[3];  // 3 -- zero
+};
+static_assert(sizeof(AmbientTreeStatePayload) == 12, "AmbientTreeStatePayload must be 12 bytes");
+
+namespace ambient_fixture {
+inline constexpr uint8_t kHole = 0;
+inline constexpr uint8_t kBranch = 1;
+// Not a fixture: the host has sent a joiner every one it holds, so a loaded branch nothing named is one the host lacks.
+inline constexpr uint8_t kCensusEnd = 2;
+}  // namespace ambient_fixture
+
+// A dirt hole or a beehive branch (AmbientFixtureState), or the end of a joiner's census (family kCensusEnd, the rest zero).
+struct AmbientFixtureStatePayload {
+    uint32_t id;                // 4 -- the host's number for it
+    float    x, y, z;           // 12
+    float    pitch, yaw, roll;  // 12
+    uint8_t  family;            // 1 -- ambient_fixture
+    uint8_t  alive;             // 1 -- 0: the branch ended (a hole's end never crosses)
+    uint8_t  _pad[2];           // 2 -- zero
+    WireKey  birthKey;          // 32 -- a branch: the key its nest had when the host first read it; a hole: len 0
+    uint8_t  hasNest;           // 1 -- a branch: the host's branch holds its nest now (read at every send)
+    uint8_t  _pad2[3];          // 3 -- zero
+};
+static_assert(sizeof(AmbientFixtureStatePayload) == 68, "AmbientFixtureStatePayload must be 68 bytes");
+static_assert(sizeof(AmbientFixtureStatePayload) <= 256 - 20 - 8,
+              "AmbientFixtureStatePayload must fit in one reliable datagram");
+
+// A sus hole the client's own spawner rolled (SusHoleIntent): where its hole stood. The host places the hole by its own
+// trace at that point, so no rotation crosses.
+struct SusHoleIntentPayload {
+    float x, y, z;  // 12
+};
+static_assert(sizeof(SusHoleIntentPayload) == 12, "SusHoleIntentPayload must be 12 bytes");
+static_assert(sizeof(SusHoleIntentPayload) <= 256 - 20 - 8, "SusHoleIntentPayload must fit in one reliable datagram");
+
+// A robot cleaner's switch (RoombaState, RoombaIntent): the cleaner's prop element id and its `active`.
+struct RoombaPayload {
+    uint32_t eid;     // the cleaner's prop element id
+    uint8_t  active;  // 1 on, 0 off: the state after the press (a state) or the one asked for (an intent)
+    uint8_t  pad[3];  // zero
+};
+static_assert(sizeof(RoombaPayload) == 8, "RoombaPayload must be 8 bytes");
+
+// A client's press of the toolgun's prop-properties tool (PropPropsIntent): the element it hit, the camera point it
+// looked from and the point its shot struck in world centimetres, and the tool's own four values as the spawn menu set
+// them. The host judges the first three; none is trusted.
+struct PropPropsIntentPayload {
+    uint32_t eid;          // 4  -- the hit actor's Element id on the sender
+    float    origin[3];    // 12 -- the sender's camera location at the press
+    float    hit[3];       // 12 -- the impact point of the shot
+    uint8_t  isStatic;     // 1  -- the tool's isStatic
+    uint8_t  isFrozen;     // 1  -- the tool's isFrozen
+    uint8_t  isActive;     // 1  -- the tool's isActive
+    uint8_t  isSleeping;   // 1  -- the tool's isSleeping
+};
+static_assert(sizeof(PropPropsIntentPayload) == 32, "PropPropsIntentPayload must be 32 bytes");
+static_assert(sizeof(PropPropsIntentPayload) <= 256 - 20 - 8, "PropPropsIntentPayload must fit in one reliable datagram");
+
+// Why the host sent a PropPropsState. Applied is the broadcast of a prop's flags after the tool set them; the rest are
+// refusals to the sender alone. NotReady and Gone are not shown to the player; the others are.
+enum class PropPropsReason : uint8_t {
+    Applied     = 0,  // the host applied the press and read the flags back
+    NotReady    = 1,  // the sender, its body or the host's classes were not ready; nothing was judged
+    Gone        = 2,  // the element is no longer live
+    Unsupported = 3,  // the element is not a prop the tool changes in multiplayer
+    NoRight     = 4,  // the host withholds the tool from this player
+    NoToolgun   = 5,  // the sender's hand holds no toolgun
+    Held        = 6,  // someone is holding or dragging the prop
+    OutOfSight  = 7,  // the sender's shot does not stand: too far from its body, off the prop, or blocked
+    Busy        = 8,  // the host could not judge the sight or run the setter just now
+    Count       = 9,
+};
+
+// A prop's flags on the host (PropPropsState): the element, its static, frozen and sleep, the active value the host's
+// setter ran with (a prop keeps no such field, so it is the applied value), and why it was sent.
+struct PropPropsStatePayload {
+    uint32_t eid;          // 4 -- the prop's Element id on the host
+    uint8_t  isStatic;     // 1
+    uint8_t  isFrozen;     // 1
+    uint8_t  isSleeping;   // 1
+    uint8_t  isActive;     // 1 -- the active the host's setter ran with; 0 on a refusal
+    uint8_t  reason;       // 1 -- PropPropsReason
+};
+static_assert(sizeof(PropPropsStatePayload) == 9, "PropPropsStatePayload must be 9 bytes");
+
+// Whether a client's player has the walking mannequin it is hunted by on screen (WalkerSeen).
+struct WalkerSeenPayload {
+    WireKey key;       // 32 -- the walker's prop key
+    uint8_t seen;      // 1  -- 0 or 1
+    uint8_t _pad[3];   // 3  -- zero
+};
+static_assert(sizeof(WalkerSeenPayload) == 36, "WalkerSeenPayload must be 36 bytes");
+static_assert(sizeof(WalkerSeenPayload) <= 256 - 20 - 8, "WalkerSeenPayload must fit in one reliable datagram");
+
+// A walking mannequin of the host's (WalkerState): the walker's own `looking` (it holds still while it is true, the pose its
+// copy takes) and the slot it hunts (0 the host, 0xFF none). The walker's anger does not cross: a copy's own fire is the fire
+// lane's, and an angry walker's `looking` is false by the Blueprint's own formula and crosses as such.
+struct WalkerStatePayload {
+    WireKey key;       // 32 -- the walker's prop key
+    uint8_t looking;   // 1  -- 0 or 1
+    uint8_t target;    // 1  -- a slot below kMaxPeers, or 0xFF
+    uint8_t _pad[2];   // 2  -- zero
+};
+static_assert(sizeof(WalkerStatePayload) == 36, "WalkerStatePayload must be 36 bytes");
+static_assert(sizeof(WalkerStatePayload) <= 256 - 20 - 8, "WalkerStatePayload must fit in one reliable datagram");
+
+// The base computer's short circuit (DeskShortState), or a client's (DeskShortRequest).
+struct DeskShortPayload {
+    uint8_t on;        // 1 -- 0 or 1: the host's desk shorts (a request is always 1)
+    uint8_t _pad[3];   // 3 -- zero
+};
+static_assert(sizeof(DeskShortPayload) == 4, "DeskShortPayload must be 4 bytes");
+
 // One message of the drill filler (DevLoadFiller): its place in the run and the run's length; the rest is fill.
 struct DevLoadFillerPayload {
     uint32_t seq;         // 4 -- 0..total-1
@@ -2110,7 +2442,7 @@ inline constexpr uint8_t kRemoveWOrespawn = 0x20;  // Aprop_C.removeWOrespawn
 // own init() derives physics and collision from them, a moment no later message can reach. A
 // sender that spawns something new may state them as a default. kLiveState says they were read off
 // the sender's live Aprop_C instead (PhysFlagsOf), and only then does a receiver make an existing
-// copy's frozen and sleep match them.
+// copy's frozen and sleep match them (the join-window correction also makes static match).
 inline constexpr uint8_t kLiveState       = 0x40;
 }  // namespace propspawn_flags
 
@@ -2123,6 +2455,25 @@ struct PropDestroyPayload {
     uint32_t _pad;            // 4 -- alignment
 };
 static_assert(sizeof(PropDestroyPayload) == 40, "PropDestroyPayload must be 40 bytes");
+
+// PropNametag. The prop is named by its key, the one name every copy of a prop shares. The tag is UTF-16 code
+// units. The game takes a tag from the first line of a notebook page into an FName and bounds no length there (its
+// page limit is 32 lines), so the bound is the FName's: the engine's name size of 1024 less its terminator (not
+// measured here). The message is a chunked blob (BlobChunkPayload, coop/net/blob_chunks) on the Default lane, whose
+// body is, little-endian: [op u8][reason u8][author u8][key length u8, 0..31][key][tag length u16][tag, UTF-16].
+// A receiver reads every length from the body and refuses what does not add up to it exactly.
+inline constexpr uint8_t kPropNametagRequest  = 1;   // CLIENT->HOST: my player's nametag on this prop
+inline constexpr uint8_t kPropNametagPublish  = 2;   // HOST->ALL: this prop carries this tag
+inline constexpr uint8_t kPropNametagRefused  = 3;   // HOST->the requester: its request was refused
+inline constexpr int     kPropNametagMaxChars = 1023;
+// Why a request was refused (op 3's `reason`).
+inline constexpr uint8_t kPropNametagBadTag     = 1;   // the tag is empty, over kPropNametagMaxChars, holds a control unit or invalid UTF-16, or the body is malformed
+inline constexpr uint8_t kPropNametagNoProp     = 2;   // the host holds no prop of that key
+inline constexpr uint8_t kPropNametagNoItem     = 3;   // no nametag in the sender's hand, as the hand lane has it
+inline constexpr uint8_t kPropNametagTooFast    = 4;   // the sender is past its budget
+inline constexpr uint8_t kPropNametagOutOfReach = 5;   // the prop is not within the sender's reach
+inline constexpr uint8_t kPropNametagNotTaken   = 6;   // the host's prop did not take the tag
+inline constexpr uint8_t kPropNametagBusy       = 7;   // an earlier request of the sender still waits for its hand state
 
 // A placement intent (PropDropIntent), client to host: the identity the host needs to spawn the
 // authoritative prop by key (class, key, row name), the placement transform and scale, and the
@@ -2426,8 +2777,12 @@ struct DeskStatePayload {
     uint8_t dlActivePoFilter;   // 1
     uint8_t coordIsPing;        // 1 -- diagnostic only; receivers never adopt it (it is the ping machine's run flag)
     uint8_t adopt;              // 1
+    float   remapMin;           // 4
+    float   remapMax;           // 4
+    uint8_t visualizerMode;     // 1
+    uint8_t _pad[3];            // 3
 };
-static_assert(sizeof(DeskStatePayload) == 48, "DeskStatePayload must be 48 bytes");
+static_assert(sizeof(DeskStatePayload) == 60, "DeskStatePayload must be 60 bytes");
 static_assert(sizeof(DeskStatePayload) <= 256 - 20 - 8,
               "DeskStatePayload must fit in one reliable datagram");
 
@@ -2734,10 +3089,14 @@ struct PropActReplyPayload {
 };
 static_assert(sizeof(PropActReplyPayload) == 4, "PropActReplyPayload must be 4 bytes");
 
+// `committed` 1 means the verb ran and the prop is gone on the client, 0 that it aborted, and 2 (a snack only) that the
+// eater ran and the client's copy lives. `flags` is a snack's report of what the replay changed on its copy: bit 0 a use
+// was spent, bit 1 a bottle was opened; a snack's commit of 1 carries exactly bit 0, of 2 any of the two, and every
+// other prop's commit carries none (a snack's commit outside this, or a 2 on another prop, is malformed and kept as one).
 struct PropActCommitPayload {
     uint16_t id;         // 2 -- the granted request's id
-    uint8_t  committed;  // 1 -- 1 the verb ran and the prop is gone on the client, 0 aborted
-    uint8_t  pad;        // 1 -- zeroed
+    uint8_t  committed;  // 1 -- 0 aborted, 1 the prop is gone on the client, 2 a snack's copy lives
+    uint8_t  flags;      // 1 -- a snack's changes (bit 0 spent, bit 1 opened); zeroed for any other prop
     uint32_t eid;        // 4 -- the prop's Element id
 };
 static_assert(sizeof(PropActCommitPayload) == 8, "PropActCommitPayload must be 8 bytes");
@@ -2974,7 +3333,7 @@ static_assert(sizeof(DeskPingVerdictPayload) <= 228, "DeskPingVerdictPayload mus
 // `3 + keyLen + valueLen` bytes. Bit 0 of `flags` (kServerSettingAnnounced): the row is a notify row
 // whose value changed, so each peer prints one line; the receiver acts on that bit alone. The bit
 // means changed since the last take; a change undone inside one take still announces. Source raises
-// a separate server_cvar event (clientmode_shared.cpp:1235); here the bit rides the value, so the
+// a separate server_cvar event (reference/source-sdk-2013/src/game/client/clientmode_shared.cpp:1235); here the bit rides the value, so the
 // line cannot overtake it. The two limits mirror config_registry::kServerSettingKeyMax (equal) and
 // kServerSettingTextMax (the registry's is at most this one), which this catalog cannot include; the
 // sender's file asserts it.
@@ -3267,8 +3626,8 @@ struct AtvStatePayload {
                            //      it, so a peer merely GRABBING the ATV must not appear here.
     uint8_t  syncerSlot;   // 1  -- who writes this ATV's pose and condition, assigned by the host: 0 = the
                            //      host itself, k = client slot k
-    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (the sender's grav hand holds it),
-                           //      bit3=kAtvFromSyncer, bit4=kAtvTrap
+    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=kAtvBrake, bit2=grabbed (the sender's grav hand holds it),
+                           //      bit3=kAtvFromSyncer, bit4=kAtvTrap, bit5=kAtvLights, bit6=kAtvTurbo, bit7=kAtvHorn
     uint8_t  adopt;        // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
     uint8_t  cockpit;      // 1  -- bit0 lights, bit1 turbo, bit2 honk edge, bit3 radio playing,
                            //      bit4 the map upgrade (hasMap). Bits 5 and 7 are unused.
@@ -3284,7 +3643,7 @@ struct AtvStatePayload {
     float    spareDurability;     // 4  -- spareTire_durability (no visual consumer; value truth)
     float    spareDirt;           // 4  -- spareTire_dirt
     float    fuel;                // 4  -- 0..100
-    float    health;              // 4  -- -1..100 as a client syncer may send it; the syncer's own, a mirror's stale
+    float    health;              // 4  -- -1..100 as a client syncer may send it; the host copy's own is the truth
     uint8_t  tiresMask;           // 1  -- bit i = tires[i] (PRESENCE -- the host's own copy only)
     uint8_t  tiresValid;          // 1  -- 0 = the producer could not read the arrays; the receiver touches nothing (mask 0
                                   //      is a legal state, all four ejected, so absence needs its own bit)
@@ -3294,8 +3653,12 @@ struct AtvStatePayload {
     int8_t   tiresFixes[4];       // 4  -- per-wheel repair countdown (int32 in-game, int8 on wire)
     uint8_t  tiresTypes[4];       // 4  -- setWheelsType input (zero runtime writers measured; kept
                                   //      because it IS reducer input and 4 B closes the class)
+    uint32_t ackSeq;              // 4  -- a client syncer: the newest AtvHostState stateSeq whose vitals it APPLIED for this
+                                  //      ATV (0 until the first). The host: its own copy's current stateSeq, on its re-send
+                                  //      of a syncer's block and on every block of its own copy. The host takes a client
+                                  //      syncer's fuel and health only from a block whose ackSeq is its current stateSeq.
 };
-static_assert(sizeof(AtvStatePayload) == 152, "AtvStatePayload must be 152 bytes");
+static_assert(sizeof(AtvStatePayload) == 156, "AtvStatePayload must be 156 bytes");
 inline constexpr int16_t kAtvSteeringUnavailable = -32768;
 
 // AtvStatePayload.stateBits packing. Bits 0-2 are the flags. Bit 6 is the retired rear-seat
@@ -3318,6 +3681,19 @@ constexpr uint8_t kAtvFromSyncer = 0x08;
 // stateBits bit 4: the host's own copy has its `trap` set (the story event's explosion). The host writes it in every
 // block it sends and ignores a client's bit; a client copy takes it from the stamp (atv_sync.cpp).
 constexpr uint8_t kAtvTrap = 0x10;
+
+// stateBits bits 1, 5, 6 and 7: the syncer's own copy's brake, lights, turbo and horn, written at each block build. The host
+// takes them from an admitted block and applies a change to its copy; its re-send carries exactly these four to the others
+// (bits 0 and 2 are the syncer's own, read by the host's judgement only). The horn is a LEVEL, as MTA's full keysync
+// carries it (the pad's ShockButtonL, reference/mtasa-blue/Shared/mods/deathmatch/logic/Utils.cpp:798 read, :815 write):
+// the syncer latches a press until one block has carried it and the block clears the latch, so a tap between two blocks
+// is still sent, and a change of any of these bits makes the syncer's next block due at once, once per change. This
+// replaces our earlier edge request. A receiver replays the horn on a change of the level (atv_stream_gates.cpp).
+constexpr uint8_t kAtvBrake = 0x02;
+constexpr uint8_t kAtvLights = 0x20;
+constexpr uint8_t kAtvTurbo = 0x40;
+constexpr uint8_t kAtvHorn = 0x80;
+constexpr uint8_t kAtvControlBits = kAtvBrake | kAtvLights | kAtvTurbo | kAtvHorn;
 
 // An ATV (AtvSpawn): the host ATV's own game Key and its class, so the receiver spawns the exact skin
 // under that Key. The Key is at most 31 chars (an ATV's is 22, or "ATV"); a receiver drops a longer one.
@@ -3688,12 +4064,17 @@ inline constexpr uint8_t kItemActivateFlag_HasActorKey = 0x01;
 inline constexpr uint8_t kPlayerHitVerbAddDamage = 0;  // v0 = impact
 inline constexpr uint8_t kPlayerHitVerbPunch     = 1;  // v0 = fullBody, v1 = boneImp, v2 = damageLocation
 inline constexpr uint8_t kPlayerHitBoneCount     = 6;  // bone: None, chest, head, pelvis, torso, lowlegs
+// cue: a sound the hit's maker plays in 2D beside the verb, which the host refused and the victim plays.
+inline constexpr uint8_t kPlayerHitCueNone       = 0;
+inline constexpr uint8_t kPlayerHitCueWalker     = 1;  // a walking mannequin's break_flesh_3
+inline constexpr uint8_t kPlayerHitCueCount      = 2;
 
 struct PlayerHitPayload {
     uint32_t targetElementId;  // the VICTIM's Player Element id (host-stamped)
     uint8_t  verb;             // kPlayerHitVerb*
     uint8_t  bone;             // punch's bn1 as an index into the six names; 0 (None) for addDamage
-    uint16_t pad;              // 0, ignored
+    uint8_t  cue;              // kPlayerHitCue*
+    uint8_t  pad;              // 0, ignored
     uint32_t sourceEid;        // the creature's Npc element, which addDamage's `actor` becomes on the victim's
                                // machine; 0 = a null actor
     float    damage;           // raw amount; the victim's armor and branches act on it
@@ -3705,6 +4086,19 @@ static_assert(sizeof(PlayerHitPayload) == 52,
               "PlayerHitPayload must be exactly 52 bytes");
 static_assert(sizeof(PlayerHitPayload) <= 256 - 20 - 8,
               "PlayerHitPayload must fit in one reliable datagram");
+
+// A cremator's hit on a player (CrematorHit), host to the victim's own machine. `key` is the cremator's lane key as
+// KeyedTogglePayload carries it; `verb` is kCrematorHitVerb*; `igniteSeconds` is read for the ignite verb alone.
+inline constexpr uint8_t kCrematorHitVerbDamage = 0;
+inline constexpr uint8_t kCrematorHitVerbIgnite = 1;
+struct CrematorHitPayload {
+    WireKey key;            // 32
+    uint8_t verb;           // 1
+    uint8_t pad[3];         // 3 -- zero
+    float   igniteSeconds;  // 4
+};
+static_assert(sizeof(CrematorHitPayload) == 40, "CrematorHitPayload must be 40 bytes");
+static_assert(sizeof(CrematorHitPayload) <= 256 - 20 - 8, "CrematorHitPayload must fit in one reliable datagram");
 
 // WispGrab, host to one victim: the host's wisp is grabbing this client's puppet; the host
 // neutralized its own false grab and tells the victim to ragdoll-die after a fixed delay. The
@@ -3922,6 +4316,52 @@ struct TurbineStatePayload {
 };
 static_assert(sizeof(TurbineStatePayload) == 56, "TurbineStatePayload must be 56 bytes");
 
+// A woodchipper's state (WoodchipperState: op 0 fuel and active, op 3 active alone), or a client's pour (op 1) or
+// press (op 2) (WoodchipperIntent).
+inline constexpr uint8_t kWoodchipperOpState = 0, kWoodchipperOpPour = 1, kWoodchipperOpSetActive = 2,
+                         kWoodchipperOpActiveOnly = 3;
+struct WoodchipperPayload {
+    WireKey key;       // 32 -- the chipper's key
+    float   fuel;      // 4 -- its fuel (0..100); a pour's gain; unread by op 3
+    uint8_t active;    // 1 -- on; the state a press wanted
+    uint8_t op;        // 1 -- kWoodchipperOp*
+    uint8_t _pad[2];   // 2 -- zero
+};
+static_assert(sizeof(WoodchipperPayload) == 40, "WoodchipperPayload must be 40 bytes");
+
+// An ATV's host state (AtvHostState), or a client's request (AtvRequest). One payload, told apart by `op`: a request's
+// is 1..4 or 6, a state's 16 or 17. The syncer's horn is neither: it is a bit of AtvState's stateBits (kAtvHorn).
+namespace atv_host_op {
+// AtvRequest (client -> host): the four acts of a player's item on an ATV, and a copy's ask for the host's state (kSync: sent
+// when a copy is adopted holding none; the host answers with its state and applies nothing).
+inline constexpr uint8_t kRefuel = 1, kRepair = 2, kFit = 3, kTakeoff = 4, kSync = 6;
+// AtvHostState (host -> clients): the host copy's vitals, and the answer to a request.
+inline constexpr uint8_t kState = 16, kAnswer = 17;
+}  // namespace atv_host_op
+// An answer's verdict, carried in `module`: 0 is a request the host applied, the rest refused it. kDuplicate is a module
+// the ATV already holds; kFull a tank or health that is already full. `kGone` carries no state.
+namespace atv_host_reason {
+inline constexpr uint8_t kOk = 0, kNotReady = 1, kGone = 2, kReach = 3, kNoItem = 4, kRate = 5, kDuplicate = 6,
+                         kNotHeld = 7, kNotSyncer = 8, kMalformed = 9, kFull = 10;
+}  // namespace atv_host_reason
+// `flags`: the host copy's empty and broken marks (a state, an answer);
+// kAtvHostNoState, on an answer that carries no state (the fuel, health, marks and modules are zero and mean nothing).
+inline constexpr uint8_t kAtvHostEmpty = 0x08, kAtvHostBroken = 0x10, kAtvHostNoState = 0x20;
+struct AtvHostPayload {
+    WireKey  key;          // 32 -- the ATV's Key
+    float    fuel;         // 4 -- the host copy's fuel (a state, an answer)
+    float    health;       // 4 -- the host copy's health (a state, an answer)
+    float    amount;       // 4 -- a refuel's gain (request)
+    uint32_t reqId;        // 4 -- a request's id, per client, from 1; an answer echoes it
+    uint32_t stateSeq;     // 4 -- the state's sequence, per ATV, the host's (a state, an answer)
+    uint8_t  op;           // 1 -- atv_host_op
+    uint8_t  flags;        // 1 -- kAtvHost*
+    uint8_t  module;       // 1 -- a fitted or taken-off module's value (request); an answer's atv_host_reason
+    uint8_t  moduleCount;  // 1 -- how many of `modules` are fitted (a state, an answer)
+    uint8_t  modules[16];  // 16 -- the host copy's fitted module values, in the ATV's order (a state, an answer)
+};
+static_assert(sizeof(AtvHostPayload) == 72, "AtvHostPayload must be 72 bytes");
+
 // The edge a PropConvert re-skins.
 namespace propconvert_kind {
 inline constexpr uint8_t kToClump = 0;  // pile-A -> clump (grab): spawn a kinematic clump, drive by pose
@@ -3986,10 +4426,14 @@ static_assert(sizeof(UpgradeLevelsPayload) <= 256 - 20 - 8,
 // An upgrade purchase (UpgradeIntent): which panel row, and which of its two buttons. The index is
 // the row's own `index` field, the only name the row has -- the widget is designer-placed in
 // ui_laptop and carries no key or element id -- and the host tests it against its own table, so an
-// index naming a module row or nothing at all is refused rather than trusted.
+// index naming no row of that kind is refused rather than trusted.
+namespace upgrade_intent {
+inline constexpr uint8_t kBuy = 0, kSell = 1, kModuleBuy = 2, kModuleSell = 3;
+}  // namespace upgrade_intent
+
 struct UpgradeIntentPayload {
-    uint8_t panelIndex;  // the row's `index`; must be one of the fifteen level rows
-    uint8_t dir;         // 0 = buy one level, 1 = sell one back
+    uint8_t panelIndex;  // the row's `index`: a level row's, or a module row's for those two values of `dir`
+    uint8_t dir;         // upgrade_intent
     uint8_t _pad[6];     // 8-byte alignment; bytes beyond the two zero
 };
 static_assert(sizeof(UpgradeIntentPayload) == 8, "UpgradeIntentPayload must be 8 bytes");
@@ -4143,7 +4587,10 @@ enum class DeskInputField : uint8_t {
                          //         never write it, it is the ping machine's run flag; bookkeeping only
     CooldownCharge = 13, // float   coord_cooldown -- UPWARD jumps only (a press charge; decay is
                          //         per-peer local and never rides the wire)
-    Count = 14,
+    RemapMin = 14,       // float   remapValue.X, the signal view's lower bound (+ updRemap)
+    RemapMax = 15,       // float   remapValue.Y, its upper bound (+ updRemap)
+    VisualizerMode = 16, // bool    visualizerMode, graph or spectrogram (+ setCanvas, endCanvas)
+    Count = 17,
 };
 
 struct DeskInputPayload {
@@ -4461,6 +4908,32 @@ inline constexpr uint8_t kGeomOctaTargetNone    = 0;
 inline constexpr uint8_t kGeomOctaTargetSlot    = 1;
 inline constexpr uint8_t kGeomOctaTargetElement = 2;
 
+// The black orb's encounter (OrbEvent): the orb's NPC element id and what happened.
+inline constexpr uint8_t kOrbEventBegin = 1;  // to every client: the host's orb began
+inline constexpr uint8_t kOrbEventDeath = 2;  // to the toucher: the orb caught this player
+struct OrbEventPayload {
+    uint32_t eid;     // the orb's NPC element id (host-allocated)
+    uint8_t  op;      // kOrbEvent*
+    uint8_t  pad[3];  // zero
+};
+static_assert(sizeof(OrbEventPayload) == 8, "OrbEventPayload must be 8 bytes");
+static_assert(sizeof(OrbEventPayload) <= 256 - 20 - 8, "OrbEventPayload must fit in one reliable datagram");
+// The ambient UFOs (UfoEvent): the UFO's world-actor element id, the op, and up to 16 vectors of a path.
+inline constexpr uint8_t kUfoEventBallPath = 1;  // v[0] the turn (pitch, yaw, roll), v[1] end a, v[2] end b
+inline constexpr uint8_t kUfoEventBooPath  = 2;  // v[0..count) the flight spline's points first.., local space
+inline constexpr uint8_t kUfoEventMidasRun = 3;  // eid 0: the level's Midas UFO takes off
+inline constexpr uint8_t kUfoEventMaxPoints = 16;
+struct UfoEventPayload {
+    uint32_t eid;     // the UFO's world-actor element id (host-allocated); 0 for MidasRun
+    uint8_t  op;      // kUfoEvent*
+    uint8_t  first;   // the index of v[0] in the whole path
+    uint8_t  count;   // vectors valid in v, at most kUfoEventMaxPoints
+    uint8_t  total;   // vectors in the whole path
+    float    v[kUfoEventMaxPoints][3];
+};
+static_assert(sizeof(UfoEventPayload) == 200, "UfoEventPayload must be 200 bytes");
+static_assert(sizeof(UfoEventPayload) <= 256 - 20 - 8, "UfoEventPayload must fit in one reliable datagram");
+
 struct GeomOctaEventPayload {
     uint8_t  op;
     uint32_t octaEid;      // the Octa's NPC element id (host-allocated)
@@ -4671,8 +5144,45 @@ struct StatQueryReplyPayload {
     StatEffectEntry effects[5];
 };
 static_assert(sizeof(StatQueryReplyPayload) == 205, "StatQueryReplyPayload must be 205 bytes");
-static_assert(sizeof(StatQueryReplyPayload) <= 256 - 20 - 8,
-              "StatQueryReplyPayload must fit in one reliable datagram");
+static_assert(sizeof(StatQueryReplyPayload) <= 256 - 20 - 8, "StatQueryReplyPayload must fit in one reliable datagram");
+
+// A spilled liquid's decal (SpillState), or a client's (SpillIntent).
+struct SpillPayload {
+    WireKey cls;           // 32 -- the decal's grime class name
+    float   loc[3];        // 12 -- its world location
+    float   rot[3];        // 12 -- its rotation: pitch, yaw, roll
+    float   scale[3];      // 12 -- its scale
+    float   decalRot[3];   // 12 -- its decal component's world rotation (begin play turns it at random)
+    float   process;       // 4 -- its dirt; -1: wiped away
+    int32_t type;          // 4 -- its grime Type
+    uint8_t splash;        // 1 -- it just landed: a peer that did not hear it plays the splash
+    uint8_t origin;        // 1 -- the slot whose own flight landed it, which heard it; 0xFF none
+    uint8_t _pad[2];       // 2 -- zero
+};
+static_assert(sizeof(SpillPayload) == 92, "SpillPayload must be 92 bytes");
+
+// A bottle's pour, heard where it poured (SpillPour, SpillPourIntent).
+struct SpillPourPayload {
+    float   loc[3];        // 12 -- the bottle
+    uint8_t cue;           // 1 -- which pour sound: 1 a beer's or wine's fuel1
+    uint8_t origin;        // 1 -- the slot that poured it, which heard it; 0xFF none
+    uint8_t _pad[2];       // 2 -- zero
+};
+static_assert(sizeof(SpillPourPayload) == 16, "SpillPourPayload must be 16 bytes");
+
+// A vent crawl's state for a joiner (VentCrawlState).
+struct VentCrawlStatePayload {
+    float   elapsed;       // 4 -- seconds since the crawl's cue on the host (phase 1)
+    float   ventLoc[3];    // 12 -- the hanging vent's world location on the host: phase 1 at the crawl's start, phase 2 its end
+    float   ventRot[3];    // 12 -- its world rotation: pitch, yaw, roll in degrees (the same two poses)
+    uint8_t phase;         // 1 -- 1 crawling, 2 over (0, none, is never sent)
+    uint8_t doorActive;    // 1 -- the signal room door's `active` on the host
+    uint8_t hasVent;       // 1 -- the host's vent was read: ventLoc and ventRot hold the pose of its phase
+    uint8_t _pad;          // 1 -- zero
+};
+static_assert(sizeof(VentCrawlStatePayload) == 32, "VentCrawlStatePayload must be 32 bytes");
+static_assert(sizeof(VentCrawlStatePayload) <= 256 - 20 - 8,
+              "VentCrawlStatePayload must fit in one reliable datagram");
 
 #pragma pack(pop)
 

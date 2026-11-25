@@ -113,6 +113,10 @@ bool WriteStructLive(void* p,const Row& row){test::Callback(test::onNative);if(!
 }
 #ifndef CONTAINER_APPLY_HARNESS
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t* n){if(!wcscmp(n,L"propInventory_C"))return &test::objects[13];if(!wcscmp(n,L"prop_container_C"))return &test::objects[12];return reflection::FindClass(n);}}
+namespace ue_wrap::class_resolve {
+const Family& AnyFamily(){static const Family family{L"test",nullptr,0,nullptr};return family;}
+Resolved ResolveClass(const wchar_t* name,const Family&,Load){void* cls=ue_wrap::object_index::ClassByName(name);return {cls?ClassState::Found:ClassState::Absent,cls};}
+}
 #endif
 namespace ue_wrap::prop {bool WalksToBase(void* cls,void* base){return cls==base;}std::wstring GetInteractableKeyString(void*){std::abort();}}
 #ifndef CONTAINER_APPLY_HARNESS

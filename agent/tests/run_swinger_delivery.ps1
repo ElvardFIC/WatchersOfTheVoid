@@ -8,7 +8,7 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Compile([string]$name,[string]$header=''){
   $forced=@();if($header){$forced=@("/FI$header")}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/swinger_delivery_stubs /I src/votv-coop/include @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/swinger_delivery_test.cpp /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/swinger_delivery_stubs" /I src/votv-coop/include @forced "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/swinger_delivery_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw "Swinger delivery fixture compile failed: $name"}
  }
  Compile 'test'

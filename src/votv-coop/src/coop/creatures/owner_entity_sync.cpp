@@ -12,6 +12,8 @@
 #include "coop/props/prop_echo_suppress.h"   // ScopedMirrorSpawn / InMirrorSpawnScope
 
 #include "ue_wrap/core/call.h"
+#include "coop/element/class_load_wait.h"
+#include "ue_wrap/core/class_resolve.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/game_thread.h"
@@ -331,8 +333,19 @@ void OnSpawnMsg(const coop::net::OwnerEntitySpawnPayload& p, int senderPeerSlot)
             return;
         }
     }
-    void* cls = ue_wrap::object_index::ClassByName(kOwnerEntityClasses[p.classId]);
-    if (!cls) return;  // not loaded on this peer yet: the keepalive re-delivers
+    // The class comes from this peer's own id table, not from a wire name: the table is the bound. A class this
+    // peer has not loaded loads inside the per-tick budget; past it the spawn is parked and runs next tick.
+    const auto resolved = ue_wrap::class_resolve::ResolveClass(kOwnerEntityClasses[p.classId],
+                                                              ue_wrap::class_resolve::AnyFamily(),
+                                                              ue_wrap::class_resolve::Load::Budgeted);
+    if (resolved.state == ue_wrap::class_resolve::ClassState::Pending) {
+        // No element id here, so no bind_wait mark: the wait is cancelled by the (slot, seq) the destroy carries.
+        coop::element::class_load_wait::Park("OwnerEntitySpawn", kOwnerEntityClasses[p.classId], key,
+                                             [p, senderPeerSlot] { OnSpawnMsg(p, senderPeerSlot); });
+        return;
+    }
+    void* cls = resolved.cls;
+    if (!cls) return;  // absent here: said once by the resolver, and the sender's keepalive re-delivery is refused alike
     // Resolve-once statics (GT-only path): the GameplayStatics CDO + Finish fn.
     static void* s_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
     static void* s_finishFn = [] {
@@ -411,6 +424,13 @@ void OnDestroyMsg(const coop::net::OwnerEntityDestroyPayload& p, int senderPeerS
         OnPeerLeftSlot(slot);
         return;
     }
+    // A spawn still waiting on its class's load under this (slot, seq) ends here: it is never spawned. This lane
+    // has no element id, so no BIND-WAIT mark: a pose for the entity finds no mirror and drops, as before.
+    if (coop::element::class_load_wait::Cancel("OwnerEntitySpawn", Key(slot, p.seq))) {
+        UE_LOGI("owner_entity: slot=%d seq=%u -- its spawn was waiting on a class load and is cancelled; it will "
+                "never spawn", slot, p.seq);
+        return;
+    }
     auto it = g_mirrors.find(Key(slot, p.seq));
     if (it == g_mirrors.end()) return;
     DestroyMirrorActor(it->second.actor, it->second.idx);
@@ -434,6 +454,12 @@ void OnPeerLeftSlot(int slot) {
     }
     if (destroyed > 0)
         UE_LOGI("owner_entity: destroyed %d mirror(s) of departed slot %d", destroyed, slot);
+    // The departed slot's spawns still waiting on a class load are never spawned.
+    const size_t cancelled = coop::element::class_load_wait::CancelIf(
+        "OwnerEntitySpawn", [slot](uint32_t k) { return SlotOfKey(k) == slot; });
+    if (cancelled > 0)
+        UE_LOGI("owner_entity: %zu spawn(s) of departed slot %d were waiting on a class load and are cancelled",
+                cancelled, slot);
     // HOST: the other clients have no transport edge for this slot -- fan the
     // teardown out on the leaver's behalf (wildcard seq=0 + originSlot).
     auto* s = g_session.load(std::memory_order_acquire);

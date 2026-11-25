@@ -97,8 +97,8 @@ FVector GetActorScale3D(void*){return {1,1,1};}
 void RotatorToQuat(float,float,float,float& x,float& y,float& z,float& w){x=y=z=0;w=1;}
 bool SetActorScale3D(void*,const FVector&){return true;}
 bool DestroyActor(void*){return false;}
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return nullptr;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){return false;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&,uint8_t,const FVector*){return nullptr;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&,const FVector*){return false;}
 bool SetActorTickEnabled(void*,bool){return false;}
 void* ReadMainPlayerHitActor(void*){return &test::objs[0];}
 FRotator QuatToRotator(float,float,float,float){return {};}

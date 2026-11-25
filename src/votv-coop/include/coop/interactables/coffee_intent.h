@@ -9,7 +9,7 @@
 // PropSpawn on the Default lane, the maker's state by coffee_state. Every other action of either device runs natively. MTA
 // precedent: a client's use of a shared element is a request the server checks and runs
 // (reference/mtasa-blue/Server/mods/deathmatch/logic/
-// CGame.cpp:3018, Packet_Vehicle_InOut), as the door lane's press.
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3018, Packet_Vehicle_InOut), as the door lane's press.
 
 #pragma once
 

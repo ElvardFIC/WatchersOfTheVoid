@@ -6,7 +6,7 @@ Push-Location $root
 try {
     . (Join-Path $root '../_toolchain/env.ps1')
     function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-        & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I src/votv-coop/src/coop/props /I agent/tests/item_record_stubs /I src/votv-coop/include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I src/votv-coop/src/coop/props /I "$PSScriptRoot/item_record_stubs" /I src/votv-coop/include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $name" }
         & "$output\$name.exe"
         $rc=$LASTEXITCODE

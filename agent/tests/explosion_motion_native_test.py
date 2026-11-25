@@ -4,8 +4,8 @@ import re
 import sys
 
 root = Path(__file__).resolve().parents[2]
-research = root.parent / '_research'
-sys.path.insert(0, str(research))
+evidence_root = root.parent / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package, Dis, find_script
 
 # Engine native FireImpulse() has no reflected arguments or return value:
@@ -35,7 +35,7 @@ if '--write' in sys.argv and row not in table:
     table_path.write_text(table, encoding='utf-8', newline='\n')
 assert row in table
 
-p = Package(str(research / 'assets/VotV__Content__objects__misc__explosion.uasset'))
+p = Package(str(evidence_root / 'assets/VotV__Content__objects__misc__explosion.uasset'))
 e = next(e for e in p.exports if e['name'] == 'ExecuteUbergraph_explosion')
 code, _ = find_script(p.export_data(e))
 rows = dict(Dis(p, code).run())
@@ -46,7 +46,7 @@ assert '->reachedByExplosion(' in rows[1626]
 assert 'Delay(self, 0.1' in rows[4728]
 assert rows[4783] == 'Inst(RadialForce)->FireImpulse()'
 assert 497 < 1626 < 4728 < 4783
-salt = Package(str(research / 'assets/VotV__Content__objects__misc__explosion_saltrocket.uasset'))
+salt = Package(str(evidence_root / 'assets/VotV__Content__objects__misc__explosion_saltrocket.uasset'))
 assert not any(salt.class_of_export(e) == 'Function' for e in salt.exports)
 
 sub = (root / 'src/votv-coop/src/coop/session/subsystems.cpp').read_text()

@@ -8,7 +8,7 @@
 // keyed on it would let anyone fill an honest player's row. Every instance runs on ONE thread
 // with no lock: the edge limits on the net thread, like the admission state beside them, and
 // the container-write bound on the game thread, where that lane lives. The table is bounded where MTA's is a hash
-// map that grows without limit (CConnectHistory.h:14, a server-class machine): a fixed table
+// map that grows without limit (reference/mtasa-blue/Server/mods/deathmatch/logic/CConnectHistory.h:14, a server-class machine): a fixed table
 // keeps the net thread allocation-free, and a full table stops counting, not checking, and says
 // so once: a refusal here can only ever deny, so failing closed would lock honest players out
 // and failing open admits nobody who has not still to pass every other gate.
@@ -46,8 +46,8 @@ bool KeyFromProvedGuid(const std::string& guid, Key& out);
 
 // One policy: refuse a source that has recorded `max` events inside `windowMs`, for `ignoreMs`
 // from the moment it crossed the line -- CConnectHistory's three constructor constants, which
-// MTA sets per limit (join flood 4 / 30 s / 30 s, CGame.cpp:163; login brute force 6 / 30 s /
-// 60 s, CAccountManager.cpp:24; HTTP 4 / 30 s / 300 s, CHTTPD.cpp:34). With the refusal as long
+// MTA sets per limit (join flood 4 / 30 s / 30 s, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:163; login brute force 6 / 30 s /
+// 60 s, reference/mtasa-blue/Server/mods/deathmatch/logic/CAccountManager.cpp:24; HTTP 4 / 30 s / 300 s, reference/mtasa-blue/Server/mods/deathmatch/logic/CHTTPD.cpp:34). With the refusal as long
 // as the window, every stamp that counted has expired when the refusal lifts, so the source
 // starts clean. A max of 0 disables the policy: nothing is refused and nothing is kept.
 struct Policy {
@@ -128,7 +128,7 @@ void ConfigureConnects(long cap, long windowS);
 // The flood history: a source whose link the host ended for sending more than its receive budget allows
 // (receive_budget.h), keyed by the identity it proved and by its address where the transport has one, and refused
 // at the accept edge and at the proof for kFloodRefusalMs from the end (Session::RecordFlood bans it). MTA's join-flood
-// table keeps a source's row past its connection until its ban has run (CConnectHistory.cpp:111-115). One event fills a
+// table keeps a source's row past its connection until its ban has run (reference/mtasa-blue/Server/mods/deathmatch/logic/CConnectHistory.cpp:111-115). One event fills a
 // row, the end itself; the table outlives the session, since a host that starts another must not let the source
 // straight back in. A full table keeps refusing the rows it holds; where the transport has an address, a source that
 // rotates its identity is still refused by its address row. Net thread.

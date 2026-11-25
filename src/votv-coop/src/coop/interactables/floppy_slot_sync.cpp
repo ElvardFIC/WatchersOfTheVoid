@@ -1,6 +1,7 @@
 // coop/interactables/floppy_slot_sync.cpp -- see coop/interactables/floppy_slot_sync.h.
 
 #include "coop/interactables/floppy_slot_sync.h"
+#include "coop/props/disc_record_ceiling.h"
 
 #include "coop/interactables/laptop_buffer_sync.h"  // the quad's shadow primes after a laptop apply
 #include "coop/net/blob_chunks.h"
@@ -176,6 +177,7 @@ bool ReadSlotOf(FS::DeviceKind kind, void* device, Slot& out,
 std::map<uint32_t, uint64_t> g_shadow;
 std::set<uint32_t> g_retry;          // sends the transport refused
 std::set<uint32_t> g_unsendable;     // slots this peer cannot put on the wire at all
+std::set<uint32_t> g_refusedOversize;  // slots whose over-ceiling claim was already logged, one line each
 
 // CLIENT: until the host's canonical has landed, this peer's slots are its own save's, not the
 // session's. Its boxes come up at class defaults, the save's loadData fills them a tick or two
@@ -359,7 +361,7 @@ bool PackOne(uint8_t index, const Slot& cur, std::vector<uint8_t>& out) {
     out.clear();
     out.push_back(index);
     PackSlot(out, cur);
-    return out.size() <= kMaxSlotBytes;
+    return out.size() <= coop::disc_record::MaxBodyBytes();
 }
 
 // Pack a set of devices into canonical blobs, split at the slot cap so one huge slot cannot take
@@ -376,7 +378,7 @@ std::vector<std::vector<uint8_t>> PackCanonicalSet(
             std::vector<uint8_t> one;
             one.push_back(entries[i].first);
             PackSlot(one, entries[i].second);
-            if (one.size() > kMaxSlotBytes) {
+            if (one.size() > coop::disc_record::MaxBodyBytes()) {
                 if (droppedOut) droppedOut->push_back(entries[i].first);
                 ++i;
                 continue;
@@ -628,9 +630,9 @@ void ClientClaim(coop::net::Session* s, FS::DeviceKind kind, size_t index, void*
         auto& aw = g_awaiting[key];
         if (aw.deadline == 0) aw.tries = 0;
         aw.deadline = NowMs() + kAnswerMs;
-        UE_LOGI("floppy_slot_sync: CLIENT claim sent (device=%zu type=%d rw=%d rows=%zu json=%zu "
+        UE_LOGI("floppy_slot_sync: CLIENT claim sent (device=%zu type=%d rw=%d rows=%zu json=%zu entry=%zu B "
                 "key '%ls')", index, cur.st.floppyType, cur.st.readWrites, cur.c.data.size(),
-                cur.c.objectData.size(), FS::ObjectDataKey(cur.c.objectData).c_str());
+                cur.c.objectData.size(), body.size(), FS::ObjectDataKey(cur.c.objectData).c_str());
     } else {
         g_retry.insert(key);
     }
@@ -956,6 +958,17 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         // a claim the host cannot publish would leave every other peer with older state.
         if (blob.size() - r.off > kMaxSlotBytes) return;
         const uint8_t index = r.U8();
+        // The entry is what the host re-publishes, so the ceiling is the sender's own: an entry the host could apply
+        // and then not pass on would leave it holding a disc no peer can be given.
+        const size_t entryBytes = blob.size() - r.off + 1;
+        if (entryBytes > coop::disc_record::MaxBodyBytes()) {
+            if (g_refusedOversize.insert(ShadowKey(kind, index)).second)
+                UE_LOGW("floppy_slot_sync: claim for device %u from slot %u is %zu B, past the %zu B ceiling -- "
+                        "refused (said once per device)",
+                        static_cast<unsigned>(index), static_cast<unsigned>(senderSlot), entryBytes,
+                        coop::disc_record::MaxBodyBytes());
+            return;
+        }
         Slot in;
         if (!ParseSlot(r, in) || r.off != blob.size()) {
             UE_LOGW("floppy_slot_sync: malformed claim from slot %u -- dropped",
@@ -1081,6 +1094,7 @@ void OnDisconnect() {
     g_shadow.clear();
     g_retry.clear();
     g_unsendable.clear();
+    g_refusedOversize.clear();
     g_awaiting.clear();
     g_pendingCanonical.clear();
     g_pendingCanonicalGen.clear();

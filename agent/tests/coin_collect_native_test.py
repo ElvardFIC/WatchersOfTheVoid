@@ -2,12 +2,12 @@
 from pathlib import Path
 import sys
 
-research = Path(__file__).resolve().parents[3] / '_research'
-sys.path.insert(0, str(research))
+evidence_root = Path(__file__).resolve().parents[3] / '_research'
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-path = research / 'assets/VotV__Content__objects__misc__baocoin.uasset'
+path = evidence_root / 'assets/VotV__Content__objects__misc__baocoin.uasset'
 if not path.exists():
     raise SystemExit('UNAVAILABLE: extracted native coin asset required: ' + str(path))
 p = Package(str(path))

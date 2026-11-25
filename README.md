@@ -11,20 +11,19 @@ remote player models, text and positional voice chat, and shared-world synchroni
 > Bugs, crashes and multiplayer desynchronization may occur. A successful build or
 > automated test run does not guarantee stable gameplay.
 
-## Development — 0.9.2163
+## Current candidate — 0.9.2165
 
-Development targets **0.9.2164** and **VotV Alpha 0.9.0n**, with
-**b2219 / protocol 2219** after the upstream container and throw integration.
-The last qualified package remains **0.9.2163 / b2217**; its archive and release
-metadata are retained. A 2164 package has not been prepared.
+Release preparation targets **0.9.2165** for **VotV Alpha 0.9.0n**, with
+**b2223 / protocol 2223**. The last qualified package remains **0.9.2163 / b2217**;
+its archive is retained. The 2165 Release build and ZIP are not ready: the full
+public-prose repository gate still fails, so Release compilation has not started.
+The candidate has not been published to Thunderstore.
 
-Current work includes Tutorial join placement and inventory-icon cache repair, killer-wisp lifetime guards, selected fork fixes and six selectable hosting game modes, reflected flashlight state and replacement replay, explicit ragdoll physics blending, guarded held-toy audio and watoy ownership, and capture of native held/thrown sponge window dabs,
-with the existing co-op, 2-32-player, inventory, event and native-action fixes.
-The current 0.9.2163 ZIP passed all 124 current offline validation groups,
-the Release build, production version label and manager package checks.
-Rendered host/client acceptance remains open. Current evidence and limits are in
-[TESTLOG](agent/TESTLOG.md) and the [development notes](package/RELEASE.md).
-Every peer used for testing must carry identical current DLL bytes.
+The source includes the current upstream and selected fork integration, guarded
+save recovery and actor lifetimes, Kerfur command capture, sleep/rest and event-cue
+handling, plus the accumulated co-op, inventory, event and native-action fixes.
+Automated checks do not establish rendered host/client acceptance. Current
+qualification status and limits are summarized in the [development notes](package/RELEASE.md). Every peer must use identical DLL bytes.
 ## Installation
 
 Use a package explicitly published for this fork when available on this repository's
@@ -43,7 +42,7 @@ settings: choose 2–32 with minus/plus or use 2/4/8/16/32 shortcuts. Both hosti
 menus remember the same choice for your next session (`net.player_limit`).
 These chooser improvements are included in package 0.9.2161.
 Transport is GameNetworkingSockets: 13 unreliable pose and state streams, a voice stream beside
-them, and one reliable ordered channel whose payloads are 196 message kinds. Each machine's engine
+them, and one reliable ordered channel whose payloads are 235 message kinds. Each machine's engine
 re-derives animation, physics and rendering from the streamed state. The host is authoritative for
 world state, randomness and NPC simulation; a client acts by naming an intent that the host
 performs.

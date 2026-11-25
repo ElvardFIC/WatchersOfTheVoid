@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include "coop/element/registry.h"
+
 #include "coop/element/element.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 
@@ -116,7 +118,7 @@ public:
     // the notify has no re-entry latch). A second setter displaces the first without telling it; a restore
     // of the returned listener re-syncs it through the set-time call. Game thread only.
     // Divergence: MTA pulls a count (reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:166) and fires
-    // onPlayerJoin after the join completes (CGame.cpp:1499); Source has a one-slot hook
+    // onPlayerJoin after the join completes (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1499); Source has a one-slot hook
     // (reference/source-sdk-2013/src/game/server/gameinterface.cpp:245,268). Here a push, fired at the
     // registry write inside the deferred spawn, because the consumer must arm before the puppet's first overlap.
     PuppetCountFn SetPuppetCountListener(PuppetCountFn fn);

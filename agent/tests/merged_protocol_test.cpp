@@ -9,8 +9,8 @@
 using namespace coop::net;
 static_assert(kReliableKindCount > static_cast<size_t>(ReliableKind::ContainerActCommit),
     "reliable-kind tables must cover every retained container-act ID");
-static_assert(kReliableKindCount == static_cast<size_t>(ReliableKind::EmoteState) + 1,
-    "reliable-kind tables must also cover the integrated EmoteWheel ID");
+static_assert(kReliableKindCount == static_cast<size_t>(ReliableKind::WalkerSeen) + 1,
+    "reliable-kind tables must cover the highest integrated reliable ID");
 static_assert(static_cast<uint8_t>(ReliableKind::PropScaleState)==202);
 static_assert(static_cast<uint8_t>(ReliableKind::SharedScreen)==203);
 static_assert(static_cast<uint8_t>(ReliableKind::LaptopUI)==204);

@@ -6,11 +6,11 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/event_slot_stubs /I src/votv-coop/include "/Fo$output/test.obj" "/Fe$output/test.exe" agent/tests/event_slot_canonical_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/event_slot_stubs" /I src/votv-coop/include "/Fo$output/test.obj" "/Fe$output/test.exe" "$PSScriptRoot/event_slot_canonical_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Event slot fixture compile failed'}
  & "$output/test.exe"
  if($LASTEXITCODE){throw 'Event slot fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/event_slot_stubs /I src/votv-coop/include "/Fo$output/claims.obj" "/Fe$output/claims.exe" agent/tests/event_slot_claim_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/event_slot_stubs" /I src/votv-coop/include "/Fo$output/claims.obj" "/Fe$output/claims.exe" "$PSScriptRoot/event_slot_claim_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Event slot claim fixture compile failed'}
  & "$output/claims.exe"
  if($LASTEXITCODE){throw 'Event slot claim fixture failed'}
@@ -34,7 +34,7 @@ try {
    $path=Join-Path $output ($control.Name+'.cpp');[IO.File]::WriteAllText($path,$source.Replace($control.Before,$control.After))
    $header=Join-Path $output ($control.Name+'.h')
    [IO.File]::WriteAllText($header,('#define EVENT_SLOT_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/event_slot_stubs /I src/votv-coop/include "/Fo$output/$($control.Name).obj" "/Fe$output/$($control.Name).exe" agent/tests/event_slot_canonical_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/event_slot_stubs" /I src/votv-coop/include "/Fo$output/$($control.Name).obj" "/Fe$output/$($control.Name).exe" "$PSScriptRoot/event_slot_canonical_test.cpp" /link /OPT:REF
    if($LASTEXITCODE){throw "Event slot control compile failed: $($control.Name)"}
    $saved=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& "$output/$($control.Name).exe" 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}
@@ -56,7 +56,7 @@ try {
    $path=Join-Path $output ($control.Name+'.cpp');[IO.File]::WriteAllText($path,$source.Replace($control.Before,$control.After))
    $header=Join-Path $output ($control.Name+'.h')
    [IO.File]::WriteAllText($header,('#define EVENT_SLOT_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/event_slot_stubs /I src/votv-coop/include "/Fo$output/$($control.Name).obj" "/Fe$output/$($control.Name).exe" agent/tests/event_slot_claim_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/event_slot_stubs" /I src/votv-coop/include "/Fo$output/$($control.Name).obj" "/Fe$output/$($control.Name).exe" "$PSScriptRoot/event_slot_claim_test.cpp" /link /OPT:REF
    if($LASTEXITCODE){throw "Claim control compile failed: $($control.Name)"}
    $saved=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& "$output/$($control.Name).exe" 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}

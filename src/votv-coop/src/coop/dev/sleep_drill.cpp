@@ -49,7 +49,7 @@ enum class Step {
 constexpr float kNeed          = 80.f;   // the need both peers sleep from (the bed's own ceiling); a native
                                          // sleep from it lasts about 15 s, which keeps the window a world
                                          // event (it wakes a sleeper, natively) can fall in short
-constexpr float kNativeFactor  = 20.f;   // the game's sleep dilation (mainGamemode.cpp:5428)
+constexpr float kNativeFactor  = 20.f;   // the game's sleep dilation (CXXHeaderDump/mainGamemode.cpp:5428)
 constexpr float kHostFactorTol = 0.5f;
 constexpr float kWorldTol      = 0.01f;  // a client's world must read 1
 constexpr float kRestedNeed    = 99.f;   // a rest that reached it ended on the game's own wake, not on an interrupt

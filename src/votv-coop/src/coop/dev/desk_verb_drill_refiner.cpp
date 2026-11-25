@@ -32,7 +32,7 @@ int32_t g_processedBefore = -1;
 // join, CLIENT: the census as it went live ahead of the load, so the join counts its own restore.
 Census g_joinBase;
 
-// The last level's completion runs a world trigger named by the row's signal (analogDScreenTest.cpp :6006-6018).
+// The last level's completion runs a world trigger named by the row's signal (CXXHeaderDump/analogDScreenTest.cpp :6006-6018).
 bool FiresATrigger(const std::wstring& signal) {
     return _wcsicmp(signal.c_str(), L"evil") == 0 || _wcsicmp(signal.c_str(), L"lifecrystal") == 0 ||
            _wcsicmp(signal.c_str(), L"deer") == 0;

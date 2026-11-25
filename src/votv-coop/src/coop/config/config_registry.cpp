@@ -417,7 +417,7 @@ constexpr const char* const kCredentials[] = {
 };
 
 // The scope marks, checked by the compiler (Source declares FCVAR_REPLICATED and FCVAR_PROTECTED
-// on the cvar itself and keeps the two apart, iconvar.h:62, 46). Both lists are lowercase by the
+// on the cvar itself and keeps the two apart, reference/source-sdk-2013/src/public/tier1/iconvar.h:62, 46). Both lists are lowercase by the
 // registry's rule (Row::key), so the exact compare is IsCredentialKey's case-insensitive test.
 namespace {
 constexpr size_t CLen(const char* s) {

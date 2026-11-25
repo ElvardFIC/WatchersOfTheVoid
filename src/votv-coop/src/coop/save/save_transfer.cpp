@@ -27,6 +27,7 @@
 #include "coop/session/join_beacon.h"  // the joiner hears which phase this stream is in
 #include "coop/session/host_world_settle.h"  // whether the host's world has finished starting
 #include "coop/save/join_window_baseline.h"  // the capture instant's baselines and their flush
+#include "coop/items/hook_retrieve.h"  // the anchored hooks standing at the cut
 #include "coop/save/save_guard.h"
 #include "coop/save/save_indicator_suppress.h"  // detect the SAVED HUD across the join scratch save
 #include "coop/save/slot_file_read.h"  // the torn-read guard and the stream's CRC
@@ -96,11 +97,13 @@ HostStream g_host[coop::net::kMaxPeers];
 coop::roster_ledger::PerSlotState<bool> g_asked;
 // Per slot, whether its world was taken for this connection's join (WorldTakenFor).
 bool g_worldTaken[coop::net::kMaxPeers] = {};
+// Per slot, the captures begun since the process started: never cleared, so a reader names one capture by its count.
+uint32_t g_worldCaptures[coop::net::kMaxPeers] = {};
 
 // Chunks per TickHost pass per slot: a ~13 MB/s ceiling at 60 Hz; the send buffer's backpressure
 // (a failed send stops the pass) is the real pacer on a slower link. Divergence from MTA, which ships
 // resources over HTTP (reference/mtasa-blue/Client/mods/deathmatch/logic/
-// CResourceFileDownloadManager.cpp:21-31): the world
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CResourceFileDownloadManager.cpp:21-31): the world
 // save goes in-band here, on the Transfer lane, paced by this pump.
 constexpr int kChunksPerTick = 4;
 
@@ -147,6 +150,7 @@ void BeginStreamFromBlob_(int slot, HostStream& hs, std::vector<uint8_t>&& bytes
             hs.blob.size(), compressed ? "XPRESS_HUFF" : "raw");
     hs.blobReady = true;
     g_worldTaken[slot] = true;
+    ++g_worldCaptures[slot];
     hs.nextChunk = 0;
     hs.chunkCount = static_cast<uint32_t>(
         (hs.blob.size() + coop::net::kSaveChunkBytes - 1) / coop::net::kSaveChunkBytes);
@@ -471,6 +475,7 @@ void CaptureAndBegin_(int peerSlot, HostStream& hs) {
             // fallback leaves each one empty and the divergence sweep keeps full responsibility
             // for that join.
             coop::join_window_baseline::CaptureForSlot(peerSlot);  // keyed keys + save-time xforms
+            coop::hook_retrieve::CaptureJoinHooks(peerSlot);  // the anchored hooks this blob holds, for the join's removes
             // The meadow-DB content-hash multiset; the ready-edge seed diffs it against the
             // then-live store. The stale fallback leaves it invalid, so no seed.
             coop::meadow_db_sync::CaptureJoinSnapshot(peerSlot);
@@ -502,7 +507,7 @@ void OnRequest(int peerSlot) {
     // A joined peer asks for the world save exactly once (ClientNoteConnected, behind g_cliRequested).
     // A second request in one visit is a protocol error: end the client (MV-H33), from the game thread
     // as the version gate kicks (Kick is thread-safe). MTA ends a repeated initial-data-stream request
-    // the same way (CRPCFunctions.cpp:110-124, InitialDataStream, IsJoined-guarded); no flood history,
+    // the same way (reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:110-124, InitialDataStream, IsJoined-guarded); no flood history,
     // MTA's protocol-error disconnect bans nothing.
     if (g_asked[peerSlot]) {
         UE_LOGI("save_transfer: slot %d asked for the world save twice in one visit -- ending it (MV-H33)",
@@ -533,7 +538,7 @@ void OnRequest(int peerSlot) {
     // run. The joiner hears it as the host capturing its world. With no gamemode the note renews its wait at
     // the first note only, so a world that never comes in ends the join as the host never preparing it;
     // once there is a gamemode the note's progress rises, bounded by the host's own settle ceiling.
-    // MTA opens its port before the rest of Start (`CGame.cpp:982, 1021`) and processes no packet until
+    // MTA opens its port before the rest of Start (`reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:982, 1021`) and processes no packet until
     // Start returns and its pulse runs; here the world finishes starting after Start, so a join's capture
     // waits for it.
     // [dev] save_wait_probe holds every request on this path a second longer, so a drill reaches it without
@@ -820,6 +825,10 @@ void OnDisconnect() {
 
 bool WorldTakenFor(int peerSlot) {
     return peerSlot >= 1 && peerSlot < coop::net::kMaxPeers && g_worldTaken[peerSlot];
+}
+
+uint32_t WorldCapturesFor(int peerSlot) {
+    return peerSlot >= 1 && peerSlot < coop::net::kMaxPeers ? g_worldCaptures[peerSlot] : 0;
 }
 
 }  // namespace coop::save_transfer

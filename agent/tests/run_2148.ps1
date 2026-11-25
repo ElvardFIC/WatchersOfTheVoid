@@ -10,20 +10,20 @@ try {
  if(-not $body.Success){throw 'Production mounting query not found'}
  [IO.File]::WriteAllText((Join-Path $output 'atv_mount_body.h'),$body.Value,[Text.UTF8Encoding]::new($false))
  foreach($name in @('prop_pry','atv_mount')) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/atv_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_2148_test.cpp" /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/atv_stubs" /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/${name}_2148_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
  }
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/prop_action.obj" "/Fe$output/prop_action.exe" agent/tests/prop_action_2143_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/text_drone_stubs" /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/prop_action.obj" "/Fe$output/prop_action.exe" "$PSScriptRoot/prop_action_2143_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Prop action test compilation failed'}
  & "$output/prop_action.exe"
  if($LASTEXITCODE -ne 0){throw 'Prop action test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/birth.obj" "/Fe$output/birth.exe" agent/tests/wrappers_2129_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/stubs" /I src/votv-coop/include "/Fo$output/birth.obj" "/Fe$output/birth.exe" "$PSScriptRoot/wrappers_2129_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Birth provenance test compilation failed'}
  & "$output/birth.exe"
  if($LASTEXITCODE -ne 0){throw 'Birth provenance test failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/container.obj" "/Fe$output/container.exe" agent/tests/container_extract_2147_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/container.obj" "/Fe$output/container.exe" "$PSScriptRoot/container_extract_2147_test.cpp" /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Container restoration test compilation failed'}
  & "$output/container.exe"
  if($LASTEXITCODE -ne 0){throw 'Container restoration test failed'}

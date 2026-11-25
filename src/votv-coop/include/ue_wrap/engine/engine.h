@@ -48,11 +48,11 @@ bool SetGamePaused(bool paused);
 bool TryGetWorldTimeSeconds(float& seconds);
 
 // Spawn `actorClass` at `location` through the deferred GameplayStatics pair (AlwaysSpawn); the
-// AActor* or nullptr. `inertPawn` zeroes AutoPossessPlayer, AutoPossessAI and AutoReceiveInput and
-// sets bBlockInput in the deferred window, so the pawn never takes a PlayerController or the local
-// input. `beforeFinish`, when set, runs once on the deferred actor after those writes and before
-// FinishSpawning, so its BeginPlay and the overlaps its colliders report as they register already see
-// what the callback set; it is not called on a path that returns null before the actor exists. `ctx` is
+// AActor* or nullptr. `inertPawn` runs MakePawnInert (engine_pawn.h) on the deferred actor, so the pawn
+// never takes a PlayerController or the local input. `beforeFinish`, when set, runs once on the deferred
+// actor after those writes and before FinishSpawning, so its BeginPlay and the overlaps its colliders
+// report as they register already see what the callback set; it is not called on a path that returns
+// null before the actor exists. `ctx` is
 // the caller's and need live only for the call; the callback runs on the game thread inside
 // SpawnActor and must not re-enter it. A failed FinishSpawning call destroys the begun actor and
 // returns nullptr (the callback has run by then). Game thread.
@@ -66,9 +66,14 @@ void* SpawnActorTracked(void* actorClass, const FVector& location, bool& attempt
 // The split form: BeginDeferredSpawn, write class-specific fields before Init and BeginPlay,
 // FinishDeferredSpawn with the same transform (the engine re-applies it). A wire-spawned entity
 // gets its variant state stamped in the window. Game thread.
-void* BeginDeferredSpawn(void* actorClass, const FVector& location, const FRotator& rotation);
+// `collision` is the game's ESpawnActorCollisionHandlingMethod byte: 0 the actor class's own default, 1 always spawn
+// (the default here, as SpawnActor's), 2 adjust where possible but always spawn.
+// `scale`, when given, is the transform's Scale3D (unit otherwise); Finish takes the same one.
+void* BeginDeferredSpawn(void* actorClass, const FVector& location, const FRotator& rotation, uint8_t collision = 1,
+                         const FVector* scale = nullptr);
 
-bool  FinishDeferredSpawn(void* actor, const FVector& location, const FRotator& rotation);
+bool  FinishDeferredSpawn(void* actor, const FVector& location, const FRotator& rotation,
+                          const FVector* scale = nullptr);
 
 // AActor::K2_GetActorLocation, the one location read: false when the location could not be
 // obtained, a read that faulted inside the engine and was absorbed included
@@ -197,6 +202,8 @@ void LogClassProperties(const wchar_t* className);
 // ACharacter's capsule half-height (UCapsuleComponent::CapsuleHalfHeight); 0.f if none. Game
 // thread.
 float GetActorCharacterHalfHeight(void* mainPlayerPawn);
+// ACharacter's capsule radius (UCapsuleComponent::CapsuleRadius); 0.f if none. Game thread.
+float GetActorCharacterRadius(void* mainPlayerPawn);
 
 // A long-lived WorldContextObject for the deferred-spawn pair: the GameInstance, else the World.
 // One lookup when cached; the objects are the world singleton's. Game thread.

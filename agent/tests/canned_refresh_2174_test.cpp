@@ -1,6 +1,7 @@
 #include "../../src/votv-coop/src/coop/props/prop_record_refresh.cpp"
 #include "coop/player/hand_item.h"
 #include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #include <cstdlib>
 #include <vector>
 

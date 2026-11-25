@@ -63,7 +63,6 @@ bool RunCommand(void* term, const std::wstring& line);
 bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType);
 // Native clr's display-only effect; no command parser or world effects.
 bool ClearLog(void* term);
-bool ConsumeInput(void* term);
 // Stop before further input changes when the caller or either widget incarnation
 // changes during reflected preparation/SetText. A missing text box is valid.
 bool ConsumeInputWhile(void* term, const std::function<bool()>& current);
@@ -73,4 +72,6 @@ bool ConsumeInputWhile(void* term, const std::function<bool()>& current);
 std::wstring PanelName(void* panel);
 void* FindPanelByName(const std::wstring& name);
 
+
+bool ConsumeInput(void* term);
 }  // namespace ue_wrap::sat_console

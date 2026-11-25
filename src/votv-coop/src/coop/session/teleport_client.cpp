@@ -1,11 +1,14 @@
 #include "coop/session/teleport_client.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/player/players_registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/props/active_drive.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
@@ -121,6 +124,25 @@ bool ApplyLocally(const ApplyArgs& args) {
     return moved;
 }
 
+bool ApplyHostOrder(const ApplyArgs& args) {
+    // The /cremate drill's two client arms. They sit here and not in ApplyLocally, which a join's placement and the
+    // death revive also call: a knob there would drop or kill those too.
+    if (coop::config::ResolveFlag(coop::config_registry::rows::cremate_drop_order)) {
+        UE_LOGW("teleport_client: DRILL -- the host's order is NOT applied (dev.cremate_drop_order)");
+        return false;
+    }
+    if (coop::config::ResolveFlag(coop::config_registry::rows::cremate_transit_die)) {
+        // The game's own lethal hit, as the cremator's fire delivers it (cremator_hit.cpp): a raw write of Health 0 is
+        // not a death -- the game never ran its death and the pose stream never carried a zero health.
+        void* local = coop::players::Registry::Get().Local();
+        const bool hit = local && ue_wrap::engine::InvokeAddDamage(local, nullptr, 9999.f, ue_wrap::FVector{});
+        UE_LOGW("teleport_client: DRILL -- cremate_transit_die: the lethal hit %s, the move not applied",
+                hit ? "ran" : "did NOT run");
+        return false;
+    }
+    return ApplyLocally(args);
+}
+
 namespace {
 
 // Snapshot the host's own mainPlayer pose into a TeleportClientPayload. Game
@@ -170,27 +192,6 @@ void SendPoseToSlotIfStillHeld(coop::net::Session* s, int slot, uint32_t generat
 
 }  // namespace
 
-void GatherOthersTo(uint8_t anchorSlot, float x, float y, float z, float yaw) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    RefreshGathers(s);
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if(anchorSlot>=coop::net::kMaxPeers)return;
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(yaw)) return;
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    const auto now=coop::active_drive::NowMs();
-    g_gathers[anchorSlot]={}; // a newer event cannot move its own initiator to an older anchor
-    for (int slot = 0; slot < coop::net::kMaxPeers; ++slot) {
-        if (static_cast<uint8_t>(slot) == anchorSlot) continue;
-        const float ang = (slot + 1) * 1.7f;
-        const ApplyArgs args{ x + std::cos(ang) * 110.f, y + std::sin(ang) * 110.f, z,
-                              0.f, yaw, 0.f };
-        if (slot!=localSlot && (!s->HasPeerConn(slot)||!s->IsSlotWorldReady(slot))) {g_gathers[slot]={};continue;}
-        g_gathers[slot]={args,now+5000,now,++g_gatherSerial,true};
-    }
-    TickGather();
-    UE_LOGI("teleport_client: requested gather to slot %u at (%.0f, %.0f, %.0f)",
-            static_cast<unsigned>(anchorSlot), x, y, z);
-}
 
 void TickGather() {
     auto* s=g_session.load(std::memory_order_acquire);RefreshGathers(s);
@@ -250,6 +251,30 @@ bool TeleportSlotToHostWithToken(int peerSlot, uint32_t generation) {
         SendPoseToSlotIfStillHeld(s, peerSlot, generation, p);
     });
     return true;
+}
+
+
+
+void GatherOthersTo(uint8_t anchorSlot, float x, float y, float z, float yaw) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    RefreshGathers(s);
+    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
+    if(anchorSlot>=coop::net::kMaxPeers)return;
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(yaw)) return;
+    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    const auto now=coop::active_drive::NowMs();
+    g_gathers[anchorSlot]={}; // a newer event cannot move its own initiator to an older anchor
+    for (int slot = 0; slot < coop::net::kMaxPeers; ++slot) {
+        if (static_cast<uint8_t>(slot) == anchorSlot) continue;
+        const float ang = (slot + 1) * 1.7f;
+        const ApplyArgs args{ x + std::cos(ang) * 110.f, y + std::sin(ang) * 110.f, z,
+                              0.f, yaw, 0.f };
+        if (slot!=localSlot && (!s->HasPeerConn(slot)||!s->IsSlotWorldReady(slot))) {g_gathers[slot]={};continue;}
+        g_gathers[slot]={args,now+5000,now,++g_gatherSerial,true};
+    }
+    TickGather();
+    UE_LOGI("teleport_client: requested gather to slot %u at (%.0f, %.0f, %.0f)",
+            static_cast<unsigned>(anchorSlot), x, y, z);
 }
 
 }  // namespace coop::teleport_client

@@ -1,5 +1,6 @@
 #include "support_2135.h"
 #include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #ifndef SAT_CONSOLE_SOURCE
 #define SAT_CONSOLE_SOURCE "../../src/votv-coop/src/coop/interactables/sat_console_sync.cpp"
 #endif

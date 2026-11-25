@@ -1,5 +1,6 @@
 // coop/props/prop_drop_intent.cpp -- see coop/props/prop_drop_intent.h for the design.
 
+#include "coop/player/level_visit.h"
 #include "coop/props/prop_drop_intent.h"
 #include "coop/props/container_contents_sync.h"
 #include "coop/comms/peer_action_feed.h"
@@ -646,8 +647,9 @@ bool FreshPlacementAllowed(const net::PropDropIntentPayload& p, uint8_t senderSl
     // (the socket unplug), drives, floppy discs and server upgrades (a box's take-out). Not a general
     // client-spawn door; any other class here is a protocol violation, dropped.
     const std::wstring cls = WireToWide(p.className.len, p.className.data, sizeof(p.className.data));
-    // Host resolving a CLIENT's eject class: object_index, host world up so the index is current.
-    void* clsObj = ue_wrap::object_index::ClassByName(cls.c_str());
+    // Host resolving a CLIENT's eject class: lookup only (a client's name never makes the host load).
+    void* clsObj = ue_wrap::class_resolve::ResolveClass(cls.c_str(), ue_wrap::prop::PropFamily(),
+                                                         ue_wrap::class_resolve::Load::LookupOnly).cls;
     const bool isReel = clsObj && ue_wrap::tape_caddy::EnsureResolved() &&
                         ue_wrap::tape_caddy::IsReelClass(clsObj);
     const bool isModule = clsObj && ue_wrap::phys_mods::EnsureResolved() &&

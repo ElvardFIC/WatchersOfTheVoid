@@ -6,28 +6,28 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- $includes=@('/I','agent/tests/tower_ops_stubs','/I','agent/tests/tower_stubs','/I','src/votv-coop/include')
+ $includes=@('/I',(Join-Path $PSScriptRoot 'tower_ops_stubs'),'/I',(Join-Path $PSScriptRoot 'tower_stubs'),'/I','src/votv-coop/include')
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /c /I src/votv-coop/include "/Fo$output/registry.obj" src/votv-coop/src/coop/config/config_registry.cpp
  if($LASTEXITCODE){throw 'Tower operation registry compile failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/test.obj" "/Fe$output/test.exe" agent/tests/tower_ops_test.cpp "$output/registry.obj" /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/test.obj" "/Fe$output/test.exe" "$PSScriptRoot/tower_ops_test.cpp" "$output/registry.obj" /link /OPT:REF
  if($LASTEXITCODE){throw 'Tower operation fixture compile failed'}
  & "$output/test.exe"
  if($LASTEXITCODE){throw 'Tower operation fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/capture.obj" "/Fe$output/capture.exe" agent/tests/tower_capture_test.cpp "$output/registry.obj" /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/capture.obj" "/Fe$output/capture.exe" "$PSScriptRoot/tower_capture_test.cpp" "$output/registry.obj" /link /OPT:REF
  if($LASTEXITCODE){throw 'Tower capture compile failed'}
  & "$output/capture.exe"
  if($LASTEXITCODE){throw 'Tower capture fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/client_delivery.obj" "/Fe$output/client_delivery.exe" agent/tests/tower_client_delivery_test.cpp "$output/registry.obj" /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/client_delivery.obj" "/Fe$output/client_delivery.exe" "$PSScriptRoot/tower_client_delivery_test.cpp" "$output/registry.obj" /link /OPT:REF
  if($LASTEXITCODE){throw 'Tower client delivery compile failed'}
  & "$output/client_delivery.exe"
  if($LASTEXITCODE){throw 'Tower client delivery fixture failed'}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/refund.obj" "/Fe$output/refund.exe" agent/tests/tower_refund_test.cpp "$output/registry.obj" /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/Fo$output/refund.obj" "/Fe$output/refund.exe" "$PSScriptRoot/tower_refund_test.cpp" "$output/registry.obj" /link /OPT:REF
  if($LASTEXITCODE){throw 'Tower refund compile failed'}
  & "$output/refund.exe"
  if($LASTEXITCODE){throw 'Tower refund fixture failed'}
- & "$env:USERPROFILE/.local/bin/python3.15.exe" agent/tests/spawn_attempt_extract.py "$output/spawn_attempt.inc"
+ & "$env:USERPROFILE/.local/bin/python3.15.exe" "$PSScriptRoot/spawn_attempt_extract.py" "$output/spawn_attempt.inc"
  if($LASTEXITCODE){throw 'Spawn attempt extraction failed'}
- & cl /nologo /std:c++20 /EHsc /utf-8 "/I$output" "/Fo$output/spawn.obj" "/Fe$output/spawn.exe" agent/tests/spawn_attempt_test.cpp
+ & cl /nologo /std:c++20 /EHsc /utf-8 @includes "/I$output" "/I$root/src/votv-coop/include" "/Fo$output/spawn.obj" "/Fe$output/spawn.exe" "$PSScriptRoot/spawn_attempt_test.cpp"
  if($LASTEXITCODE){throw 'Spawn attempt compile failed'}
  & "$output/spawn.exe"
  if($LASTEXITCODE){throw 'Spawn attempt fixture failed'}
@@ -67,7 +67,7 @@ try {
    $path=Join-Path $output ($control.Name+'.cpp');[IO.File]::WriteAllText($path,$source.Replace($control.Before,$control.After))
    $header=Join-Path $output ($control.Name+'.h')
    [IO.File]::WriteAllText($header,('#define TOWER_OPS_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   $fixture=if($control.Test){"agent/tests/$($control.Test)_test.cpp"}else{'agent/tests/tower_ops_test.cpp'}
+   $fixture=if($control.Test){"$PSScriptRoot/$($control.Test)_test.cpp"}else{(Join-Path $PSScriptRoot 'tower_ops_test.cpp')}
    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes "/FI$header" "/Fo$output/$($control.Name).obj" "/Fe$output/$($control.Name).exe" $fixture "$output/registry.obj" /link /OPT:REF
    if($LASTEXITCODE){throw "Tower op control compile failed: $($control.Name)"}
    $saved=$ErrorActionPreference

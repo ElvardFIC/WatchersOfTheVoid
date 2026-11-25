@@ -144,7 +144,7 @@ inline constexpr size_t kVulkanPixelFormatTableNextOff = 10;
 inline constexpr size_t kGPixelFormats_Stride         = 0x28;  // sizeof(FPixelFormatInfo)
 inline constexpr size_t kGPixelFormats_PlatformFormat = 0x1C;  // int32, the VkFormat the RHI fills in at init
 
-// Layouts of the Vulkan RHI's objects at the Present seam (UE 4.27 VulkanViewport.h:110-127,
+// Layouts of the Vulkan RHI's objects at the Present seam (UE 4.27 Source/Runtime/VulkanRHI/Private/VulkanViewport.h:110-127,
 // VulkanDevice.h, VulkanSwapChain.h, VulkanQueue.h; read from the cook's code). FVulkanViewport:
 inline constexpr size_t kVkViewport_Device        = 0x18;   // FVulkanDevice* (FDeviceChild)
 inline constexpr size_t kVkViewport_PixelFormat   = 0x18C;  // int32 EPixelFormat, written back by the swapchain constructor
@@ -371,7 +371,10 @@ inline constexpr size_t UField_Next = 0x28;
 // 0x230/0x231, AActor 0x5A/0xF3; EAutoReceiveInput::Disabled = 0).
 inline constexpr size_t AActor_bBlockInput = 0x5A;          // uint8 (set 1)
 inline constexpr size_t AActor_AutoReceiveInput = 0xF3;     // uint8 enum (set 0)
-inline constexpr size_t APawn_Controller = 0x0258;          // AController* (null on an orphan pawn). Engine.hpp:7646. The AnimBP's idle-to-walk transition needs AnimBP.Controller != None, fed from the local player's controller.
+// AController* (null on an orphan pawn). Engine.hpp:7646. The body AnimBPs pose from the pawn's velocity and read no
+// controller: the puppet walks with a null one (ue_wrap/actors/puppet_spawn.cpp:41, :52), and kerfurOmega's AnimBPs
+// assign a `controller` variable they never read. An npc mirror therefore spawns without one (MakePawnInert).
+inline constexpr size_t APawn_Controller = 0x0258;
 inline constexpr size_t APawn_AutoPossessPlayer = 0x230;    // uint8 enum (set 0)
 inline constexpr size_t APawn_AutoPossessAI = 0x231;        // uint8 enum (set 0)
 inline constexpr size_t APawn_AIControllerClass = 0x238;    // UClass* (TSubclassOf<AController>)
@@ -415,6 +418,7 @@ inline constexpr size_t ACharacter_Mesh             = 0x0280;          // USkele
 inline constexpr size_t ACharacter_CharacterMovement = 0x0288;         // UCharacterMovementComponent*  Engine.hpp:6971 (mainPlayer_C orphan: must be tick-disabled on the puppet so the satellite is the only Velocity source)
 inline constexpr size_t ACharacter_CapsuleComponent = 0x0290;          // UCapsuleComponent*  Engine.hpp:6972
 inline constexpr size_t UCapsuleComponent_CapsuleHalfHeight = 0x0468;  // float  Engine.hpp:9883
+inline constexpr size_t UCapsuleComponent_CapsuleRadius = 0x046C;      // float  Engine.hpp:9884
 
 // UCharacterMovementComponent::MovementMode @ +0x0168 (Engine.hpp:9917): MOVE_None=0, Walking=1,
 // NavWalking=2, Falling=3, Swimming=4, Flying=5, Custom=6. The source's airborne state rides
@@ -424,6 +428,7 @@ inline constexpr size_t UCharacterMovement_MovementMode = 0x0168;
 // UMovementComponent::UpdatedComponent @ +0x00B0 (Engine.hpp:15425): the component a movement moves,
 // whose IsSimulatingPhysics a CharacterMovementComponent's tick asks before it moves anything.
 inline constexpr size_t UMovementComponent_UpdatedComponent = 0x00B0;
+inline constexpr uint8_t kMOVE_Walking = 1;
 inline constexpr uint8_t kMOVE_Falling = 3;
 
 // USceneComponent::AttachParent @ +0x00C0 (Engine.hpp:17900). The puppet spawn's diagnostic dump

@@ -200,7 +200,7 @@ Target SharedTarget(void* container, uint32_t& eid) {
 // The host's own player beside a client's hold (the pocket's HostPre, prop_act_request.cpp): a put is cancelled on a
 // container any client holds anything on, since the restore of an escrow could overflow it; a take is cancelled on
 // one a client holds reserved. Everything else runs natively. MTA never refuses its server body for a client's seat
-// claim (CGame.cpp:3340 refuses only the second client); here the host player is a participant on the same container,
+// claim (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3340 refuses only the second client); here the host player is a participant on the same container,
 // whose restore of an escrow could overflow it.
 sg::Verdict HostPre(void* container, bool anyHold) {
     if (!container || !ci::IsContainer(container)) return sg::Verdict::Run;

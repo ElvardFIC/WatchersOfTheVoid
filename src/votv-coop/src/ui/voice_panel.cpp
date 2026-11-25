@@ -213,9 +213,9 @@ void Render() {
         // snapshot float. The ranges are the panel's own, narrower than the rows'; AlwaysClamp
         // holds a typed value (Ctrl+click) to them.
         // MTA keeps the in-memory setting as the live value, saved on OK and reverted on Cancel
-        // (CSettings.cpp:5568-5575, :3888-3889, :3904-3916).
+        // (reference/mtasa-blue/Server/mods/deathmatch/logic/CSettings.cpp:5568-5575, :3888-3889, :3904-3916).
         // Source's cvarslider has no live preview and writes the cvar at drag end or on the
-        // dialog's OK, discarding on Close (cvarslider.cpp:310-333, tf_controls.cpp:746-755).
+        // dialog's OK, discarding on Close (reference/source-sdk-2013/src/common/GameUI/cvarslider.cpp:310-333, reference/source-sdk-2013/src/game/client/tf/vgui/tf_controls.cpp:746-755).
         // Ours previews live because SetValue writes the ini, logs `config: SET` and notifies on
         // every set (config_runtime.cpp), so the row cannot be MTA's per-frame in-memory store;
         // the row is set once, on release, and a drag the panel's closing abandons is committed

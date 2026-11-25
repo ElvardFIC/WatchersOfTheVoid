@@ -5,14 +5,14 @@
 // sends, so the host ends its link (Session::TakeBudget). A kind's own cost is its lane's. Net thread only, no lock.
 //
 // MTA counts each event a client triggers on an element that resolves, refused or not, toward a per-player threshold
-// and raises an event for the server's scripts past it (CGame.cpp:2663-2711,4927-4976). Ours counts every packet,
+// and raises an event for the server's scripts past it (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2663-2711,4927-4976). Ours counts every packet,
 // sync and an unresolvable one included, so its numbers sit far above MTA's 100 a second; a token bucket holds a burst
 // and a rate in one, where MTA's fixed window, opened by the first event, passes up to twice its count across a
 // boundary; the host answers by ending the link; and a rate of 0 turns it off, which MTA's row cannot
 // (mtaserver.conf:316-319). MTA relays the puresync of a player in zone 0 every time and paces the farther zones for
-// bandwidth (CPlayer.cpp:981-1028, CBandwidthSettings.h:37-55); the stream bound is Source's shape, itself a token
-// bucket: +1 a server tick, capped, spent per command, the rest dropped (player.cpp:3243,3392-3414,
-// player_command.cpp:318-335).
+// bandwidth (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayer.cpp:981-1028, reference/mtasa-blue/Server/mods/deathmatch/logic/CBandwidthSettings.h:37-55); the stream bound is Source's shape, itself a token
+// bucket: +1 a server tick, capped, spent per command, the rest dropped (reference/source-sdk-2013/src/game/server/player.cpp:3243,3392-3414,
+// reference/source-sdk-2013/src/game/server/player_command.cpp:318-335).
 
 #pragma once
 

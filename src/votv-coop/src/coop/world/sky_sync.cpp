@@ -3,6 +3,8 @@
 
 #include "coop/world/sky_sync.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"  // coop::players::kMaxPeers
@@ -101,6 +103,12 @@ sg::Verdict OnSetEyePre(const sg::Call& call) {
     return sg::Verdict::Cancel;
 }
 
+// [dev red] sky_flag_apply_off: a client reads the host's black hole flag and never applies it.
+bool HoleApplyOff() {
+    static const bool off = coop::config::ResolveFlag(coop::config_registry::rows::sky_flag_apply_off);
+    return off;
+}
+
 bool Finite(const coop::net::SkyStatePayload& p) {
     using namespace coop::net::sky_flags;
     return std::isfinite(p.skyPitch) && std::isfinite(p.skyYaw) &&
@@ -182,9 +190,6 @@ void OnReliable(const coop::net::SkyStatePayload& payload) {
             UE_LOGW("sky_sync: the host's eye %d did not apply -- the sky's setEye did not run (first failure; the "
                     "rest are counted, and each next sample tries again)", want ? 1 : 0);
     }
-    static int s_n = 0;
-    if ((s_n++ % 10) == 0)  // ~every 10s -- confirm convergence, not spam
-        UE_LOGI("sky_sync: applied host sky yaw=%.1f moonPhase=%.3f", payload.skyYaw, payload.moonPhase);
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {

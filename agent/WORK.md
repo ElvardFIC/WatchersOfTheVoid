@@ -67,9 +67,9 @@ missing adapter boundary, not a reproduced multiplayer defect. Recheck the integ
 
 | ID | Remaining implementation and current local boundary |
 | --- | --- |
-| UG2 | prop_stick_sync.cpp::ReplayStick falls back to frozen/static flags and physics-off after a missed trace. PropStickStatePayload carries identity, flags, pose and velocities, without the support identity. Add support/component resolution and destruction cleanup without attaching to a guessed surface. |
-| UG3 | prop_stick_sync::ConvergeStuck and prop_wire_parity converge existing flags during other replication paths. Ghezra `70641f091` supplies a toolgun lane reference, but no equivalent host-admitted route is installed here. Add live action authority and final state delivery, preserving native freeze/static distinctions and current hold guards. |
-| UG4 | The upstream laptop stabilizes its seat locally. No stabilizeSeat/occupied-chair reservation route was found in our coop controllers. Bind protection to the actual chair, operator and laptop lease; clear it on exit, body/world replacement and disconnect. Receiver-side competing-hold arbitration is already present and does not itself reserve an occupied chair. |
+| UG2 | Implemented in `prop_stick_sync`: PropStickStatePayload carries support element/class/actor/component identity; receivers attach KeepWorld to the resolved exact component and retire the mirror from a support EndPlay sink. Join snapshots send the support state after PropSpawn; unresolved support is retried for 10s. No local trace is used for the replicated stick. The Windows target compiles and links; its post-build dependency scan cannot run without dumpbin/llvm-objdump. Two-peer runtime behavior and native stick cosmetics remain unverified. |
+| UG3 | Implemented `prop_tool_flags`: every `tool_*_C::init(toolgun)` reads its keyed `outHit` target's static/frozen/sleep bits before and after the action, then sends a final-state `PropToolFlags` through the host. The receiver uses `prop_C`'s base setter, leaves a locally held prop to the hold/release path, and late join continues to use the host's snapshot flags. The Windows target compiles and links; the reliable-kind Python gate could not run because Python is unavailable. Two-peer behavior, tool classes that defer writes beyond `init`, and local-hold transitions remain unverified. |
+| UG4 | Added `laptop_seat_trace`, an observe-only runtime probe for `stabilizeSeat` and nested/laptop-context `setPropProps`; it logs target key/class, caller, physical flags, active argument and laptop-lease context. The Windows Release target compiles and links. UG4 is not implemented yet: capture two-peer entry/exit logs to identify the real chair and caller before adding a host-owned reservation; then clear it on exit, body/world replacement and disconnect. Receiver-side competing-hold arbitration alone does not reserve an occupied chair. |
 | UG5 | No red-phone ring adapter was found in coop controllers or protocol. Capture the native selected ring/cue and its lifetime; host ownership must not duplicate native client rolls. |
 | UG6 | No desk virusEvent adapter was found. Dish precision, server state and power-panel replication cover parts of the aftermath, not the native virus trigger and phase ownership. Map the actual graph before defining its shared effects and join policy. |
 | UG7 | download_arm_sync replays native begin; no objectRenderer/lifecrystal-specific birth scope was found in coop. Bind any shared signal output to one host-owned invocation across either arm/birth arrival order, including failed construction and replacement. Preserve personal camera/ending branches. |
@@ -79,7 +79,7 @@ Source links are attached to each TODO item. Existing event, entity, resource,
 mod-integration and physics backlogs remain the owners of overlapping work;
 do not duplicate them or import gameplay-only acceptance as implementation.
 
-Development target: **0.9.2164**. [TODO.md](TODO.md) lists priorities.
+Development target: **0.9.2165**. [TODO.md](TODO.md) lists priorities.
 This file contains implementation work and the constraints needed to finish it.
 Checks, completed-change reports and release evidence belong in
 [TESTLOG.md](TESTLOG.md).
@@ -179,7 +179,7 @@ TESTLOG. These fixes do not complete the umbrella items below.
 | --- | --- | --- |
 | UP2 | The compiled message policy admits CordIntent/CoffeeActionIntent/FuseTowerState/PropSyncClaim only to host validation; CordState/PropSyncAnswer/SwingerRestPose/GeomOctaEvent are host-authored. None is blindly relayed; capacity remains 32. | Audit each native continuation against sender generation and world/session identity. Protocol classification does not validate the callbacks or transactions below, nor all 436 transferred commits. |
 | UP4 | UI01-UI05 implement tower capture/function-frame proofs, committed writes/refund debt, owned client FIFO requests until ACK and captured refused-pull cleanup, plus recipient-owned cord state/join convergence and guarded native drag/head work. Earlier coffee, CP/CQ and TQ/TO guards remain exercised. | Finish reconciliation of uncertain native spawn/pull outputs and the remaining tower timeline/effect review. Unknown receipts remain recorded without guessing a target or replaying native work; native multiplayer acceptance remains unperformed. |
-| UP5 | Swinger join applies owned actor/class/world receipts; failed velocity zeroing retains debt and timeouts work without an advancing index. Park supports retain 32 rider leases. Client PC01-PC25 / PS01-PS50, host controller PH01-PH15 / HS01-HS60 and publisher HP01-HP25 / HT01-HT50 own their continuations. SG01-SG15 / SX01-SX60 propagate caller proof through native application and retain episode/park ownership. SJ01-SJ25 / SD01-SD50 retain guarded host join delivery; GD01-GD25 / GX01-GX50 retain grant/revoke recipient debt; EH01-EH25 / EX01-EX50 retain End delivery across publisher/controller retirement. | Finish native handoff/support-contact ownership review and the original prop-jitter investigation. Trace ordinary hand-drive/support contacts in the original jitter report; offline continuation checks do not establish its root cause. |
+| UP5 | Swinger join applies owned actor/class/world receipts; failed velocity zeroing retains debt and timeouts work without an advancing index. Park supports retain 32 rider leases. Client PC01-PC25 / PS01-PS50, host controller PH01-PH15 / HS01-HS60 and publisher HP01-HP25 / HT01-HT50 own their continuations. SG01-SG15 / SX01-SX60 propagate caller proof through native application and retain episode/park ownership. SJ01-SJ25 / SD01-SD50 retain guarded host join delivery; GD01-GD25 / GX01-GX50 retain grant/revoke recipient debt; EH01-EH25 / EX01-EX50 retain End delivery across publisher/controller retirement. | Finish native handoff/support-contact ownership review. The joined-client prop-jitter report was closed per owner direction on 11 November 2026; no runtime validation was performed. |
 | UP6 | UI06 retains host decisions per recipient with FIFO, supersession, target/class/session proofs, pacing and ordered recipient-owned NPC birth admission. UI07 keeps native Present/Destroy serialized through native present, preserving the engine caller's GPU-quiescence contract. Earlier G01-G11 and VI01-VI02 remain exercised. | Finish exact Ramiel current-phase/audio/effect joins and native mirror creation acceptance. Finish full Vulkan device/context replacement recovery and complete backend-resource retirement; native beam/attack/graphics acceptance remains unperformed. |
 
 - [x] Native tower wrapper continuation: CW01-CW37 / RW01-RW38 implemented.
@@ -254,25 +254,36 @@ are recorded in TESTLOG.
 Other new Ghezra entity/resource/event candidates remain with their owners below.
 The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
 
+## Main and fork refresh — 15 November 2026
+
+- [x] Merge upstream `bb54bd7b5` into `main` as `16fa501a8`, keeping this
+  fork's versions on conflicting hunks and retaining the local Kerfur menu
+  input pair that upstream removed. `origin/main` was already an ancestor.
+  No package or protocol identity was changed.
+- [x] Adapt kdp80's Cremator door fix: `DoorParent` now checks the exact live
+  hatch in the cremator instance list when the parent-actor lookup misses, and
+  local mouse movement is admitted only when the local player grabs that
+  Cremator hatch. Native/runtime checks remain pending.
+- [x] Refresh the 71 inventoried fork default branches: 70 fetched, with
+  `Marlore/temp-mail-generator` unavailable. Candidate dispositions and the
+  separate Kinda Plus snapshot review are in FORK_AUDIT_20261022.md.
+- [ ] Compile and run the required regression/repository gates against the
+  merged source before treating this integration as verified.
+
 ## Client prop physics
 
 - [x] NP01-NP45 / CR01-CR30: native physics frame/lifetime checks and deferred
   child-release ownership implemented. Per-item results are in TESTLOG. A surviving
   unheld child now unparks when its parent retires; failed pose writes retain debt.
 
-- [ ] Fix joined-client object vibration, ejection and support penetration on
-  boxes, desks and workbenches while host physics appears stable. Trace ordinary
-  prop pose application, drive/park/end handoffs and simulation reactivation;
-  resolve conflicting simulation/transform ownership and preserve stable resting
-  contacts, collisions, pickup/drop and canonical host motion. The report does
-  not yet establish the responsible route or whether client displacement reaches
-  the host. Current config exposes no dedicated user-facing stack-physics fix;
-  do not substitute arbitrary network tuning for a confirmed implementation.
-  PD1-PD10 now protect prop-drive pose/end/tick callbacks, host end generations,
-  component replacement and hand transitions; TESTLOG records their offline proof.
-  NP01-NP45 / CR01-CR30 cover native physics frames/component discovery and
-  deferred child releases. Ordinary hand-drive, parked supports and host/client
-  publisher ownership still need review; rendered stack acceptance remains open.
+- [x] Joined-client object vibration/ejection/support-penetration report closed
+  per owner direction on 11 November 2026; no further implementation requested.
+  This is not a new gameplay verification. If the symptom recurs, reopen with a
+  reproduction. PD1-PD10 protect prop-drive pose/end/tick callbacks, host end
+  generations, component replacement and hand transitions; NP01-NP45 / CR01-CR30
+  cover native physics frames/component discovery and deferred child releases.
+  The broader hand-drive, parked-support and host/client publisher ownership
+  review remains open; rendered stack acceptance is still unverified.
 
 ## Player presentation and toys
 
@@ -283,13 +294,25 @@ The full 41-commit disposition is in [the fork audit](FORK_AUDIT_20261022.md).
 - [ ] Fix the falling-player T-pose. Resolve selected-model pose transfer and
   physics takeover in engine_ragdoll_skin/engine_playerragdoll and the remote
   display; preserve death-free puppet spawning and the standing warmup bridge.
-- [ ] Finish held-toy variant schemas and hook/function ownership beyond the
-  Dingus/ABPlush capture inputs. Keep PRE/POST provenance and bounded native work.
-- [ ] Finish watoy start-cue and physics-hook ownership. Preserve the existing
-  activation/audio/emitter schemas, original-hand provenance, shared View ownership
-  and presentation budgets. Never replay an uncertain admitted activation.
+- [x] Extend held-toy capture-hook ownership across the shared catalogued Dingus
+  variants. Each variant now has class-scoped PRE/POST watches for
+  `playerHandUse_RMB` and `actionOptionIndex`; inherited bodies remain matched to
+  their actual declaring class, while an override can be captured under its own
+  class. Controller fixtures assert coverage for every catalog entry.
+- [ ] Finish native input-schema review for any held-toy variant overrides beyond
+  the validated Dingus/ABPlush capture inputs. Keep PRE/POST provenance and
+  bounded native work; in-game acceptance remains open.
+- [x] Watoy start-cue sequencing and physics-hook ownership are covered offline.
+  Physics hooks resolve their Blueprint caller actor (and component outers when
+  applicable), matching the native-hook callback provenance for the extracted
+  physics writes. Activation/audio/emitter schemas,
+  original-hand provenance, shared View ownership, bounded presentation work and
+  uncertain-activation handling remain preserved. In-game timing/physics
+  acceptance remains open.
 - [ ] Finish thrown-sponge foam and resource ownership beyond window dabs;
   preserve the original draw's material/size and at-most-once native cleaning.
+  Water-projectile queues now also fence a reused `Session` by its start serial;
+  broader in-game foam/resource/save parity remains unverified.
 - [ ] Fix remaining stow stalls beyond indexed save-record class restoration;
   retain pending item-state restoration while classes are unavailable.
 - [ ] Fill missing model previews and custom-skin compatibility while retaining
@@ -460,4 +483,8 @@ effect durations or sleep needs.
 
 - [ ] Reduce public-prose findings in documents, src.comment_doc_row and
   src.files_not_swept; restore required reading-room references. Existing gate
-  findings and evidence belong in TESTLOG.
+  findings and evidence belong in TESTLOG. 15 November 2026 recheck: fact rows
+  pass (720 rows / 243 files); public prose fails 13 counters, including 322
+  comment citations, 44 dead declarations and 192 unswept files. All 163
+  regression groups pass for the 2165 source candidate. Do not build Release
+  until the prose gate passes.

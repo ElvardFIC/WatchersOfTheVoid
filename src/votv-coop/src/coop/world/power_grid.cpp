@@ -12,6 +12,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/session/net_pump.h"  // IsInAnnouncedWorld: a client's own world load runs natively
+#include "coop/world/power_grid_install.h"  // the hand's half of an upgrade install
 #include "coop/world/power_decay.h"  // the wear dice, which only the host rolls
 #include "coop/world/power_panel.h"  // the canonical a client's own generator verbs rewrote
 #include "coop/world/power_puzzle.h"  // the rows' second half: each generator's repair puzzle
@@ -87,7 +88,9 @@ PowerGridPayload g_lastSent{};
 bool g_haveSent = false;
 coop::roster_ledger::PerSlotState<uint16_t> g_ack;
 bool g_ackDirty = false;
-struct Waiting { PowerGridPayload p; uint64_t arrivedMs; };
+// An install the sender's hand paid for is judged as it arrives (PaidByHand) and carried with the entry, so the drain
+// never reads the hand again.
+struct Waiting { PowerGridPayload p; uint64_t arrivedMs; bool handPaid = false; };
 std::deque<Waiting> g_waiting[coop::net::kMaxPeers];
 coop::net::IntentBucket g_rate[coop::net::kMaxPeers];       // a sender's acts
 coop::net::IntentBucket g_inputRate[coop::net::kMaxPeers];  // a sender's puzzle inputs
@@ -131,12 +134,6 @@ HitParams g_hitParams;
 // [dev] grid_drill=red: a client writes the rows raw, as the old lanes left each peer to its own generators.
 bool RedApply() {
     static const bool red = coop::config::ResolveString(::coop::config_registry::rows::grid_drill) == "red";
-    return red;
-}
-
-// [dev] grid_drill=upgradered: the host judges an install as if its spend were recorded, the unpaired shape.
-bool UnpairedInstalls() {
-    static const bool red = coop::config::ResolveString(::coop::config_registry::rows::grid_drill) == "upgradered";
     return red;
 }
 
@@ -240,7 +237,8 @@ Take HostTakeOp(coop::net::Session* s, const Waiting& wt, uint8_t sender) {
     const bool predicted = Predicted(p.op);
     if (!predicted && p.op != coop::net::kPowerGridOpHit) return Take::Done;
     if (predicted && !SeqAfter(p.seq, g_ack[sender])) {
-        // Already taken: its sender still shows it only if no rows have answered it yet.
+        // Already taken: its sender still shows it only if no rows have answered it yet. The ordered reliable lane
+        // delivers each seq once, so this is a forged duplicate, whose use PaidByHand counted is its sender's own.
         UE_LOGW("power_grid: host dropped slot %u's %s seq %u (last taken %u)", sender, OpName(p.op), p.seq,
                 g_ack[sender]);
         HostSendRows(s, sender);
@@ -254,11 +252,15 @@ Take HostTakeOp(coop::net::Session* s, const Waiting& wt, uint8_t sender) {
     EL::IntentSubject reach{};
     if (read) reach = EL::IntentTarget::ForClientIntent(*s, sender, kGeneratorReachUU).Authorize(gen);
     if (reach.outcome == EL::IntentOutcome::NoBody && !waited) return Take::Wait;
-    // An install rests on the upgrade its insert spent, which the host saw destroyed beside this generator: taken
-    // here, whatever the outcome, so one spend answers one install. None yet waits for the destroy behind it.
-    bool spent = false;
+    // An install rests on the upgrade its insert spent: the one its sender's hand held, judged as the request arrived
+    // (wt.handPaid, coop/player/hand_spend; its destroy never leaves the client), or a world upgrade the host saw
+    // destroyed beside this generator, else the destroy's wait. Taken here, whatever the outcome, so one spend answers
+    // one install.
+    bool spent = p.op == coop::net::kPowerGridOpUpgrade && wt.handPaid;
     if (read && p.op == coop::net::kPowerGridOpUpgrade) {
-        spent = coop::power_upgrade::TakeSpend(sender, p.index) || UnpairedInstalls();
+        // A hand-paid install burns the world spend beside it too: one upgrade, one credit.
+        const bool world = coop::power_upgrade::TakeSpend(sender, p.index);
+        spent = spent || world;
         if (!spent && !waited) return Take::Wait;
     }
     std::wstring item;
@@ -342,18 +344,23 @@ Take HostTakeOp(coop::net::Session* s, const Waiting& wt, uint8_t sender) {
     return Take::Done;
 }
 
-// Every waiting op of `slot` refused with its newest, whose acknowledgement answers them all: its queue is full. An
-// install among them spent its upgrade before it came, and is refunded as its own refusal would refund it.
+// A counted install that did not run is given back: the hand paid for it as it arrived (handPaid) or a world spend did,
+// whether its queue is refused or its sender left. An entry refused before it took a place was never counted.
+void RefundCounted(uint8_t slot, const Waiting& w, std::vector<void*>& gens) {
+    if (w.p.op != coop::net::kPowerGridOpUpgrade) return;
+    // Paid by the hand as it arrived, or by a world spend: the item is given back either way.
+    const bool world = coop::power_upgrade::TakeSpend(slot, w.p.index);
+    if (!w.handPaid && !world) return;
+    if (gens.empty()) GEN::ReadGenerators(gens);
+    coop::power_upgrade::Refund(slot, w.p.index < gens.size() ? gens[w.p.index] : nullptr);
+}
+
 void HostRefuseQueue(coop::net::Session* s, uint8_t slot, const Waiting& newest) {
     const uint16_t newestSeq = newest.p.seq;
     const size_t n = g_waiting[slot].size();
     g_waiting[slot].push_back(newest);
     std::vector<void*> gens;
-    for (const Waiting& w : g_waiting[slot]) {
-        if (w.p.op != coop::net::kPowerGridOpUpgrade || !coop::power_upgrade::TakeSpend(slot, w.p.index)) continue;
-        if (gens.empty()) GEN::ReadGenerators(gens);
-        if (w.p.index < gens.size() && gens[w.p.index]) coop::power_upgrade::Refund(slot, gens[w.p.index]);
-    }
+    for (const Waiting& w : g_waiting[slot]) RefundCounted(slot, w, gens);
     g_waiting[slot].clear();
     if (SeqAfter(newestSeq, g_ack[slot])) g_ack[slot] = newestSeq;
     g_ackDirty = true;
@@ -381,8 +388,12 @@ void Refund(uint8_t slot, uint8_t op) {
 void HostOffer(coop::net::Session* s, const PowerGridPayload& p, uint8_t sender) {
     if (sender == 0 || sender >= coop::net::kMaxPeers || p.op == coop::net::kPowerGridOpRows) return;
     auto& q = g_waiting[sender];
-    const Waiting w{p, NowMs()};
+    Waiting w{p, NowMs()};
+    // The hand is read once, after the lane's own limit: a rate token, or a queue place.
+    bool judged = false;
     if (q.empty() && Spend(sender, p.op)) {
+        w.handPaid = coop::power_grid::install::PaidByHand(*s, sender, p);
+        judged = true;
         if (HostTakeOp(s, w, sender) == Take::Done) return;
         Refund(sender, p.op);
     }
@@ -390,6 +401,7 @@ void HostOffer(coop::net::Session* s, const PowerGridPayload& p, uint8_t sender)
         HostRefuseQueue(s, sender, w);
         return;
     }
+    if (!judged) w.handPaid = coop::power_grid::install::PaidByHand(*s, sender, p);
     q.push_back(w);
 }
 
@@ -575,6 +587,15 @@ sg::Verdict OnUpdUpgradesPre(const sg::Call& call) {
     return sg::Verdict::Run;
 }
 
+// A client's insert of a held upgrade, as it begins: the generator's playerUsedOn spends the upgrade it is handed, and
+// updUpgrades (watched above) runs after that, with no held actor left to announce; the hold is announced here.
+sg::Verdict OnInsertPre(const sg::Call& call) {
+    auto* s = Connected();
+    if (IsClient(s) && !g_applying && call.object && coop::net_pump::IsInAnnouncedWorld(call.object))
+        coop::power_grid::install::AnnounceHeldUpgrade(*s, call.function, call.locals);
+    return sg::Verdict::Run;
+}
+
 // A client's Activate press, as it begins: its generator and that generator's row.
 sg::Verdict OnActivatePre(const sg::Call& call) {
     RecordVerb(kVerbActivate, call.function);
@@ -743,6 +764,9 @@ void HostPuzzleChanged() { g_puzzleDirty = true; }
 
 void OnPeerLeft(uint8_t slot) {
     if (slot == 0 || slot >= coop::net::kMaxPeers) return;
+    // Waiting ops go with their sender, answered to no one; a counted install is given back (RefundCounted).
+    std::vector<void*> gens;
+    for (const Waiting& w : g_waiting[slot]) RefundCounted(slot, w, gens);
     g_waiting[slot].clear();
     g_rate[slot].Reset();
     g_inputRate[slot].Reset();

@@ -40,7 +40,7 @@ bool ReadRecords(void* inv, std::vector<SR::SaveRecord>& out, bool neuterNested)
 }
 
 WriteResult WriteRecords(uint32_t eid, void* inv, const std::vector<SR::SaveRecord>& recs,
-                         SR::ClassResolver resolve) {
+                         SR::ClassLoad load) {
     if (!ci::IsWorldInventory(inv)) {           // BOUNDARY 1 (fail-closed)
         UE_LOGW("container_contents: eid=%u resolves to a PERSONAL inventory (or an unresolvable "
                 "Player flag) -- refusing to apply", eid);
@@ -62,13 +62,8 @@ WriteResult WriteRecords(uint32_t eid, void* inv, const std::vector<SR::SaveReco
             ci::ContentsSlot(inv) == slot && !std::memcmp(expected.data(),slot,expected.size());
     };
     if (!current()) return WriteResult::NotReady;
-    const auto classReady = [&](const std::wstring& name) {
-        return name.empty() || (resolve ? resolve(name.c_str()) : R::FindClass(name.c_str()));
-    };
     for (const auto& record : recs) {
-        if (!classReady(record.className)) return WriteResult::NotReady;
-        for (const auto& group : record.classes) for (const auto& name : group)
-            if (!classReady(name)) return WriteResult::NotReady;
+        if (!SR::ClassesReady(record, load)) return WriteResult::NotReady;
     }
     if (!current()) return WriteResult::NotReady;
 
@@ -89,7 +84,7 @@ WriteResult WriteRecords(uint32_t eid, void* inv, const std::vector<SR::SaveReco
     for (int32_t i = 0; i < n; ++i) {
         if (!current()) return WriteResult::NotReady;
         const bool written = SR::WriteSaveRecordChecked(reinterpret_cast<uint8_t*>(buf) + static_cast<size_t>(i) * SR::kSaveStride,
-                                                       recs[i], resolve);
+                                                       recs[i]);
         if (!current() || !written) return WriteResult::NotReady;
     }
     if (!current()) return WriteResult::NotReady;

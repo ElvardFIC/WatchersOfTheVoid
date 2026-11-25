@@ -21,6 +21,10 @@ bool CallVerb(void*,Verb verb){if(verb==Verb::UpdTires)++test::tyreUpdates;retur
 namespace ue_wrap::atv {bool EjectWheel(void*,int wheel){++test::ejected;if(test::ejectWorks)test::state.mask&=~(1u<<wheel);return test::ejectWorks;}}
 namespace ue_wrap::log {void Write(Level,const char*,...){} std::string Addr(std::string_view value){return std::string(value);}}
 namespace coop::config {bool ResolveFlag(const config_registry::FlagRow&){return false;}}
+namespace coop::config {std::string ResolveEnum(const config_registry::EnumRow&){return "native";}}
+namespace coop::atv_drill_events {void Note(Event,int32_t,int32_t,int32_t,float,float,float){}}
+namespace coop::atv_host_sync {uint32_t CurrentStateSeq(const std::wstring&){return 0;}void NoteAppliedStateSeq(const std::wstring&,uint32_t){}bool VitalsGated(const std::wstring&){return false;}}
+namespace ue_wrap::atv {float GetFuel(void*){return 0;}float GetHealth(void*){return 0;}}
 int main(){
     namespace C=coop::atv_condition_sync;
     using E=coop::atv_sync::AtvEntry;

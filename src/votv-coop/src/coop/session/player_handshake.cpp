@@ -71,7 +71,7 @@ bool g_cliJoinSent = false;
 coop::roster_ledger::PerSlotState<bool> g_connectAnnounced;
 
 // Host: whether this occupancy has already sent a Join. A second Join from the same occupant is refused
-// and the link kept (MTA CPlayerManager.cpp:79-85); the ledger clears it when the occupant changes, so a
+// and the link kept (MTA reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:79-85); the ledger clears it when the occupant changes, so a
 // rejoin is answered again. Latched on ARRIVAL, as MTA (the socket already holds a player): nothing
 // retries a Join (the client sends exactly one per connection, g_cliJoinSent), so latching early refuses
 // no honest resend.
@@ -345,8 +345,8 @@ bool HandleJoinMessage(net::Session& session,
         return true;
     }
     // A joined peer that sends a second Join is a protocol error. The host refuses it and KEEPS the
-    // link, as MTA: CPlayerManager::Create returns no player on a known socket (CPlayerManager.cpp:79-85)
-    // and CGame::Packet_PlayerJoinData returns on that (CGame.cpp:1811-1814). Latched on arrival, as
+    // link, as MTA: CPlayerManager::Create returns no player on a known socket (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:79-85)
+    // and CGame::Packet_PlayerJoinData returns on that (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1811-1814). Latched on arrival, as
     // MTA's (the socket already holds a player), before the length and version work, so a repeat --
     // well-formed, undersized or mismatched -- costs only this compare, refused once per occupancy (MTA
     // logs each attempt). Nothing retries a Join: the client sends exactly one per connection, so

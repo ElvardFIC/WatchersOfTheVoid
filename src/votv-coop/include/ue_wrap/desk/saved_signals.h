@@ -63,7 +63,7 @@ bool DeleteSignal(int32_t index);
 
 // The leaf of the first ORDINARY (non-unique) signal template name, read from the gamemode's
 // signalNames_default / signalUniques (filled in parallel from the list_signals DataTable, so one
-// index serves both -- BP: mainGamemode.cpp:2399-2458, lib.cpp:3906-3917). Empty (false) if the
+// index serves both -- BP: CXXHeaderDump/mainGamemode.cpp:2399-2458, CXXHeaderDump/lib.cpp:3906-3917). Empty (false) if the
 // gamemode or either array is not up yet, so a unique name is never mistaken for an ordinary one. A
 // drill uses it to build a saved-signal row the native accepts (succ depends only on decoded >= size
 // > 0) with no unique-signal `specials` side effect. Game thread.

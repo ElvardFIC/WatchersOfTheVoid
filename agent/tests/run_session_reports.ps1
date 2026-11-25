@@ -12,12 +12,15 @@ $functions=foreach($name in @('PosKey','ClassifyWidgetClaimKey','ClassifyDeviceA
 [IO.File]::WriteAllText((Join-Path $output 'console_identity.inc'),($functions -join "`n"),[Text.UTF8Encoding]::new($false))
 $rest=Get-Content (Join-Path $checkout 'src/votv-coop/src/coop/player/sleep_rest.cpp') -Raw
 $functions=foreach($name in @('PersonalRest','OnSleepPost','Tick')) {
-    $match=[regex]::Match($rest,"(?ms)^(bool|void) $name\(.*?^\}")
+    $match=[regex]::Match($rest,"(?ms)^(bool|void) $name\([^;]*?\)\s*\{")
     if(-not $match.Success){throw "Production rest controller missing: $name"}
-    $match.Value
+    $start=$match.Index;$open=$rest.IndexOf('{',$match.Index);$depth=1;$end=$open+1
+    while($depth -gt 0 -and $end -lt $rest.Length){if($rest[$end] -eq '{'){$depth++}elseif($rest[$end] -eq '}'){$depth--};$end++}
+    $rest.Substring($start,$end-$start)
 }
+$functions=$functions -replace '(?<![:\w])coop::','::coop::' -replace '(?<![:\w])ue_wrap::','::ue_wrap::'
 [IO.File]::WriteAllText((Join-Path $output 'sleep_rest_controller.inc'),($functions -join "`n"),[Text.UTF8Encoding]::new($false))
-& cl /nologo /std:c++20 /EHsc /utf-8 "/I$output" "/Fo$output/reports.obj" "/Fe$output/reports.exe" "$PSScriptRoot/session_reports_test.cpp"
+& cl /nologo /std:c++20 /EHsc /utf-8 "/I$output" "/I$checkout/src/votv-coop/include" "/Fo$output/reports.obj" "/Fe$output/reports.exe" "$PSScriptRoot/session_reports_test.cpp"
 if($LASTEXITCODE){throw 'Session report regression compile failed'}
 & "$output/reports.exe"
 if($LASTEXITCODE){throw 'Session report regression failed'}

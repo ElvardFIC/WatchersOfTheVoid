@@ -10,7 +10,7 @@ try {
         /I src/votv-coop/include `
         "/Fo$output\floppy_slot_bitfield_2172_test.obj" `
         "/Fe$output\floppy_slot_bitfield_2172_test.exe" `
-        agent/tests/floppy_slot_bitfield_2172_test.cpp /link /OPT:REF
+        "$PSScriptRoot/floppy_slot_bitfield_2172_test.cpp" /link /OPT:REF
     if ($LASTEXITCODE -ne 0) { throw 'Floppy slot bitfield test compile failed' }
     & "$output\floppy_slot_bitfield_2172_test.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Floppy slot bitfield test failed' }

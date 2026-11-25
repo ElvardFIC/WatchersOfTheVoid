@@ -7,10 +7,10 @@ Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  function Build-Fixture([string]$Name,[string]$SourcePath,[string]$Fixture='window_stroke_test',[string]$Macro='WINDOW_STROKE_SOURCE'){
-  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I','agent/tests/window_stroke_stubs','/I','src/votv-coop/include')
+  $flags=@('/nologo','/std:c++20','/EHsc','/utf-8','/Gy','/I',(Join-Path $PSScriptRoot 'window_stroke_stubs'),'/I','src/votv-coop/include')
   if($SourcePath){$header=Join-Path $output ($Name+'_source.h');[IO.File]::WriteAllText($header,('#define '+$Macro+' "'+$SourcePath.Replace('\','/')+'"'+[Environment]::NewLine));$flags+="/FI$header"}
   $exe=Join-Path $output ($Name+'.exe')
-  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "agent/tests/$Fixture.cpp" /link /OPT:REF | Out-Host
+  & cl @flags "/Fo$output/$Name.obj" "/Fe$exe" "$PSScriptRoot/$Fixture.cpp" /link /OPT:REF | Out-Host
   if($LASTEXITCODE){throw "Window stroke fixture compile failed: $Name"}
   return $exe
  }
@@ -20,7 +20,7 @@ try {
  $exe=Build-Fixture 'canvas' '' 'window_canvas_test'
  & $exe
  if($LASTEXITCODE){throw 'Window canvas regression failed'}
- & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') agent/tests/window_canvas_native_test.py
+ & (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe') "$PSScriptRoot/window_canvas_native_test.py"
  if($LASTEXITCODE){throw 'Cooked window canvas contract failed'}
  if($FaultControls){
   $controller=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/interactables/window_stroke_sync.cpp'))

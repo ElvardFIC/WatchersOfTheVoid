@@ -11,6 +11,7 @@
 #include "coop/net/session.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/container_act_wire.h"
+#include "coop/props/prop_record_wire.h"
 #include "coop/props/container_record_edit.h"
 #include "coop/props/container_slice_wire.h"
 #include "coop/props/container_truth.h"
@@ -36,6 +37,7 @@ namespace {
 namespace cas = coop::props::container_act_state;
 namespace cre = coop::props::container_record_edit;
 namespace caw = coop::props::container_act_wire;
+namespace prw = coop::props::prop_record_wire;
 namespace cr  = coop::props::container_reach;
 namespace csw = coop::props::container_slice_wire;
 namespace SR  = ue_wrap::save_record;
@@ -204,7 +206,7 @@ void EndHold(cas::Hold h, const char* why) {
 }
 
 // A take is final: the game arms a world container's overlap box when a record leaves it by the player's own take
-// (getObject calls dingus, prop_container.cpp:802), and the host's raw record edit never runs that. The container's own
+// (getObject calls dingus, CXXHeaderDump/prop_container.cpp:802), and the host's raw record edit never runs that. The container's own
 // dingus runs here, so the box arms after the BP's 0.1 s delay as it does in single-player; the arming is caught where it
 // lands (container_arming) and reaches every mirror in the container's next publication. Only a take arms: a put by
 // R2 or R3 does not in the BP, and neither does the escrow's restore.
@@ -332,7 +334,7 @@ const char* WaitCause(const internal::Inputs& in) {
 
 // A head that cannot be judged yet stays at the front, until kWaitBoundMs after it was queued; then it is answered
 // Gone. A client asks only from a world it plays in, so the not-ready wait is a race measured in frames, never a
-// world load. MTA refuses a second act on a held seat outright (FAIL_SEAT, CGame.cpp:3340; FAIL_ACTION, 3350); a wait here is
+// world load. MTA refuses a second act on a held seat outright (FAIL_SEAT, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3340; FAIL_ACTION, 3350); a wait here is
 // the mid-join answer, since the hold is a round trip long and the request is the player's only press.
 coop::net::Served WaitOrEnd(uint8_t slot, const Queued& item, const char* cause) {
     const uint64_t now = coop::net::NowMs();
@@ -370,7 +372,7 @@ cre::EditResult KeepRecord(uint32_t eid, uint16_t index, SR::SaveRecord& out) {
     return cre::EditResult::Done;
 }
 
-// MTA's vehicle entry reserves the seat at the request, confirms it, and commits with a re-check (CGame.cpp:3152-3153,
+// MTA's vehicle entry reserves the seat at the request, confirms it, and commits with a re-check (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3152-3153,
 // 3373-3417, 3419-3445). Ours holds the record itself, because a take shifts every later index.
 // A take's grant: the record leaves the container into an escrow. Empty when the grant stands; the head's own
 // answer when it could not be made (a wait, or a hold that would not open), `v` set to Gone when the record moved.
@@ -552,7 +554,7 @@ void Tick() {
 
     // The owed writes first, so one owed this tick is not tried twice in its first second.
     RetryOwed(now);
-    // MTA's reservation ends only by the client (CGame.cpp:3419-3445). Ours also ends by itself after 30 s, because the
+    // MTA's reservation ends only by the client (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3419-3445). Ours also ends by itself after 30 s, because the
     // effect runs on the client and the host cannot see it. A reservation that lapses leaves its tombstone.
     for (cas::Hold& h : cas::Live().TakeExpired(now)) {
         if (h.kind == cas::HoldKind::Reservation) {
@@ -626,14 +628,14 @@ void OnCommitChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     }
     // No act re-judge here: the commit only names the hold it ends. A put's done also names the record it stored, the
     // class and name of what was reserved for, and bounds it by the size asked: the client's word is bounded where it
-    // is stored (MTA, CGame.cpp:2731-2736, 2743-2753). The MTA confirm (CGame.cpp:3373-3417) carries no client data; a put's does,
+    // is stored (MTA, reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2731-2736, 2743-2753). The MTA confirm (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3373-3417) carries no client data; a put's does,
     // because the fit ran on the client, whose container holds the actors the game's own test needs.
     const cas::Hold* hold = cas::Live().Match(senderSlot, c.id);
     if (!hold && LateCommit(senderSlot, c)) return;
     bool matched = internal::CommitMatches(hold, c.eid, c.hasRecord, c.committed);
     if (matched && hold->kind == cas::HoldKind::Reservation && c.committed == 1)
         matched = internal::StoredMatches(hold->record, c.record) &&
-                  internal::DoneSizeOk(caw::RecordBytes(hold->record), c.record);
+                  internal::DoneSizeOk(prw::RecordBytes(hold->record), c.record);
     const internal::CommitStep step = internal::DecideCommit(matched, c.committed);
     UE_LOGI("container_act: slot=%u id=%u eid=%u commit -> %s", static_cast<unsigned>(senderSlot),
             static_cast<unsigned>(c.id), static_cast<unsigned>(c.eid), internal::CommitName(step));
@@ -641,7 +643,7 @@ void OnCommitChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         // An unmatched commit owns nothing; a hold named with a wrong eid stays open for the real commit.
         Bump(Tally::BadCommit);
         g_refusals.Note(senderSlot, "bad commit", Now());
-        // A refused put commit leaves the client's mirror holding the record: its truth goes back (CGame.cpp:2779-2795).
+        // A refused put commit leaves the client's mirror holding the record: its truth goes back (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2779-2795).
         if (hold && hold->kind == cas::HoldKind::Reservation) SendTruth(senderSlot, hold->eid);   // rate-limited
         return;
     }
@@ -725,7 +727,7 @@ const char* TallyName(Tally t) {
     static const char* const kNames[] = {"target_gone", "bad_commit", "grant_unsent", "queue_full_unready", "bad_sender",
                                          "short_payload", "malformed", "unknown_family_unready", "restore_owed",
                                          "wait_expired", "reservation_lapsed", "late_done", "late_done_lost",
-                                         "put_no_name", "put_class_unresolved", "put_not_prop", "put_filtered",
+                                         "put_no_name", "put_class_unresolved", "put_not_prop", "put_bad_leaf", "put_filtered",
                                          "put_into_mailbox", "put_row_refuses", "put_unknown_name", "put_done_lost",
                                          "owed_lost", "take_armed", "put_overlap_filed", "put_overlap_unarmed",
                                          "put_overlap_reach", "put_overlap_unread", "put_overlap_held", "put_overlap_fit",

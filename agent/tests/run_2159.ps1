@@ -8,8 +8,8 @@ try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  $tests=if($OnlyBucket){@('extinguisher_2145','building_wrapper_2153')}else{@('floor_host_2132','prop_knock_2157','prop_action_2143','extinguisher_2145','building_wrapper_2153')}
  foreach($testName in $tests) {
-  $includes=if($testName -eq 'floor_host_2132'){@('/I','agent/tests/floor_stubs')}elseif($testName -eq 'building_wrapper_2153'){@()}else{@('/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
+  $includes=if($testName -eq 'floor_host_2132'){@('/I',(Join-Path $PSScriptRoot 'floor_stubs'))}elseif($testName -eq 'building_wrapper_2153'){@()}else{@('/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @includes /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "$PSScriptRoot/${testName}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $testName"}
   & "$output/$testName.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}

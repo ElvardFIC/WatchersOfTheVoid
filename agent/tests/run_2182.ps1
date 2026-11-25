@@ -6,7 +6,7 @@ Push-Location $root
 try {
     if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
     & cl /nologo /std:c++20 /EHsc /utf-8 /I src/votv-coop/include `
-        "/Fo$output/birth.obj" "/Fe$output/birth.exe" agent/tests/local_birth_2182_test.cpp
+        "/Fo$output/birth.obj" "/Fe$output/birth.exe" "$PSScriptRoot/local_birth_2182_test.cpp"
     if($LASTEXITCODE -ne 0){throw 'Protection regression compile failed'}
     & "$output/birth.exe"
     if($LASTEXITCODE -ne 0){throw 'Protection regression failed'}

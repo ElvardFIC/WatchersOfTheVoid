@@ -4,6 +4,7 @@
 
 #include "coop/config/config.h"
 #include "harness/session_runtime.h"
+#include "coop/net/session.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/devices/lightswitch.h"

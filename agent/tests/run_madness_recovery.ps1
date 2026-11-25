@@ -6,8 +6,8 @@ Push-Location $checkout
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
  foreach($test in @('recovery','presentation')){
-  $extra=@();if($test -eq 'recovery'){$extra=@('/DTEST_STATE_MAX_PEERS=32','/I','agent/tests/state_2145_stubs','/I','agent/tests/text_drone_stubs','/I','agent/tests/stubs')}
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "agent/tests/madness_${test}_test.cpp" /link /OPT:REF
+  $extra=@();if($test -eq 'recovery'){$extra=@('/DTEST_STATE_MAX_PEERS=32','/I',(Join-Path $PSScriptRoot 'state_2145_stubs'),'/I',(Join-Path $PSScriptRoot 'text_drone_stubs'),'/I',(Join-Path $PSScriptRoot 'stubs'))}
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 @extra /I src/votv-coop/include "/Fo$output/$test.obj" "/Fe$output/$test.exe" "$PSScriptRoot/madness_${test}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE){throw "Madness fixture compile failed: $test"}
   & "$output/$test.exe"
   if($LASTEXITCODE){throw "Madness fixture failed: $test"}

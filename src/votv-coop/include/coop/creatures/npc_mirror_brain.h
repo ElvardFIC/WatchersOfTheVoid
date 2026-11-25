@@ -30,7 +30,7 @@ namespace coop::npc_mirror_brain {
 // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:4509). The output lock does not reach a
 // creature's Blueprint, which also writes world state and saves, so the body is refused at its entry. The Octa is the
 // other half of the precedent: MTA's remote ped is driven by relayed sync state while the game animates it
-// (reference/mtasa-blue/Client/mods/deathmatch/logic/CPedSync.cpp:236-252, CClientPed.cpp:6546). It keeps its brain
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CPedSync.cpp:236-252, reference/mtasa-blue/Client/mods/deathmatch/logic/CClientPed.cpp:6546). It keeps its brain
 // because every live piece is presentation or the continuation of a relayed decision, and its output lock is the
 // explosion lane's dissolve of its laser's blast, not a Blueprint refusal.
 //

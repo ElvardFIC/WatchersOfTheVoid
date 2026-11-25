@@ -1,6 +1,7 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/save_record.cpp"
 #include "../../src/votv-coop/src/ue_wrap/actors/cooking_food.cpp"
 #include "../../src/votv-coop/src/coop/props/food_save_sync.cpp"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -52,10 +53,6 @@ bool WriteStructLive(void*,const Row&){std::abort();}
 namespace ue_wrap::world_identity {
 uint32_t Generation(){return test::world;}void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
 void* WorldOf(void*){return CurrentWorld();}
-}
-namespace ue_wrap::facts {
-Function::Function(detail::MacroToken,const char* id,const char* feature,const wchar_t* cls,const wchar_t* fn,Mode mode)
-    :ident_(id),feature_(feature),cls_(cls),fn_(fn),mode_(mode){}
 }
 namespace ue_wrap::script_gate {
 uint8_t* OutParamPtr(const Call&,int32_t){return static_cast<uint8_t*>(test::out);}

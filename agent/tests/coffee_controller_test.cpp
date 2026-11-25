@@ -2,6 +2,8 @@
 #define COFFEE_STATE_SOURCE "../../src/votv-coop/src/coop/interactables/coffee_state.cpp"
 #endif
 #include COFFEE_STATE_SOURCE
+#include "facts_test_support.h"
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullptr;}}
 #ifndef COFFEE_INTENT_SOURCE
 #define COFFEE_INTENT_SOURCE "../../src/votv-coop/src/coop/interactables/coffee_intent.cpp"
 #endif

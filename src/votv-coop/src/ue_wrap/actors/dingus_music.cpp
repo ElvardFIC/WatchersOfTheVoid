@@ -110,7 +110,7 @@ size_t Collect(CachedObjRef* out,size_t cap){
     if(!out || !cap)return 0;
     struct Context {CachedObjRef* out;size_t cap,count=0;World world;};Context ctx{out,cap};
     if(!ctx.world.Current())return 0;
-    for(const auto* name:{L"prop_dingus_C",L"prop_dingus1_C",L"prop_dingus2_C",L"prop_dingus3_C",L"prop_dingus4ugly_C",L"prop_dingus5erie_C"}){
+    for(const auto* name:kDingusVariantClasses){
         CachedObjRef cls;cls.Set(object_index::ClassByName(name));if(!ctx.world.Current())break;if(!cls.Get())continue;
         object_index::ForEachInstance(cls.Get(),[](void* p,void* actor,int32_t){
             auto& c=*static_cast<Context*>(p);if(!c.world.Current() || c.count>=c.cap)return;

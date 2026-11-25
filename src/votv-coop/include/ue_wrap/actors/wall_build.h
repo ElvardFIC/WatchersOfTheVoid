@@ -8,7 +8,6 @@ inline constexpr const wchar_t* kOverlap =
 // Replay a measured native material overlap only while the two actors still
 // overlap. True means handled/no longer overlapping. A false dispatch result
 // permits retry only when the caller proves the native body did not start.
-bool Feed(void* wall, void* material);
 // Revalidate the caller and exact actor/class/component/function incarnations
 // through metadata preparation, collision query and native overlap dispatch.
 bool FeedWhile(void* wall, void* material, const std::function<bool()>& current);
@@ -19,6 +18,8 @@ bool RestoreMaterial(void* wall, const wchar_t* name);
 std::wstring Key(void* wall);
 // Host replay of a completed wall's measured native damage body. Visual impact
 // uses the wall origin; material debris/destruction remains the native graph's.
-bool Damage(void* wall, float amount);
 bool DamageWhile(void* wall,float amount,const std::function<bool()>& current);
+
+bool Damage(void* wall, float amount);
+bool Feed(void* wall, void* material);
 }

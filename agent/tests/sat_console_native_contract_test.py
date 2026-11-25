@@ -5,12 +5,12 @@ import json
 import sys
 
 root = Path(__file__).resolve().parents[2]
-research = root.parent / "_research"
-sys.path.insert(0, str(research))
+evidence_root = root.parent / "_research"
+sys.path.insert(0, str(evidence_root))
 from kismet_dis import Package
 from dump_2135 import body
 
-asset = research / "current-assets/VotV__Content__umg__ui_console.uasset"
+asset = evidence_root / "current-assets/VotV__Content__umg__ui_console.uasset"
 package = Package(str(asset))
 for name in ("consoleLine", "logText", "command", "processing"):
     assert name in package.names, name

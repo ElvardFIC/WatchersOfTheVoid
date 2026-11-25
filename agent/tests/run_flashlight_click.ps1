@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/flashlight_click_stubs /I src/votv-coop/include "/Fo$output/flashlight_click.obj" "/Fe$output/flashlight_click.exe" agent/tests/flashlight_click_test.cpp /link /OPT:REF
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I "$PSScriptRoot/flashlight_click_stubs" /I src/votv-coop/include "/Fo$output/flashlight_click.obj" "/Fe$output/flashlight_click.exe" "$PSScriptRoot/flashlight_click_test.cpp" /link /OPT:REF
  if($LASTEXITCODE){throw 'Flashlight click compile failed'}
  & "$output/flashlight_click.exe"
  if($LASTEXITCODE){throw 'Flashlight click regression failed'}
@@ -30,7 +30,7 @@ try {
    foreach($change in $changes){if(-not $mutant.Contains($change[0])){throw "Missing click control anchor: $($control.Name)"};$mutant=$mutant.Replace($change[0],$change[1])}
    $name='fault_'+$control.Name;$path=Join-Path $output ($name+'.cpp');[IO.File]::WriteAllText($path,$mutant)
    $header=Join-Path $output ($name+'.h');[IO.File]::WriteAllText($header,('#define FLASHLIGHT_CLICK_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
-   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I agent/tests/flashlight_click_stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" agent/tests/flashlight_click_test.cpp /link /OPT:REF
+   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/FI$header" /I "$PSScriptRoot/flashlight_click_stubs" /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "$PSScriptRoot/flashlight_click_test.cpp" /link /OPT:REF
    if($LASTEXITCODE){throw "Click control compile failed: $name"}
    $saved=$ErrorActionPreference
    try{$ErrorActionPreference='Continue';$report=& "$output/$name.exe" $control.Name 2>&1 | Out-String;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$saved}
